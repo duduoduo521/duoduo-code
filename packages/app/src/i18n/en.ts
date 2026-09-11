@@ -628,7 +628,6 @@ export const dict = {
   "common.requestFailed": "Request failed",
   "common.retry": "Retry",
   "common.moreOptions": "More options",
-  "common.learnMore": "Learn more",
   "common.rename": "Rename",
   "common.renameFailed": "Rename failed",
   "common.reset": "Reset",

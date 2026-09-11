@@ -10,7 +10,6 @@ import { Tooltip } from "@duoduo-ai/ui/tooltip"
 import { useTheme, type ColorScheme } from "@duoduo-ai/ui/theme/context"
 import { showToast } from "@duoduo-ai/ui/toast"
 import { useParams } from "@solidjs/router"
-import { APP_DOCS } from "@/config/domains"
 import { useLanguage } from "@/context/language"
 import { themeName } from "@/utils/theme-name"
 import { usePermission } from "@/context/permission"
@@ -32,7 +31,6 @@ import { decode64 } from "@/utils/base64"
 import { playSoundById, SOUND_OPTIONS } from "@/utils/sound"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useSmartLayer } from "@/addons/smart-layer/context"
-import { Link } from "./link"
 import { SettingsList } from "./settings-list"
 import { SettingsPage } from "./settings-page"
 
@@ -692,12 +690,7 @@ export const SettingsGeneral: Component = () => {
 
         <SettingsRow
           title={language.t("settings.general.row.theme.title")}
-          description={
-            <>
-              {language.t("settings.general.row.theme.description")}{" "}
-              <Link href={`${APP_DOCS}/themes/`}>{language.t("common.learnMore")}</Link>
-            </>
-          }
+          description={language.t("settings.general.row.theme.description")}
         >
           <Select
             data-action="settings-theme"

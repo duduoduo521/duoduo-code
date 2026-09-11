@@ -602,7 +602,6 @@ export const dict = {
   "common.requestFailed": "请求失败",
   "common.retry": "重试",
   "common.moreOptions": "更多选项",
-  "common.learnMore": "了解更多",
   "common.rename": "重命名",
   "common.renameFailed": "重命名失败",
   "common.reset": "重置",

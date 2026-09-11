@@ -149,7 +149,7 @@ The `webHandler` provides `Observability.layer` via `Layer.provideMerge`. Since 
 This gives:
 
 - **spans**: `Effect.fn("QuestionHttpApi.list")` etc. appear in traces alongside service-layer spans
-- **HTTP logs**: `HttpMiddleware.logger` emits structured `Effect.log` entries with `http.method`, `http.url`, `http.status` annotations, flowing to the OTLP backend via `OtlpLogger`
+- **HTTP logs**: `HttpMiddleware.logger` emits structured `Effect.log` entries with `http.method`, `http.url`, `http.status` annotations, flowing to motel via `OtlpLogger`
 
 ### 6. Migrate JSON route groups gradually
 
@@ -381,7 +381,7 @@ The first slice is successful if:
 
 - `HttpRouter.toWebHandler` with the shared `memoMap` from `run-service.ts` cleanly bridges Effect routes into Hono — one process, one port, shared layer instances.
 - `Observability.layer` must be explicitly provided via `Layer.provideMerge` in the routes layer for OTEL spans and HTTP logs to flow. The `memoMap` deduplicates it with `AppRuntime` — no extra cost.
-- `HttpMiddleware.logger` (enabled by default when `disableLogger` is not set) emits structured `Effect.log` entries with `http.method`, `http.url`, `http.status` — these flow through `OtlpLogger` to the OTLP backend.
+- `HttpMiddleware.logger` (enabled by default when `disableLogger` is not set) emits structured `Effect.log` entries with `http.method`, `http.url`, `http.status` — these flow through `OtlpLogger` to motel.
 - Hono OpenAPI stubs must remain registered for SDK codegen until the SDK pipeline reads from the Effect OpenAPI spec instead.
 - the `DUODUOCODE_EXPERIMENTAL_HTTPAPI` flag gates the bridge at the Hono router level — default off, no behavior change unless opted in.
 
@@ -442,7 +442,7 @@ Recommended near-term sequence:
 - [x] document how auth, instance lookup, and error mapping would compose in the new stack
 - [x] bridge Effect routes into Hono via `toWebHandler` with shared `memoMap`
 - [x] gate behind `DUODUOCODE_EXPERIMENTAL_HTTPAPI` flag
-- [x] verify OTEL spans and HTTP logs flow to the OTLP backend
+- [x] verify OTEL spans and HTTP logs flow to motel
 - [x] bridge question, permission, and provider auth routes
 - [x] port remaining provider endpoints (`GET /provider`, OAuth mutations)
 - [x] port `config` providers read endpoint

@@ -52,14 +52,25 @@ This means the package split should start from an extraction path, not from gree
 
 ## Structural reference
 
-The structural pattern for `packages/server` is the core/server split:
+Use `anomalyco/opentunnel` as the structural reference for `packages/server`.
+
+The important pattern there is:
 
 - `packages/core` owns services and domain schemas
 - `packages/server/src/definition/*` owns pure `HttpApi` contracts
 - `packages/server/src/api/*` owns `HttpApiBuilder.group(...)` implementations and server-side middleware wiring
 - `packages/server/src/index.ts` becomes the composition root only after the server package really owns runtime hosting
 
-The intended direction here follows that pattern, but the current `duoduo` package split is earlier in the migration.
+Relevant `opentunnel` files:
+
+- `packages/server/src/definition/index.ts`
+- `packages/server/src/definition/tunnel.ts`
+- `packages/server/src/api/index.ts`
+- `packages/server/src/api/tunnel.ts`
+- `packages/server/src/api/client.ts`
+- `packages/server/src/index.ts`
+
+The intended direction here is the same, but the current `duoduo` package split is earlier in the migration.
 
 That means:
 
@@ -335,7 +346,7 @@ Rules:
 - no production behavior changes
 - no host server changes yet
 - no imports from `packages/duoduo` inside `packages/server`
-- prefer the `definition` / `api` naming from the start: `definition` for contracts, `api` for implementations
+- prefer `opentunnel`-style naming from the start: `definition` for contracts, `api` for implementations
 
 Done means:
 

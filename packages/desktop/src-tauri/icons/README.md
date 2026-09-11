@@ -1,6 +1,6 @@
 # Tauri Icons
 
-Here's the process used to create icons:
+Here's the process I've been using to create icons:
 
 - Save source image as `app-icon.png` in `packages/desktop`
 - `cd` to `packages/desktop`

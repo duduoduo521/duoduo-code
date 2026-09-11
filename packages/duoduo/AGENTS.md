@@ -112,7 +112,7 @@ See `specs/effect/migration.md` for the compact pattern reference and examples.
 - After mergeAll, `Layer.provideMerge` adds services that external consumers need (AppFileSystem.Service, Global.Service, AssemblerService, etc.). The chain builds **outside-in**: the last `.pipe()` is built first.
 - When adding a new service module, always export both `layer` (bare, for testing) and `defaultLayer` (self-contained, for production). See `app-runtime.ts` for the full composition.
 
-**History lesson (do NOT repeat)**: A previous refactor changed all defaultLayers to bare layers based on the mistaken belief that defaultLayer's internal `Layer.provide` "consumes" services from mergeAll. This is FALSE — it was verified with tests at the time. The bare-layer approach broke because mergeAll doesn't auto-satisfy deps, causing `Service not found` errors.
+**History lesson (do NOT repeat)**: A previous refactor (commit 298dbde) changed all defaultLayers to bare layers based on the mistaken belief that defaultLayer's internal `Layer.provide` "consumes" services from mergeAll. This is FALSE — it was verified with tests (see `test-layer-root-cause.ts`). The bare-layer approach broke because mergeAll doesn't auto-satisfy deps, causing `Service not found` errors.
 
 ## Effect v4 beta API
 

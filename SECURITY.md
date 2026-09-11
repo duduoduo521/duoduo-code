@@ -203,7 +203,7 @@ it inherits the per-user ACL of `%APPDATA%`).
 ## 7. Reporting a Vulnerability
 
 If you discover a security vulnerability, please report it privately to
-**duoduo@dd322.cn** (or via the private advisory form on the project's
+**security@dd322.cn** (or via the private advisory form on the project's
 repository). Do not open a public issue for security reports.
 
 We will acknowledge receipt within 5 business days and aim to provide a

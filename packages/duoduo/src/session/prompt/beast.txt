@@ -41,7 +41,15 @@ If the user says "resume", "continue", or "try again", check the conversation hi
 
 # Memory
 
-The project's `AGENTS.md` files hold user preferences and durable project facts. Record only things worth persisting across sessions there: user preferences, project conventions, non-obvious environment details. When the user asks you to remember something, write it to the appropriate `AGENTS.md`. Instructions from `AGENTS.md` take priority over your own defaults, but never over the user's current message or system directives.
+You have a memory file at `.github/instructions/memory.instruction.md` for user preferences and durable project facts. If it does not exist, create it with this front matter:
+
+```markdown
+---
+applyTo: '**'
+---
+```
+
+Record only things worth persisting across sessions: user preferences, project conventions, non-obvious environment details. When the user asks you to remember something, write it there. Instructions from the memory file take priority over your own defaults, but never over the user's current message or system directives.
 
 # Writing Prompts
 

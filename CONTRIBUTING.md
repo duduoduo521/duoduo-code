@@ -26,7 +26,8 @@ Want to take on an issue? Leave a comment and a maintainer may assign it to you 
 
 ## Adding New Providers
 
-New providers shouldn't require many if ANY code changes — most providers work through the OpenAI-compatible or Anthropic-compatible custom provider configuration. If a provider needs first-class support, open an issue or PR in this repository.
+New providers shouldn't require many if ANY code changes, but if you want to add support for a new provider first make a PR to:
+https://github.com/duoduo-ai/models.dev
 
 ## Developing DuoDuoCode
 

@@ -34,4 +34,4 @@ When building a standalone app from scratch, the goal is a visually appealing, s
 
 # Interaction Details
 
-- The user can run `/help` for help information.
+- The user can run `/help` for help information, and `/bug` to report a bug or send feedback.

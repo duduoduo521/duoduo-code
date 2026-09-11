@@ -297,5 +297,13 @@ This migration is done when all of the following are true:
 
 ## Tracker and worktree
 
-This migration was carried out on a dedicated worktree (branch:
-`instance-effect-shift`).
+Active tracker items:
+
+- `lh7l73` - overall `HttpApi` migration
+- `yobwlk` - remove direct `Instance.*` reads inside Effect services
+- `7irl1e` - replace `InstanceState` / legacy instance caching with keyed Effect layers
+
+Dedicated worktree for this transition:
+
+- path: `/Users/kit/code/open-source/duoduo-worktrees/instance-effect-shift`
+- branch: `kit/instance-effect-shift`

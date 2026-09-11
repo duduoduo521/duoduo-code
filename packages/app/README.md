@@ -1,10 +1,14 @@
 ## Usage
 
-This is the web frontend of DuoDuo IDE, built with SolidJS and Vite. The project root is managed with [Bun](https://bun.sh); dependencies are installed with `bun install` from the repository root.
+Dependencies for these templates are managed with [pnpm](https://pnpm.io) using `pnpm up -Lri`.
 
-Questions or feedback? Reach us at **duoduo@dd322.cn** or visit [www.dd322.cn/code](https://www.dd322.cn/code).
+This is the reason you see a `pnpm-lock.yaml`. That said, any package manager will work. This file can safely be removed once you clone a template.
 
-### Learn more about [SolidJS](https://solidjs.com)
+```bash
+$ npm install # or pnpm install or yarn install
+```
+
+### Learn more on the [Solid Website](https://solidjs.com) and come chat with us on our [Discord](https://discord.com/invite/solidjs)
 
 ## Available Scripts
 

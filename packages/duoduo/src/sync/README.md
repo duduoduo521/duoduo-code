@@ -1,4 +1,4 @@
-tl;dr All of these APIs work, are properly type-checked, and are sync events are backwards compatible with `Bus`:
+tl;dr All of these APIs work and are properly type-checked, and sync events are backwards compatible with `Bus`:
 
 ```ts
 // The schema from `Updated` typechecks the object correctly
@@ -46,7 +46,7 @@ So the goal is:
 - Seamlessly integrate these new events into the same existing `Bus` abstraction
 - Maintain full backwards compatibility to reduce risk
 
-## My approach
+## The approach
 
 This directory introduces a new abstraction: `SyncEvent`. This handles all of the event sourcing.
 
@@ -96,7 +96,7 @@ Importantly, **sync events automatically re-publish as bus events**. This makes 
 
 - The shape of the events are slightly different. A sync event has the `type`, `id`, `seq`, `aggregateID`, and `data` fields. A bus event has the `type` and `properties` fields. `data` and `properties` are largely the same thing. This conversion is automatically handled when the sync system re-published the event throught the bus.
 
-The reason for this is because sync events need to track more information. I chose not to copy the `properties` naming to more clearly disambiguate the event types.
+The reason for this is because sync events need to track more information. The `properties` naming is deliberately not copied, to more clearly disambiguate the event types.
 
 ### Event flow
 
@@ -104,7 +104,7 @@ There is no way to subscribe to individual sync events in `SyncEvent`. You can u
 
 To listen for individual events, use `Bus.subscribe`. You can pass in a sync event definition to it: `Bus.subscribe(Created, handler)`. This is fully supported.
 
-You should never "publish" a sync event however: `Bus.publish(Created, ...)`. I would like to force this to be a type error in the future. You should never be touching the db directly, and should not be manually handling these events.
+You should never "publish" a sync event however: `Bus.publish(Created, ...)`. Ideally this would be a type error in the future. You should never be touching the db directly, and should not be manually handling these events.
 
 ### Backwards compatibility
 
@@ -140,9 +140,9 @@ Bus.subscribe(Updated, (event) => event.properties.info.title)
 client.subscribe("session.updated", (evt) => evt.properties.info.title)
 ```
 
-The last two examples look similar to `SyncEvent.run`, but they were the cause of a lot of grief. Those are existing APIs that we can't break, but we are passing in the new sync event definitions to these APIs, which sometimes have a different event shape.
+The last two examples look similar to `SyncEvent.run`, but they differ subtly: they are existing APIs that cannot be broken, yet they now receive sync event definitions whose event shape is sometimes different — a frequent source of confusion.
 
-I previously mentioned the runtime conversion of events, but we still need to the types to work! To do that, the `define` API supports an optional `busSchema` prop to give it the schema for backwards compatibility. For example this is the full definition of `Session.Update`:
+As mentioned above, events are converted at runtime, but the types still need to work! To do that, the `define` API supports an optional `busSchema` prop to give it the schema for backwards compatibility. For example this is the full definition of `Session.Update`:
 
 ```ts
 const Update = SyncEvent.define({
@@ -166,14 +166,14 @@ Internally, the way this works is `busSchema` is stored on a `properties` field 
 
 _Alternatives_
 
-These are some other paths I explored:
+These are some other paths that were considered:
 
 - Providing a way to subscribe to individual sync events, and change all the instances of `Bus.subscribe` in our code to it. Then you are directly only working with sync events always.
   - Two big problems. First, `Bus` is instance-scoped, and we'd need to make the sync event system instance-scoped too for backwards compat. If we didn't, those listeners would get calls for events they weren't expecting.
   - Second, we can't change consumers of our SDK. So they still have to use the old events, and we might as well stick with them for consistency
 - Directly add sync event support to bus system
-  - I explored adding sync events to the bus, but due to backwards compat, it only made it more complicated (still need to support both shapes)
-- I explored a `convertSchema` function to convert the event schema at runtime so we didn't need `busSchema`
+  - Adding sync events to the bus was explored, but due to backwards compat, it only made it more complicated (still need to support both shapes)
+- A `convertSchema` function was explored, to convert the event schema at runtime so `busSchema` wouldn't be needed
   - Fatal flaw: we need type-checking done earlier. We can't do this at run-time. This worked for consumers of our SDK (because it gets generated TS types from the converted schema) but breaks for our internal usage of `Bus.subscribe` calls
 
-I explored many other permutations of the above solutions. What we have today I think is the best balance of backwards compatibility while opening a path forward for the new events.
+Many other permutations of the above solutions were explored. What exists today is the best balance of backwards compatibility while opening a path forward for the new events.

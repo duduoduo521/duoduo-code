@@ -4,7 +4,7 @@
 
 ## Local Dev
 
-- `duoduo dev web` proxies `https://app.duoduocode.ai`, so local UI/CSS changes will not show there.
+- `duoduo dev web` proxies the production web app, so local UI/CSS changes will not show there.
 - For local UI changes, run the backend and app dev servers separately.
 - Backend (from `packages/duoduo`): `bun run --conditions=browser ./src/index.ts serve --port 4096`
 - App (from `packages/app`): `bun dev -- --port 4444`

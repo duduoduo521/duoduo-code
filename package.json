@@ -101,6 +101,10 @@
     "type": "git",
     "url": "https://github.com/duduoduo521/duoduo-code"
   },
+  "bugs": {
+    "url": "https://github.com/duduoduo521/duoduo-code/issues"
+  },
+  "homepage": "https://www.dd322.cn/code",
   "license": "MIT",
   "prettier": {
     "semi": false,

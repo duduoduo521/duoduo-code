@@ -6,10 +6,10 @@ Based on opencode (MIT License).
 Copyright (c) 2025 opencode
 Copyright (c) 2026 DuoDuo
 
-Auto-generated: 2026-09-04T16:21:27.383Z
+Auto-generated: 2026-09-11T05:28:06.171Z
 
 ================================================================================
-Section: MIT (1003 packages)
+Section: MIT (993 packages)
 ================================================================================
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -55,7 +55,7 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@actions/http-client @ 2.2.3
+@actions/http-client @ 3.0.2
    Author: (not declared)
    Repository: git+https://github.com/actions/toolkit.git
    Homepage: https://github.com/actions/toolkit/tree/main/packages/http-client
@@ -123,7 +123,7 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@babel/core @ 7.28.0
+@babel/core @ 7.28.4
    Author: The Babel Team (https://babel.dev/team)
    Repository: https://github.com/babel/babel.git
    Homepage: https://babel.dev/docs/en/next/babel-core
@@ -521,48 +521,6 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@duoduo-ai/app @ 1.14.21
-   Author: (not declared)
-   Repository: (not declared)
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-@duoduo-ai/plugin @ 1.14.21
-   Author: (not declared)
-   Repository: https://github.com/duduoduo521/duoduo-code
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-@duoduo-ai/script @ unknown
-   Author: (not declared)
-   Repository: (not declared)
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-@duoduo-ai/sdk @ 1.14.21
-   Author: (not declared)
-   Repository: (not declared)
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-@duoduo-ai/shared @ 1.14.21
-   Author: (not declared)
-   Repository: (not declared)
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-@duoduo-ai/ui @ 1.14.21
-   Author: (not declared)
-   Repository: (not declared)
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
 @effect/opentelemetry @ 4.0.0-beta.48
    Author: (not declared)
    Repository: https://github.com/Effect-TS/effect-smol.git
@@ -631,13 +589,6 @@ SOFTWARE.
    Author: Sergey Chikuyonok <serge.che@gmail.com>
    Repository: git+https://github.com/emmetio/stream-reader-utils.git
    Homepage: https://github.com/emmetio/stream-reader-utils#readme
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-@fastify/busboy @ 2.1.1
-   Author: Brian White <mscdex@mscdex.net>
-   Repository: git+https://github.com/fastify/busboy.git
    License: MIT
 ------------------------------------------------------------------------------
 
@@ -937,6 +888,14 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
+@jridgewell/remapping @ 2.3.5
+   Author: Justin Ridgewell <justin@ridgewell.name>
+   Repository: git+https://github.com/jridgewell/sourcemaps.git
+   Homepage: https://github.com/jridgewell/sourcemaps/tree/main/packages/remapping
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
 @jridgewell/resolve-uri @ 3.1.2
    Author: Justin Ridgewell <justin@ridgewell.name>
    Repository: https://github.com/jridgewell/resolve-uri
@@ -1096,7 +1055,42 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
+@lydell/node-pty-darwin-arm64 @ 1.2.0-beta.10
+   Author: (not declared)
+   Repository: git://github.com/lydell/node-pty.git
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
 @lydell/node-pty-darwin-x64 @ 1.2.0-beta.10
+   Author: (not declared)
+   Repository: git://github.com/lydell/node-pty.git
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@lydell/node-pty-linux-arm64 @ 1.2.0-beta.10
+   Author: (not declared)
+   Repository: git://github.com/lydell/node-pty.git
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@lydell/node-pty-linux-x64 @ 1.2.0-beta.10
+   Author: (not declared)
+   Repository: git://github.com/lydell/node-pty.git
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@lydell/node-pty-win32-arm64 @ 1.2.0-beta.10
+   Author: (not declared)
+   Repository: git://github.com/lydell/node-pty.git
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@lydell/node-pty-win32-x64 @ 1.2.0-beta.10
    Author: (not declared)
    Repository: git://github.com/lydell/node-pty.git
    License: MIT
@@ -1119,7 +1113,42 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
+@msgpackr-extract/msgpackr-extract-darwin-arm64 @ 3.0.4
+   Author: Kris Zyp
+   Repository: http://github.com/kriszyp/msgpackr-extract
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
 @msgpackr-extract/msgpackr-extract-darwin-x64 @ 3.0.4
+   Author: Kris Zyp
+   Repository: http://github.com/kriszyp/msgpackr-extract
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@msgpackr-extract/msgpackr-extract-linux-arm @ 3.0.4
+   Author: Kris Zyp
+   Repository: http://github.com/kriszyp/msgpackr-extract
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@msgpackr-extract/msgpackr-extract-linux-arm64 @ 3.0.4
+   Author: Kris Zyp
+   Repository: http://github.com/kriszyp/msgpackr-extract
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@msgpackr-extract/msgpackr-extract-linux-x64 @ 3.0.4
+   Author: Kris Zyp
+   Repository: http://github.com/kriszyp/msgpackr-extract
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@msgpackr-extract/msgpackr-extract-win32-x64 @ 3.0.4
    Author: Kris Zyp
    Repository: http://github.com/kriszyp/msgpackr-extract
    License: MIT
@@ -1133,7 +1162,7 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@napi-rs/canvas-darwin-x64 @ 1.0.2
+@napi-rs/canvas-win32-x64-msvc @ 1.0.2
    Author: (not declared)
    Repository: git+https://github.com/Brooooooklyn/canvas.git
    License: MIT
@@ -1161,23 +1190,9 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@octokit/auth-token @ 6.0.0
-   Author: Gregor Martynus (https://github.com/gr2m)
-   Repository: github:octokit/auth-token.js
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
 @octokit/auth-token @ 4.0.0
    Author: Gregor Martynus (https://github.com/gr2m)
    Repository: github:octokit/auth-token.js
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-@octokit/core @ 7.0.6
-   Author: Gregor Martynus (https://github.com/gr2m)
-   Repository: github:octokit/core.js
    License: MIT
 ------------------------------------------------------------------------------
 
@@ -1189,13 +1204,6 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@octokit/endpoint @ 11.0.3
-   Author: Gregor Martynus (https://github.com/gr2m)
-   Repository: github:octokit/endpoint.js
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
 @octokit/endpoint @ 9.0.6
    Author: Gregor Martynus (https://github.com/gr2m)
    Repository: github:octokit/endpoint.js
@@ -1203,7 +1211,7 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@octokit/graphql @ 9.0.3
+@octokit/graphql @ 7.1.1
    Author: Gregor Martynus (https://github.com/gr2m)
    Repository: github:octokit/graphql.js
    License: MIT
@@ -1217,21 +1225,7 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@octokit/graphql @ 7.1.1
-   Author: Gregor Martynus (https://github.com/gr2m)
-   Repository: github:octokit/graphql.js
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-@octokit/openapi-types @ 26.0.0
-   Author: Gregor Martynus (https://twitter.com/gr2m)
-   Repository: https://github.com/octokit/openapi-types.ts.git
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-@octokit/openapi-types @ 27.0.0
+@octokit/openapi-types @ 20.0.0
    Author: Gregor Martynus (https://twitter.com/gr2m)
    Repository: https://github.com/octokit/openapi-types.ts.git
    License: MIT
@@ -1245,16 +1239,9 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@octokit/openapi-types @ 20.0.0
+@octokit/openapi-types @ 26.0.0
    Author: Gregor Martynus (https://twitter.com/gr2m)
    Repository: https://github.com/octokit/openapi-types.ts.git
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-@octokit/plugin-paginate-rest @ 13.2.1
-   Author: (not declared)
-   Repository: github:octokit/plugin-paginate-rest.js
    License: MIT
 ------------------------------------------------------------------------------
 
@@ -1266,16 +1253,9 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@octokit/plugin-request-log @ 6.0.0
-   Author: Gregor Martynus (https://twitter.com/gr2m)
+@octokit/plugin-request-log @ 1.0.4
+   Author: (not declared)
    Repository: github:octokit/plugin-request-log.js
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-@octokit/plugin-rest-endpoint-methods @ 16.1.1
-   Author: Gregor Martynus (https://twitter.com/gr2m)
-   Repository: github:octokit/plugin-rest-endpoint-methods.js
    License: MIT
 ------------------------------------------------------------------------------
 
@@ -1287,23 +1267,9 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@octokit/request @ 10.0.10
-   Author: Gregor Martynus (https://github.com/gr2m)
-   Repository: github:octokit/request.js
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
 @octokit/request @ 8.4.1
    Author: Gregor Martynus (https://github.com/gr2m)
    Repository: github:octokit/request.js
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-@octokit/request-error @ 7.1.0
-   Author: Gregor Martynus (https://github.com/gr2m)
-   Repository: github:octokit/request-error.js
    License: MIT
 ------------------------------------------------------------------------------
 
@@ -1322,14 +1288,7 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@octokit/types @ 15.0.2
-   Author: Gregor Martynus (https://twitter.com/gr2m)
-   Repository: github:octokit/types.ts
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-@octokit/types @ 16.0.0
+@octokit/types @ 12.6.0
    Author: Gregor Martynus (https://twitter.com/gr2m)
    Repository: github:octokit/types.ts
    License: MIT
@@ -1343,7 +1302,7 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@octokit/types @ 12.6.0
+@octokit/types @ 15.0.2
    Author: Gregor Martynus (https://twitter.com/gr2m)
    Repository: github:octokit/types.ts
    License: MIT
@@ -1371,7 +1330,42 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
+@opentui/core-darwin-arm64 @ 0.1.99
+   Author: (not declared)
+   Repository: https://github.com/anomalyco/opentui
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
 @opentui/core-darwin-x64 @ 0.1.99
+   Author: (not declared)
+   Repository: https://github.com/anomalyco/opentui
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@opentui/core-linux-arm64 @ 0.1.99
+   Author: (not declared)
+   Repository: https://github.com/anomalyco/opentui
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@opentui/core-linux-x64 @ 0.1.99
+   Author: (not declared)
+   Repository: https://github.com/anomalyco/opentui
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@opentui/core-win32-arm64 @ 0.1.99
+   Author: (not declared)
+   Repository: https://github.com/anomalyco/opentui
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@opentui/core-win32-x64 @ 0.1.99
    Author: (not declared)
    Repository: https://github.com/anomalyco/opentui
    License: MIT
@@ -1392,7 +1386,91 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
+@parcel/watcher-android-arm64 @ 2.5.1
+   Author: (not declared)
+   Repository: https://github.com/parcel-bundler/watcher.git
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@parcel/watcher-darwin-arm64 @ 2.5.1
+   Author: (not declared)
+   Repository: https://github.com/parcel-bundler/watcher.git
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
 @parcel/watcher-darwin-x64 @ 2.5.1
+   Author: (not declared)
+   Repository: https://github.com/parcel-bundler/watcher.git
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@parcel/watcher-freebsd-x64 @ 2.5.1
+   Author: (not declared)
+   Repository: https://github.com/parcel-bundler/watcher.git
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@parcel/watcher-linux-arm-glibc @ 2.5.1
+   Author: (not declared)
+   Repository: https://github.com/parcel-bundler/watcher.git
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@parcel/watcher-linux-arm-musl @ 2.5.1
+   Author: (not declared)
+   Repository: https://github.com/parcel-bundler/watcher.git
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@parcel/watcher-linux-arm64-glibc @ 2.5.1
+   Author: (not declared)
+   Repository: https://github.com/parcel-bundler/watcher.git
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@parcel/watcher-linux-arm64-musl @ 2.5.1
+   Author: (not declared)
+   Repository: https://github.com/parcel-bundler/watcher.git
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@parcel/watcher-linux-x64-glibc @ 2.5.1
+   Author: (not declared)
+   Repository: https://github.com/parcel-bundler/watcher.git
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@parcel/watcher-linux-x64-musl @ 2.5.1
+   Author: (not declared)
+   Repository: https://github.com/parcel-bundler/watcher.git
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@parcel/watcher-win32-arm64 @ 2.5.1
+   Author: (not declared)
+   Repository: https://github.com/parcel-bundler/watcher.git
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@parcel/watcher-win32-ia32 @ 2.5.1
+   Author: (not declared)
+   Repository: https://github.com/parcel-bundler/watcher.git
+   License: MIT
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@parcel/watcher-win32-x64 @ 2.5.1
    Author: (not declared)
    Repository: https://github.com/parcel-bundler/watcher.git
    License: MIT
@@ -1403,14 +1481,6 @@ SOFTWARE.
    Author: (not declared)
    Repository: git@github.com:pkgjs/parseargs.git
    Homepage: https://github.com/pkgjs/parseargs#readme
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-@shikijs/core @ 4.2.0
-   Author: Pine Wu <octref@gmail.com>; Anthony Fu <anthonyfu117@hotmail.com>
-   Repository: git+https://github.com/shikijs/shiki.git
-   Homepage: https://github.com/shikijs/shiki#readme
    License: MIT
 ------------------------------------------------------------------------------
 
@@ -1447,14 +1517,6 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@shikijs/primitive @ 4.2.0
-   Author: Anthony Fu <anthonyfu117@hotmail.com>
-   Repository: git+https://github.com/shikijs/shiki.git
-   Homepage: https://github.com/shikijs/shiki#readme
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
 @shikijs/themes @ 4.2.0
    Author: Anthony Fu <anthonyfu117@hotmail.com>
    Repository: git+https://github.com/shikijs/shiki.git
@@ -1471,7 +1533,7 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@shikijs/types @ 4.2.0
+@shikijs/types @ 3.9.2
    Author: Anthony Fu <anthonyfu117@hotmail.com>
    Repository: git+https://github.com/shikijs/shiki.git
    Homepage: https://github.com/shikijs/shiki#readme
@@ -1479,7 +1541,7 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@shikijs/types @ 3.9.2
+@shikijs/types @ 4.2.0
    Author: Anthony Fu <anthonyfu117@hotmail.com>
    Repository: git+https://github.com/shikijs/shiki.git
    Homepage: https://github.com/shikijs/shiki#readme
@@ -1692,14 +1754,6 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@standard-schema/spec @ 1.1.0
-   Author: Colin McDonnell
-   Repository: https://github.com/standard-schema/standard-schema
-   Homepage: https://standardschema.dev
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
 @standard-schema/spec @ 1.0.0
    Author: Colin McDonnell
    Repository: https://github.com/standard-schema/standard-schema
@@ -1708,9 +1762,10 @@ SOFTWARE.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@standard-schema/spec @ 1.0.0-beta.3
+@standard-schema/spec @ 1.1.0
    Author: Colin McDonnell
    Repository: https://github.com/standard-schema/standard-schema
+   Homepage: https://standardschema.dev
    License: MIT
 ------------------------------------------------------------------------------
 
@@ -2145,7 +2200,7 @@ await-to-js @ 3.0.0
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-aws4fetch @ 1.0.20
+aws4fetch @ 1.0.18
    Author: Michael Hart <michael.hart.au@gmail.com> (https://github.com/mhart)
    Repository: git+https://github.com/mhart/aws4fetch.git
    License: MIT
@@ -2180,7 +2235,7 @@ babel-plugin-module-resolver @ 5.0.2
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-babel-preset-solid @ 1.9.10
+babel-preset-solid @ 1.9.12
    Author: Ryan Carniato <ryansolid@gmail.com>
    Repository: https://github.com/solidjs/solid/blob/main/packages/babel-preset-solid
    Homepage: https://github.com/solidjs/solid/blob/main/packages/babel-preset-solid#readme
@@ -2486,13 +2541,6 @@ clipboardy @ 4.0.0
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-clru @ 0.6.3
-   Author: (not declared)
-   Repository: (not declared)
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
 code-red @ 1.0.4
    Author: (not declared)
    Repository: Rich-Harris/code-red
@@ -2725,13 +2773,6 @@ darling_macro @ 0.21.3
 
 ------------------------------------------------------------------------------
 darling_macro @ 0.23.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-dashmap @ 6.2.1
    Author: (not declared)
    Repository: (not declared)
    License: MIT
@@ -3190,13 +3231,6 @@ fast-deep-equal @ 3.1.3
 fast-glob @ 3.3.3
    Author: Denis Malinochkin
    Repository: mrmlnc/fast-glob
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-faster-hex @ 0.10.0
-   Author: (not declared)
-   Repository: (not declared)
    License: MIT
 ------------------------------------------------------------------------------
 
@@ -3928,34 +3962,6 @@ javascriptcore-rs-sys @ 1.1.1
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-jiff @ 0.2.32
-   Author: (not declared)
-   Repository: (not declared)
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-jiff-static @ 0.2.32
-   Author: (not declared)
-   Repository: (not declared)
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-jiff-tzdb @ 0.1.8
-   Author: (not declared)
-   Repository: (not declared)
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-jiff-tzdb-platform @ 0.1.3
-   Author: (not declared)
-   Repository: (not declared)
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
 jimp @ 1.6.0
    Author: Andrew Lisowski <lisowski54@gmail.com>
    Repository: jimp-dev/jimp
@@ -3963,15 +3969,7 @@ jimp @ 1.6.0
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-jose @ 5.9.6
-   Author: Filip Skokan <panva.ip@gmail.com>
-   Repository: panva/jose
-   Homepage: https://github.com/panva/jose
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-jose @ 6.2.3
+jose @ 5.2.3
    Author: Filip Skokan <panva.ip@gmail.com>
    Repository: panva/jose
    Homepage: https://github.com/panva/jose
@@ -4032,13 +4030,6 @@ json-schema-traverse @ 1.0.0
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-json-with-bigint @ 3.5.8
-   Author: Ivan Korolenko <iam@ivankorolenko.com>
-   Repository: https://github.com/Ivan-Korolenko/json-with-bigint
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
 json5 @ 2.2.3
    Author: Aseem Kishore <aseem.kishore@gmail.com>
    Repository: git+https://github.com/json5/json5.git
@@ -4065,13 +4056,6 @@ jsonparse @ 1.3.1
    Author: Tim Caswell <tim@creationix.com>
    Repository: http://github.com/creationix/jsonparse.git
    License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-jszip @ 3.10.1
-   Author: Stuart Knightley <stuart@stuartk.com>
-   Repository: https://github.com/Stuk/jszip.git
-   License: (MIT OR GPL-3.0-OR-LATER)
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
@@ -4206,15 +4190,7 @@ marked @ 18.0.5
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-marked @ 17.0.1
-   Author: Christopher Jeffrey
-   Repository: git://github.com/markedjs/marked.git
-   Homepage: https://marked.js.org
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-marked-katex-extension @ 5.1.9
+marked-katex-extension @ 5.1.6
    Author: Tony Brix <Tony@Brix.ninja> (https://Tony.Brix.ninja)
    Repository: git+https://github.com/UziTech/marked-katex-extension.git
    Homepage: https://github.com/UziTech/marked-katex-extension#readme
@@ -4241,13 +4217,6 @@ math-intrinsics @ 1.1.0
    Author: Jordan Harband <ljharb@gmail.com>
    Repository: git+https://github.com/es-shims/math-intrinsics.git
    Homepage: https://github.com/es-shims/math-intrinsics#readme
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-maybe-async @ 0.2.11
-   Author: (not declared)
-   Repository: (not declared)
    License: MIT
 ------------------------------------------------------------------------------
 
@@ -4543,14 +4512,6 @@ node-addon-api @ 7.1.1
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-node-addon-api @ 8.8.0
-   Author: (not declared)
-   Repository: git://github.com/nodejs/node-addon-api.git
-   Homepage: https://github.com/nodejs/node-addon-api
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
 node-domexception @ 1.0.0
    Author: Jimmy Wärting
    Repository: git+https://github.com/jimmywarting/node-domexception.git
@@ -4621,13 +4582,6 @@ nom @ 7.1.3
 
 ------------------------------------------------------------------------------
 nom @ 8.0.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-nonempty @ 0.12.0
    Author: (not declared)
    Repository: (not declared)
    License: MIT
@@ -5088,13 +5042,6 @@ process-nextick-args @ 2.0.1
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-prodash @ 31.0.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
 property-information @ 7.2.0
    Author: Titus Wormer <tituswormer@gmail.com> (https://wooorm.com)
    Repository: wooorm/property-information
@@ -5164,20 +5111,6 @@ quick-xml @ 0.41.0
    Author: (not declared)
    Repository: (not declared)
    License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-r-efi @ 5.3.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: MIT OR APACHE-2.0 OR LGPL-2.1-OR-LATER
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-r-efi @ 6.0.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: MIT OR APACHE-2.0 OR LGPL-2.1-OR-LATER
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
@@ -6577,14 +6510,6 @@ undici @ 8.4.1
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-undici @ 5.29.0
-   Author: (not declared)
-   Repository: git+https://github.com/nodejs/undici.git
-   Homepage: https://undici.nodejs.org
-   License: MIT
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
 undici-types @ 6.20.0
    Author: (not declared)
    Repository: git+https://github.com/nodejs/undici.git
@@ -7370,7 +7295,7 @@ zwitch @ 2.0.4
 ------------------------------------------------------------------------------
 
 ================================================================================
-Section: Apache-2.0 (696 packages)
+Section: Apache-2.0 (642 packages)
 ================================================================================
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -7466,15 +7391,15 @@ limitations under the License.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@ai-sdk/gateway @ 3.0.130
+@ai-sdk/gateway @ 3.0.104
    Author: (not declared)
-   Repository: https://github.com/vercel/ai
+   Repository: git+https://github.com/vercel/ai.git
    Homepage: https://ai-sdk.dev/docs
    License: Apache-2.0
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@ai-sdk/google @ 3.0.64
+@ai-sdk/google @ 3.0.63
    Author: (not declared)
    Repository: git+https://github.com/vercel/ai.git
    Homepage: https://ai-sdk.dev/docs
@@ -7514,14 +7439,6 @@ limitations under the License.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@ai-sdk/openai @ 3.0.48
-   Author: (not declared)
-   Repository: git+https://github.com/vercel/ai.git
-   Homepage: https://ai-sdk.dev/docs
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
 @ai-sdk/openai-compatible @ 2.0.41
    Author: (not declared)
    Repository: git+https://github.com/vercel/ai.git
@@ -7538,7 +7455,7 @@ limitations under the License.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@ai-sdk/openai-compatible @ 2.0.37
+@ai-sdk/perplexity @ 3.0.26
    Author: (not declared)
    Repository: git+https://github.com/vercel/ai.git
    Homepage: https://ai-sdk.dev/docs
@@ -7546,7 +7463,7 @@ limitations under the License.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@ai-sdk/perplexity @ 3.0.26
+@ai-sdk/provider @ 3.0.8
    Author: (not declared)
    Repository: git+https://github.com/vercel/ai.git
    Homepage: https://ai-sdk.dev/docs
@@ -7562,7 +7479,7 @@ limitations under the License.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@ai-sdk/provider @ 3.0.8
+@ai-sdk/provider-utils @ 4.0.23
    Author: (not declared)
    Repository: git+https://github.com/vercel/ai.git
    Homepage: https://ai-sdk.dev/docs
@@ -7573,22 +7490,6 @@ limitations under the License.
 @ai-sdk/provider-utils @ 4.0.29
    Author: (not declared)
    Repository: https://github.com/vercel/ai
-   Homepage: https://ai-sdk.dev/docs
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-@ai-sdk/provider-utils @ 4.0.23
-   Author: (not declared)
-   Repository: git+https://github.com/vercel/ai.git
-   Homepage: https://ai-sdk.dev/docs
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-@ai-sdk/provider-utils @ 4.0.21
-   Author: (not declared)
-   Repository: git+https://github.com/vercel/ai.git
    Homepage: https://ai-sdk.dev/docs
    License: Apache-2.0
 ------------------------------------------------------------------------------
@@ -7641,7 +7542,7 @@ limitations under the License.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@biomejs/cli-darwin-x64 @ 2.5.8
+@biomejs/cli-win32-x64 @ 2.5.8
    Author: (not declared)
    Repository: git+https://github.com/biomejs/biome.git
    Homepage: https://biomejs.dev
@@ -7911,7 +7812,79 @@ limitations under the License.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@tauri-apps/cli-darwin-x64 @ 2.11.4
+@tauri-apps/cli-darwin-arm64 @ 2.11.2
+   Author: (not declared)
+   Repository: git+https://github.com/tauri-apps/tauri.git
+   Homepage: https://github.com/tauri-apps/tauri#readme
+   License: Apache-2.0
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@tauri-apps/cli-darwin-x64 @ 2.11.2
+   Author: (not declared)
+   Repository: git+https://github.com/tauri-apps/tauri.git
+   Homepage: https://github.com/tauri-apps/tauri#readme
+   License: Apache-2.0
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@tauri-apps/cli-linux-arm-gnueabihf @ 2.11.2
+   Author: (not declared)
+   Repository: git+https://github.com/tauri-apps/tauri.git
+   Homepage: https://github.com/tauri-apps/tauri#readme
+   License: Apache-2.0
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@tauri-apps/cli-linux-arm64-gnu @ 2.11.2
+   Author: (not declared)
+   Repository: git+https://github.com/tauri-apps/tauri.git
+   Homepage: https://github.com/tauri-apps/tauri#readme
+   License: Apache-2.0
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@tauri-apps/cli-linux-arm64-musl @ 2.11.2
+   Author: (not declared)
+   Repository: git+https://github.com/tauri-apps/tauri.git
+   Homepage: https://github.com/tauri-apps/tauri#readme
+   License: Apache-2.0
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@tauri-apps/cli-linux-x64-gnu @ 2.11.2
+   Author: (not declared)
+   Repository: git+https://github.com/tauri-apps/tauri.git
+   Homepage: https://github.com/tauri-apps/tauri#readme
+   License: Apache-2.0
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@tauri-apps/cli-linux-x64-musl @ 2.11.2
+   Author: (not declared)
+   Repository: git+https://github.com/tauri-apps/tauri.git
+   Homepage: https://github.com/tauri-apps/tauri#readme
+   License: Apache-2.0
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@tauri-apps/cli-win32-arm64-msvc @ 2.11.2
+   Author: (not declared)
+   Repository: git+https://github.com/tauri-apps/tauri.git
+   Homepage: https://github.com/tauri-apps/tauri#readme
+   License: Apache-2.0
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@tauri-apps/cli-win32-ia32-msvc @ 2.11.2
+   Author: (not declared)
+   Repository: git+https://github.com/tauri-apps/tauri.git
+   Homepage: https://github.com/tauri-apps/tauri#readme
+   License: Apache-2.0
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+@tauri-apps/cli-win32-x64-msvc @ 2.11.4
    Author: (not declared)
    Repository: git+https://github.com/tauri-apps/tauri.git
    Homepage: https://github.com/tauri-apps/tauri#readme
@@ -8010,7 +7983,7 @@ limitations under the License.
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-@typescript/typescript-darwin-x64 @ 7.0.2
+@typescript/typescript-win32-x64 @ 7.0.2
    Author: Microsoft Corp.
    Repository: https://github.com/microsoft/TypeScript.git
    Homepage: https://www.typescriptlang.org/
@@ -8105,13 +8078,6 @@ arbitrary @ 1.4.2
 
 ------------------------------------------------------------------------------
 arboard @ 3.6.1
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-arc-swap @ 1.9.2
    Author: (not declared)
    Repository: (not declared)
    License: Apache-2.0
@@ -8253,13 +8219,6 @@ baseline-browser-mapping @ 2.10.37
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-before-after-hook @ 4.0.0
-   Author: Gregor Martynus
-   Repository: github:gr2m/before-after-hook
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
 before-after-hook @ 2.2.3
    Author: Gregor Martynus
    Repository: github:gr2m/before-after-hook
@@ -8338,7 +8297,31 @@ bun-webgpu @ 0.1.5
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
+bun-webgpu-darwin-arm64 @ 0.1.7
+   Author: SST
+   Repository: https://github.com/kommander/bun-webgpu
+   Homepage: https://github.com/kommander/bun-webgpu
+   License: Apache-2.0
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
 bun-webgpu-darwin-x64 @ 0.1.7
+   Author: SST
+   Repository: https://github.com/kommander/bun-webgpu
+   Homepage: https://github.com/kommander/bun-webgpu
+   License: Apache-2.0
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+bun-webgpu-linux-x64 @ 0.1.7
+   Author: SST
+   Repository: https://github.com/kommander/bun-webgpu
+   Homepage: https://github.com/kommander/bun-webgpu
+   License: Apache-2.0
+------------------------------------------------------------------------------
+
+------------------------------------------------------------------------------
+bun-webgpu-win32-x64 @ 0.1.7
    Author: SST
    Repository: https://github.com/kommander/bun-webgpu
    Homepage: https://github.com/kommander/bun-webgpu
@@ -8620,27 +8603,6 @@ data-url @ 0.3.2
 
 ------------------------------------------------------------------------------
 dbus @ 0.9.12
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-defmt @ 1.1.1
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-defmt-macros @ 1.1.1
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-defmt-parser @ 1.0.0
    Author: (not declared)
    Repository: (not declared)
    License: Apache-2.0
@@ -9116,335 +9078,6 @@ ghash @ 0.5.1
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-gix @ 0.84.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-actor @ 0.41.1
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-attributes @ 0.33.2
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-bitmap @ 0.3.2
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-chunk @ 0.7.2
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-command @ 0.9.1
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-commitgraph @ 0.37.1
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-config @ 0.57.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-config-value @ 0.18.1
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-date @ 0.15.6
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-diff @ 0.64.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-discover @ 0.52.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-error @ 0.2.5
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-features @ 0.48.1
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-filter @ 0.31.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-fs @ 0.21.2
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-glob @ 0.26.1
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-hash @ 0.25.1
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-hashtable @ 0.15.2
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-ignore @ 0.21.1
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-imara-diff @ 0.2.3
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-index @ 0.52.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-lock @ 23.0.1
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-object @ 0.61.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-odb @ 0.81.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-pack @ 0.71.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-packetline @ 0.21.5
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-path @ 0.12.2
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-pathspec @ 0.18.1
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-protocol @ 0.62.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-quote @ 0.7.2
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-ref @ 0.64.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-refspec @ 0.42.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-revision @ 0.46.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-revwalk @ 0.32.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-sec @ 0.14.1
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-shallow @ 0.12.1
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-submodule @ 0.31.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-tempfile @ 23.0.2
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-trace @ 0.1.20
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-transport @ 0.57.2
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-traverse @ 0.58.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-url @ 0.36.2
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-utils @ 0.3.4
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-validate @ 0.11.2
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-worktree @ 0.53.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-gix-worktree-stream @ 0.33.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
 glob @ 0.3.3
    Author: (not declared)
    Repository: (not declared)
@@ -9482,13 +9115,6 @@ half @ 2.7.1
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-hash32 @ 0.3.1
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
 hashbrown @ 0.9.1
    Author: (not declared)
    Repository: (not declared)
@@ -9517,13 +9143,6 @@ hashbrown @ 0.15.5
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-hashbrown @ 0.16.1
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
 hashbrown @ 0.17.1
    Author: (not declared)
    Repository: (not declared)
@@ -9532,13 +9151,6 @@ hashbrown @ 0.17.1
 
 ------------------------------------------------------------------------------
 hashlink @ 0.9.1
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-heapless @ 0.8.0
    Author: (not declared)
    Repository: (not declared)
    License: Apache-2.0
@@ -9826,13 +9438,6 @@ keyring @ 3.6.3
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-kstring @ 2.0.2
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
 kubernetes-types @ 1.30.0
    Author: Lyra Naeseth <lyra@naeseth.com>
    Repository: https://github.com/silverlyra/kubernetes-types
@@ -9939,13 +9544,6 @@ markup5ever_rcdom @ 0.38.0+unofficial
 
 ------------------------------------------------------------------------------
 memmap2 @ 0.5.10
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-memmap2 @ 0.9.11
    Author: (not declared)
    Repository: (not declared)
    License: Apache-2.0
@@ -10353,20 +9951,6 @@ polling @ 3.11.0
 
 ------------------------------------------------------------------------------
 polyval @ 0.6.2
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-portable-atomic @ 1.13.1
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-portable-atomic-util @ 0.2.7
    Author: (not declared)
    Repository: (not declared)
    License: Apache-2.0
@@ -10920,21 +10504,7 @@ sha1 @ 0.10.7
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-sha1-checked @ 0.10.0
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
 sha2 @ 0.10.9
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-shell-words @ 1.1.1
    Author: (not declared)
    Repository: (not declared)
    License: Apache-2.0
@@ -11020,13 +10590,6 @@ softbuffer @ 0.4.8
 
 ------------------------------------------------------------------------------
 stable_deref_trait @ 1.2.1
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-static_assertions @ 1.1.0
    Author: (not declared)
    Repository: (not declared)
    License: Apache-2.0
@@ -11590,13 +11153,6 @@ unic-ucd-version @ 0.9.0
 
 ------------------------------------------------------------------------------
 unicode_categories @ 0.1.1
-   Author: (not declared)
-   Repository: (not declared)
-   License: Apache-2.0
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-unicode-bom @ 2.0.3
    Author: (not declared)
    Repository: (not declared)
    License: Apache-2.0
@@ -13766,16 +13322,16 @@ treeverse @ 3.0.0
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-universal-user-agent @ 7.0.3
-   Author: Gregor Martynus (https://github.com/gr2m)
-   Repository: github:gr2m/universal-user-agent
+universal-user-agent @ 6.0.1
+   Author: (not declared)
+   Repository: https://github.com/gr2m/universal-user-agent.git
    License: ISC
 ------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------------
-universal-user-agent @ 6.0.1
-   Author: (not declared)
-   Repository: https://github.com/gr2m/universal-user-agent.git
+universal-user-agent @ 7.0.3
+   Author: Gregor Martynus (https://github.com/gr2m)
+   Repository: github:gr2m/universal-user-agent
    License: ISC
 ------------------------------------------------------------------------------
 
@@ -13986,7 +13542,7 @@ yallist @ 5.0.0
 ------------------------------------------------------------------------------
 
 ================================================================================
-Section: Zlib (4 packages)
+Section: Zlib (3 packages)
 ================================================================================
 
 This software is provided 'as-is', without any express or implied warranty.
@@ -14011,13 +13567,6 @@ pako @ 1.0.11
    Author: (not declared)
    Repository: nodeca/pako
    Homepage: https://github.com/nodeca/pako
-   License: Zlib
-------------------------------------------------------------------------------
-
-------------------------------------------------------------------------------
-zlib-rs @ 0.6.6
-   Author: (not declared)
-   Repository: (not declared)
    License: Zlib
 ------------------------------------------------------------------------------
 
@@ -14277,7 +13826,7 @@ webpki-roots @ 1.0.8
 Rust (Cargo) Dependencies
 ================================================================================
 
-Total Cargo crates resolved via cargo metadata: 877 packages
+Total Cargo crates resolved via cargo metadata: 804 packages
 Crates are listed above under their respective license sections (MIT / Apache-2.0 / MPL-2.0 / etc.).
 ================================================================================
 Audio Assets

@@ -220,8 +220,8 @@ This checklist is only about the service shape migration. Many of these services
 
 Still open at the service-shape level:
 
-- [ ] `SyncEvent` — `sync/index.ts` (deferred pending sync with James)
-- [ ] `Workspace` — `control-plane/workspace.ts` (deferred pending sync with James)
+- [ ] `SyncEvent` — `sync/index.ts` (deferred pending upstream coordination)
+- [ ] `Workspace` — `control-plane/workspace.ts` (deferred pending upstream coordination)
 
 ## Tool migration
 

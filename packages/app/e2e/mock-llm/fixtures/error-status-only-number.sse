@@ -1,0 +1,4 @@
+# status: 400
+# content-type: text/plain
+# body 是纯数字 "400"，覆盖 bug #11 短路场景（msg === STATUS_CODES[statusCode] 后跳过解析）
+400

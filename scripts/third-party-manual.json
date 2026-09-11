@@ -1,0 +1,54 @@
+{
+  "note": "Manual licence declarations for packages that ship without a usable `license` field. Consumed by scripts/generate-third-party-licenses.ts, which merges these OVER the value found in each package.json (so an entry here always wins). Keyed by package NAME only — version-independent, because the missing field does not come back on a version bump. Add an entry only when you can point at real evidence (the upstream LICENSE file, the repository, or the package README); put that evidence in `evidence`.",
+  "packages": [
+    {
+      "name": "@openauthjs/openauth",
+      "license": "MIT",
+      "author": "SST",
+      "repository": "https://github.com/openauthjs/openauth",
+      "evidence": "Upstream LICENSE (https://raw.githubusercontent.com/openauthjs/openauth/refs/heads/master/LICENSE) — 'MIT License / Copyright (c) 2024 SST'. The published tarball carries no license field and no LICENSE file."
+    },
+    {
+      "name": "ssh2",
+      "license": "MIT",
+      "author": "Brian White",
+      "repository": "https://github.com/mscdex/ssh2",
+      "evidence": "node_modules/ssh2/LICENSE — 'Copyright Brian White. All rights reserved. Permission is hereby granted, free of charge...' (MIT text)"
+    },
+    {
+      "name": "cpu-features",
+      "license": "MIT",
+      "author": "Brian White",
+      "repository": "https://github.com/mscdex/cpu-features",
+      "evidence": "node_modules/cpu-features/LICENSE — MIT text, 'Copyright Brian White'"
+    },
+    {
+      "name": "buildcheck",
+      "license": "MIT",
+      "author": "Brian White",
+      "repository": "https://github.com/mscdex/buildcheck",
+      "evidence": "node_modules/buildcheck/LICENSE — MIT text, 'Copyright Brian White'"
+    },
+    {
+      "name": "exif-parser",
+      "license": "MIT",
+      "author": "Bruno Windels, Daniel Leinich",
+      "repository": "https://github.com/bwindels/exif-parser",
+      "evidence": "node_modules/exif-parser/LICENSE.md — 'The MIT License ... Copyright (c) 2010 Bruno Windels, Daniel Leinich'"
+    },
+    {
+      "name": "querystring",
+      "license": "MIT",
+      "author": "Irakli Gozalishvili",
+      "repository": "https://github.com/Gozala/querystring",
+      "evidence": "node_modules/querystring/License.md — 'Copyright 2012 Irakli Gozalishvili ... Permission is hereby granted, free of charge' (MIT text)"
+    },
+    {
+      "name": "xmlhttprequest-ssl",
+      "license": "MIT",
+      "author": "passive.ly LLC",
+      "repository": "https://github.com/mjwwit/node-XMLHttpRequest",
+      "evidence": "node_modules/xmlhttprequest-ssl/LICENSE — 'Copyright (c) 2010 passive.ly LLC ... Permission is hereby granted, free of charge' (MIT text)"
+    }
+  ]
+}

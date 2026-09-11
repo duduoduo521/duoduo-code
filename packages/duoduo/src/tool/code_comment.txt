@@ -1,0 +1,11 @@
+Add an inline code review comment for a specific line in a file.
+
+Parameters:
+- filePath: The absolute path to the file to comment on
+- line: The line number in the file (1-indexed)
+- comment: The review comment describing the issue or suggestion
+- suggestion: Optional suggested fix or replacement code
+- originalLine: The original line number from the diff/hunk
+- confidence: Confidence score (0-1) for this comment
+
+Use this tool during code review to flag issues, suggest improvements, or note potential bugs at specific locations in the code. Each comment should be specific and actionable.

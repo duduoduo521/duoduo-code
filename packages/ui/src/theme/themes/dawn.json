@@ -1,0 +1,29 @@
+{
+  "$schema": "../desktop-theme.schema.json",
+  "name": "晨雾",
+  "id": "dawn",
+  "light": {
+    "palette": {
+      "neutral": "#f5f7fa",
+      "ink": "#1a1d24",
+      "primary": "#2e6be6",
+      "accent": "#7c3aed",
+      "success": "#16a34a",
+      "warning": "#e8830c",
+      "error": "#dc2626",
+      "info": "#0891b2"
+    }
+  },
+  "dark": {
+    "palette": {
+      "neutral": "#15181e",
+      "ink": "#e8eaed",
+      "primary": "#5b93f5",
+      "accent": "#a78bfa",
+      "success": "#34d399",
+      "warning": "#fbbf24",
+      "error": "#f87171",
+      "info": "#22d3ee"
+    }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  // Solution-style root tsconfig:
+  //   - `files: []` + `references: [...]` makes the root a pure dispatcher.
+  //     Running `tsc -b` from here builds every referenced package using
+  //     its OWN tsconfig (correct lib/jsx/paths/conditions per package).
+  //   - Without this, root `tsc --noEmit` would pull every .ts/.tsx through
+  //     a single (wrong) compiler option set and produce 15k+ phantom errors.
+  //   - All referenced packages MUST set `composite: true` in their tsconfig
+  //     for `tsc -b` semantics. See per-package tsconfig.json for details.
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "files": [],
+  "references": [
+    { "path": "./packages/sdk/js" },
+    { "path": "./packages/shared" },
+    { "path": "./packages/script" },
+    { "path": "./packages/plugin" },
+    { "path": "./packages/ui" },
+    { "path": "./packages/duoduo" },
+    { "path": "./packages/app" },
+    { "path": "./packages/desktop" },
+  ],
+  "exclude": ["packages/desktop/src-tauri/target/", "**/node_modules/", "**/.opencode/"],
+}

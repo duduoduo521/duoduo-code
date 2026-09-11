@@ -1,0 +1,7 @@
+# status: 200
+# 含代码块的 markdown 输出，覆盖前端 markdown / shiki 渲染
+data: {"id":"chatcmpl-mock-003","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Here is a snippet:\n\n```ts\nfunction add(a: number, b: number): number {\n  return a + b\n}\n```\n\nDone."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-003","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":15,"completion_tokens":35,"total_tokens":50}}
+
+data: [DONE]

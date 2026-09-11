@@ -1,0 +1,29 @@
+import { describe, it, expect } from "bun:test"
+import { readFileSync } from "node:fs"
+import { join, dirname } from "node:path"
+import { fileURLToPath } from "node:url"
+
+const here = dirname(fileURLToPath(import.meta.url))
+const SYSTEM_TS = join(here, "..", "src", "session", "system.ts")
+
+// The canonical code-search policy is defined ONCE in `session.ts` as
+// `SEARCH_STRATEGY_GUIDANCE` and injected into every session as a universal
+// tail directive (see the comment in system.ts: "without depending on where it
+// appears in the prompt"). Provider prompt files (src/session/prompt/*.txt) are
+// intentionally provider-specific and do NOT repeat this sentence, so a guard
+// that scanned them for it would be wrong. This guard instead protects the
+// single source of truth (system.ts) from drifting.
+describe("search-policy drift guard (system.ts source of truth)", () => {
+  const content = readFileSync(SYSTEM_TS, "utf8")
+
+  it("session.ts defines the graph_query/symbol_search-first search policy", () => {
+    expect(content).toContain("graph_query or symbol_search")
+    expect(content).toContain("brute-force text search")
+  })
+
+  it("session.ts injects the search policy as a universal directive", () => {
+    // The directive must be wired into the environment() hook so every session
+    // (including custom agent prompts and the Rust run-loop path) receives it.
+    expect(content).toMatch(/SEARCH_STRATEGY_GUIDANCE/)
+  })
+})

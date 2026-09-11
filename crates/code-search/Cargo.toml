@@ -1,0 +1,15 @@
+[package]
+name = "code-search"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "code-search crate for DuoDuo smart layer"
+
+[dependencies]
+duo-types = { workspace = true }
+unified-error = { workspace = true }
+ast-engine = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+regex = { workspace = true }
+security-design = { workspace = true }

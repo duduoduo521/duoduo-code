@@ -1,0 +1,11 @@
+[install]
+exact = true
+linker = "hoisted"
+# Canonical public registry. A third-party mirror would add an extra party to
+# the supply chain's trust chain and lags upstream metadata, and it is slower
+# for most contributors outside mainland China. Override locally (or in CI)
+# with BUN_CONFIG_REGISTRY if you need a mirror.
+registry = "https://registry.npmjs.org/"
+
+[test]
+root = "./do-not-run-tests-from-root"

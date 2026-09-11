@@ -1,0 +1,31 @@
+DuoDuo AI IDE
+Copyright (c) 2026 DuoDuo
+
+This product is based on opencode (https://github.com/anomalyco/opencode).
+Copyright (c) 2025 opencode
+Licensed under the MIT License.
+
+This product includes software developed by the open source community.
+See ThirdPartyLicenses.txt for full license information.
+
+This product includes 4 WAV sound effects from opencode (MIT License).
+
+Portions of this product are distributed under the Mozilla Public License 2.0
+(MPL-2.0). The affected components and the complete MPL-2.0 text are listed in
+ThirdPartyLicenses.txt. Source code for those components is available from
+their respective upstream distributions; for example, lightningcss is
+available at https://github.com/parcel-bundler/lightningcss
+
+This product bundles font files from Noto Sans SC (思源黑体), Copyright
+Google Inc., licensed under the SIL Open Font License 1.1. The full licence
+text is distributed alongside the fonts as
+packages/app/public/assets/fonts/OFL.txt.
+
+Some dependencies are patched at install time via Bun's `patchedDependencies`;
+the patches live in patches/ and are applied to the packages listed below. Each
+patched package remains under its own upstream licence (see
+ThirdPartyLicenses.txt):
+  - @npmcli/agent
+  - @standard-community/standard-openapi
+  - @hey-api/openapi-ts
+  - solid-js

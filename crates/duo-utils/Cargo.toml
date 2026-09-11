@@ -1,0 +1,39 @@
+[package]
+name = "duo-utils"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "duo-utils crate for DuoDuo smart layer"
+
+[features]
+default = []
+# OS-keyring backed secret storage (with an encrypted-file fallback). Off by
+# default so crates that never touch credentials do not pull in `keyring` /
+# `aes-gcm`, which are noticeably slow to build.
+secret-store = [
+    "dep:keyring",
+    "dep:aes-gcm",
+    "dep:sha2",
+    "dep:hkdf",
+    "dep:rand",
+    "dep:base64",
+    "dep:libc",
+]
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+dirs = { workspace = true }
+rusqlite = { workspace = true }
+tokio = { workspace = true }
+
+keyring = { version = "3", optional = true }
+aes-gcm = { version = "0.10", optional = true }
+sha2 = { version = "0.10", optional = true }
+hkdf = { version = "0.12", optional = true }
+rand = { version = "0.9", optional = true }
+base64 = { version = "0.22", optional = true }
+libc = { version = "0.2", optional = true }

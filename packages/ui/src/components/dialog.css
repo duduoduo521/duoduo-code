@@ -1,0 +1,415 @@
+/* [data-component="dialog-trigger"] { } */
+
+[data-component="dialog-overlay"] {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: auto;
+  /* No `backdrop-filter: blur(...)` on purpose: animating the overlay's
+     opacity (open/close fade) forces the browser to recompute the full-screen
+     blur on every frame, which drops frames and reads as "卡顿" on large
+     dialogs (e.g. the x-large Settings panel). A deeper solid scrim fades
+     cheaply on the compositor instead. */
+  background-color: hsl(from var(--background-base) h s l / 0.55);
+  will-change: opacity;
+}
+
+[data-component="dialog"] {
+  /* The horizontal safe gutter shared by the header and by every body pane.
+     Dialog body content previously hard-coded its own left/right padding
+     (commonly `pl-6 pr-2.5` = 24/10px) to make right-aligned action buttons
+     visually touch the edge — which left body *text* visibly off-centre.
+     Exposing the gutter as a token lets panes use a symmetric
+     `px-[var(--dialog-gutter)]` that lines up with the header. */
+  --dialog-gutter: 22px;
+
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+
+  [data-slot="dialog-container"] {
+    position: relative;
+    z-index: 50;
+    width: min(calc(100vw - 16px), 640px);
+    height: min(calc(100vh - 16px), 512px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-items: start;
+    overflow: visible;
+
+    /* Body owns the scroll. The previous `overflow: auto` on dialog-content made
+       the whole panel (header + body + footer) scroll together, so the title bar
+       drifted under the scrolling body content on long dialogs — especially the
+       search-with-list dialogs whose search field is the first body child and
+       visually merged into the header band as it scrolled away. We now:
+         · content is overflow:hidden → flex column with fixed bounding box
+         · header / description / footer are flex-shrink:0 → pinned
+         · dialog-body is the only scrolling region (already had overflow-y:auto,
+           flex:1, min-height:0; the body's own scrollbar is now visible) */
+    [data-slot="dialog-content"] {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      align-self: stretch;
+      width: 100%;
+      max-height: 100%;
+      min-height: 0;
+      overflow: hidden;
+      pointer-events: auto;
+      position: relative;
+
+      /* Promote the panel to its own compositor layer so the open/close
+         scale+opacity animation runs on the GPU instead of triggering a
+         full repaint of the (potentially huge) dialog subtree each frame. */
+      will-change: transform, opacity;
+
+      border-radius: var(--radius-2xl);
+      border: 1px solid var(--border-weak-base);
+      background: var(--surface-raised-stronger-non-alpha);
+      background-clip: padding-box;
+      box-shadow: var(--shadow-lg-border-base);
+
+      /* Header-less dialogs (e.g. provider-connect / custom-provider) render
+         only a floating close button and no title bar, so the body content
+         would otherwise stick to the very top edge. Replicate the header's
+         top padding so the first line of content has breathing room — without
+         reintroducing an empty Kobalte.Title (which previously caused a
+         focus-event recursion: Kobalte auto-focused the title, the global
+         focusin handler closed the popover, which re-focused, looping until
+         "Maximum call stack size exceeded"). */
+      &[data-no-header] {
+        padding-top: 4px;
+      }
+
+      [data-slot="dialog-header"] {
+        display: flex;
+        /* Slightly roomier top/bottom padding (was 18/14) so the title visibly
+           hangs in its own band, separated from the body by a hairline.
+           Horizontal padding now comes from --dialog-gutter so body panes can
+           align to the exact same edge as the title. */
+        padding: 20px var(--dialog-gutter) 16px;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-shrink: 0;
+        align-self: stretch;
+        background: var(--surface-raised-stronger-non-alpha);
+
+        /* Hairline that separates the always-pinned header from the scrolling
+           body. Constant visibility (not just on scroll) keeps the header
+           visually distinct from a body whose first row happens to be a
+           search input — the user-reported "search field merges into the
+           title band" no longer happens because the title bar carries an
+           opaque background PLUS a hairline at all times. */
+        border-bottom: 1px solid var(--border-weak-base);
+
+        [data-slot="dialog-title"] {
+          color: var(--text-strong);
+          font-family: var(--font-family-sans);
+          /* Bumped from 16 → 18 (x-large = var(--font-size-large)) for a more
+             confident title bar; tag weight stays semibold and tracking
+             tightens further for the "现代偏松" feel specified in
+             前端样式修改.md §3.1. */
+          font-size: var(--font-size-large);
+          font-style: normal;
+          font-weight: var(--font-weight-semibold);
+          line-height: 1.35;
+          letter-spacing: var(--letter-spacing-tight);
+        }
+        /* [data-slot="dialog-close-button"] {} */
+      }
+
+      /* Always push the action/close cluster to the right edge, even when the
+         header has no title (single child). */
+      [data-slot="dialog-actions"] {
+        margin-left: auto;
+      }
+
+      /* Floating close button for header-less dialogs: pinned to the top-right
+         corner of the panel so it never creates an empty white title bar. */
+      [data-slot="dialog-close-floating"] {
+        position: absolute;
+        top: 14px;
+        right: 14px;
+        z-index: 2;
+      }
+
+      /* The search palette dialog is header-less, so by default it renders the
+         floating (absolutely-positioned) close button pinned to the top-right
+         corner — which collides with the search field's clear button. Remove
+         the absolute positioning here and let the close button occupy normal
+         document flow as its own right-aligned row above the search input, so
+         the two can never overlap.
+         NOTE: must use `&.command-palette-dialog` — we are already inside the
+         [data-slot="dialog-content"] nesting block, so repeating the full
+         selector would compound to "dialog-content inside dialog-content"
+         and never match (this was the original bug: the fix never applied). */
+      &.command-palette-dialog {
+        .command-palette-dialog-close-row {
+          display: flex;
+          /* The dialog-content parent uses `align-items: flex-start`, which
+             shrinks this row to its content width (just the button) and pins
+             it to the left. Give the row 90% width and center it horizontally
+             so it isn't glued to the right edge, then push the button to the
+             right of that 90% row. */
+          align-self: center;
+          width: 95%;
+          margin-bottom: 5px;
+          justify-content: flex-end;
+        }
+        [data-slot="dialog-close-floating"] {
+          position: static;
+          top: auto;
+          right: auto;
+        }
+        [data-slot="list-search-wrapper"] {
+          padding-right: 0;
+        }
+      }
+
+      [data-slot="dialog-description"] {
+        display: flex;
+        padding: 0 var(--dialog-gutter) 16px;
+        margin-top: -6px;
+        justify-content: space-between;
+        align-items: center;
+        flex-shrink: 0;
+        align-self: stretch;
+
+        color: var(--text-base);
+
+        /* text-13-regular — slightly smaller than body text so it reads as
+           secondary, not as another body paragraph. */
+        font-family: var(--font-family-sans);
+        font-size: 13px;
+        font-style: normal;
+        font-weight: var(--font-weight-regular);
+        line-height: 1.55;
+        letter-spacing: var(--letter-spacing-normal);
+      }
+
+      [data-slot="dialog-body"] {
+        width: 100%;
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        /* Allow the body to shrink inside the flex column (min-height:0) and
+           scroll its own content. Without this, tall dialogs (e.g. the edit
+           project dialog) clip their footer buttons behind `overflow:hidden`
+           and the user can never reach the Save/Cancel actions. */
+        min-height: 0;
+        overflow-y: auto;
+        /* The body is now the dialog's only scroll viewport. Children that need
+           their own scroll area (e.g. Tabs.Content, inner lists) already set
+           their own overflow-y:auto, so they continue to work — body's scroll
+           only kicks in for the simple "children bigger than the available
+           space" case that previously made the whole panel scroll. */
+        scrollbar-gutter: stable;
+        /* A thin, modern scrollbar in the auto-appearing style. Replaces the
+           previous `display:none` on content which forced users to guess the
+           scroll position. Color tracks border tokens so it stays
+           theme-neutral. */
+        scrollbar-width: thin;
+        scrollbar-color: var(--border-weak-base) transparent;
+        &::-webkit-scrollbar {
+          width: 8px;
+          height: 8px;
+          display: block;
+        }
+        &::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        &::-webkit-scrollbar-thumb {
+          background-color: var(--border-weak-base);
+          border-radius: 999px;
+          border: 2px solid transparent;
+          background-clip: padding-box;
+          transition: background-color var(--duration-base) var(--ease-out);
+        }
+        &::-webkit-scrollbar-thumb:hover {
+          background-color: var(--border-strong-base);
+          background-clip: padding-box;
+        }
+        &::-webkit-scrollbar-corner {
+          background: transparent;
+        }
+
+        &:focus-visible {
+          outline: none;
+        }
+      }
+
+      /* Footer is rendered OUTSIDE dialog-body so it never scrolls with (or gets
+         clipped by) the body's overflow. Pinned to the bottom of the dialog via
+         flex-shrink:0 in the column layout. The line above its top edge visually
+         separates it from a scrolling body without forcing every footer author
+         to write their own `border-t border-border-base` (as dialog-remote-directory
+         does today). Children that bring their own border/padding still work. */
+      [data-slot="dialog-footer"] {
+        display: flex;
+        flex-shrink: 0;
+        align-self: stretch;
+        background: var(--surface-raised-stronger-non-alpha);
+        /* The dialog-footer has a subtle hairline + a "fade" gradient at its
+           top edge so the bottom row of body content visually anchors to the
+           footer rather than overlapping it (the user previously reported
+           exactly this overlap when content was long). The hairline is more
+           reliable than `border-top` alone because content with overflow
+           can't poke through a positioned pseudo-element the way it can a
+           normal border. */
+        position: relative;
+        &::before {
+          content: "";
+          position: absolute;
+          left: 0;
+          right: 0;
+          top: -1px;
+          height: 1px;
+          background: var(--border-weak-base);
+          opacity: 0.7;
+        }
+
+        &:focus-visible {
+          outline: none;
+        }
+      }
+      &:focus-visible {
+        outline: none;
+      }
+    }
+  }
+
+  &[data-fit] {
+    [data-slot="dialog-container"] {
+      /* Default container is pinned to a fixed width (min(100vw-16px, 640px)).
+         In fit mode the dialog must size to its content instead of leaving huge
+         empty horizontal space for short messages (e.g. the "no records to
+         delete" cleanup dialog). */
+      width: auto;
+      max-width: min(calc(100vw - 32px), 560px);
+      height: auto;
+      min-height: 0;
+
+      [data-slot="dialog-content"] {
+        /* Override the default `align-self: stretch` + `width: 100%` so the
+           panel shrinks to its content width rather than filling the container. */
+        align-self: flex-start;
+        width: auto;
+        min-width: 320px;
+        min-height: 0;
+      }
+    }
+  }
+
+  /* Only non-fit dialogs get the minimum body height. Fit dialogs (e.g. the
+     "no records to delete" cleanup confirmation) must shrink to their content
+     on both axes, so they must never inherit the default 280px min-height.
+     Use a direct child combinator so the rule does not leak into nested
+     dialogs (e.g. a confirmation dialog opened inside an x-large panel). */
+  &:not([data-fit]) > [data-slot="dialog-container"] > [data-slot="dialog-content"] {
+    min-height: 280px;
+  }
+
+  &[data-size="large"] > [data-slot="dialog-container"] {
+    width: min(calc(100vw - 32px), 800px);
+    height: min(calc(100vh - 32px), 600px);
+  }
+
+  &[data-size="x-large"] > [data-slot="dialog-container"] {
+    width: min(calc(100vw - 32px), 960px);
+    /* Fixed height: the dialog must NOT grow/shrink with the active tab's
+       content (e.g. switching between a short and a long settings panel would
+       otherwise make the whole window change height). Pin to 760px and only
+       fall back to the viewport when it is genuinely too short to fit. */
+    height: 760px;
+    max-height: calc(100vh - 32px);
+  }
+
+  /* For the fixed-height sizes (large / x-large) the dialog box must NOT grow
+     or shrink with its content. The default [data-slot="dialog-content"] is
+    height:auto (only max-height/min-height constrained), which makes the whole
+    dialog follow the tab content height. Pin the content to the container's
+    fixed height instead and let the inner body/tabs scroll. overflow:hidden
+    here (not auto) is intentional: the content itself must never scroll, only
+    its descendants (dialog-body / tabs-content) do.
+
+    NOTE: the content lives at `dialog > container > content`, i.e. it is an
+    INDIRECT child of [data-component="dialog"]. A bare `> [data-slot="dialog-content"]`
+    would never match (it only targeted direct children), so the fixed-height
+    pinning silently failed and the panel collapsed to the active tab's
+    natural height. Target the container's direct child instead. */
+  &[data-size="large"] > [data-slot="dialog-container"] > [data-slot="dialog-content"],
+  &[data-size="x-large"] > [data-slot="dialog-container"] > [data-slot="dialog-content"] {
+    height: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  /* For the fixed-height sizes (large / x-large) the dialog-content is pinned to
+     a fixed height with overflow:hidden (above), so the body must NOT also be a
+     scrolling container — otherwise the inner content (e.g. the remote-directory
+     browser's footer) gets pushed below the fold inside dialog-body's own scroll
+     area while the intended inner list scroll (overflow-y:auto) never engages.
+     Let the body fill the content height and defer scrolling to the component's
+     own inner regions (e.g. a flex-1 overflow-y-auto list). normal size keeps its
+     auto scroll as a fallback for short, content-sized dialogs. */
+  &[data-size="large"] [data-slot="dialog-body"],
+  &[data-size="x-large"] [data-slot="dialog-body"] {
+    overflow: hidden;
+  }
+}
+
+[data-component="dialog"][data-transition] [data-slot="dialog-content"] {
+  animation: contentHide var(--duration-fast) var(--ease-out) forwards;
+
+  &[data-expanded] {
+    animation: contentShow 220ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+  }
+}
+
+/* The overlay appears instantly at its full scrim opacity instead of fading
+  in from opacity:0. Fading the overlay from 0 left a transparent first frame
+  right after the previous popover closed and before the new modal mounted —
+  during that frame the (light) underlying page showed through, reading as a
+  full-screen white flash when opening provider-connect / similar dialogs.
+  The panel content keeps its scale+opacity entrance animation for polish. */
+[data-component="dialog"][data-transition] [data-component="dialog-overlay"] {
+  animation: overlayShow 220ms var(--ease-out, cubic-bezier(0.16, 1, 0.3, 1));
+}
+
+@keyframes overlayShow {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes contentShow {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+@keyframes contentHide {
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.98) translateY(3px);
+  }
+}

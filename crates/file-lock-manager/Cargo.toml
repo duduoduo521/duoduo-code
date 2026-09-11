@@ -1,0 +1,16 @@
+[package]
+name = "file-lock-manager"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "File-level intent lock manager for multi-agent coordination"
+
+[dependencies]
+duo-types = { workspace = true }
+blackboard-store = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }

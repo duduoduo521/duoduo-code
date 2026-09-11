@@ -1,0 +1,40 @@
+[data-component="tag"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+
+  /* radius-xs per the design doc ("标签 / 徽章"). At radius-sm (6px) an 18px
+     tag was 33% corner radius — it read as a pill, so tags competed with
+     buttons and checkboxes for visual weight in dense rows. */
+  border-radius: var(--radius-xs);
+  border: 0.5px solid var(--border-weak-base);
+  background: var(--surface-raised-base);
+  color: var(--text-base);
+
+  &[data-size="normal"] {
+    height: 18px;
+    padding: 0 6px;
+
+    /* text-11-medium */
+    font-family: var(--font-family-sans);
+    font-size: 12px;
+    font-style: normal;
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-large);
+    letter-spacing: var(--letter-spacing-normal);
+  }
+
+  &[data-size="large"] {
+    height: 22px;
+    padding: 0 8px;
+
+    /* text-14-medium */
+    font-family: var(--font-family-sans);
+    font-size: 14px;
+    font-style: normal;
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-large); /* 142.857% */
+    letter-spacing: var(--letter-spacing-normal);
+  }
+}

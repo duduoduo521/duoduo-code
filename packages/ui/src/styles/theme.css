@@ -1,0 +1,770 @@
+:root {
+  /* ─── Typography ───
+     UI face: native system sans (SF Pro on macOS, Segoe UI on Windows)
+     with CJK fallbacks tuned for mixed-script rendering.
+     Code face: JetBrains Mono (bundled) with ligatures enabled. */
+  --font-family-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI",
+    system-ui, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei",
+    "Noto Sans SC", sans-serif;
+  --font-family-sans--font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+  --font-family-mono:
+    "JetBrainsMono Nerd Font Mono", "JetBrains Mono", ui-monospace, "SF Mono", SFMono-Regular,
+    Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-family-mono--font-feature-settings: "liga" 1, "calt" 1, "zero" 1;
+
+  --font-size-caption: 12px;
+  --font-size-small: 13px;
+  --font-size-base: 14px;
+  --font-size-title: 16px;
+  --font-size-large: 18px;
+  --font-size-x-large: 22px;
+  --font-size-display: 28px;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  /* Unitless on purpose. A percentage line-height resolves to an absolute px
+     length on the declaring element and *that fixed value* is then inherited —
+     so a 20px heading nested in 14px body text kept the body's 18px line box
+     and the heading crushed against its neighbour. */
+  --line-height-normal: 1.5;
+  --line-height-large: 1.6;
+  --line-height-x-large: 1.75;
+  --line-height-2x-large: 2;
+  --letter-spacing-normal: 0;
+  --letter-spacing-tight: -0.1599999964237213;
+  --letter-spacing-tightest: -0.3199999928474426;
+  --paragraph-spacing-base: 0;
+
+  /* ─── Motion ─── */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.44, 1);
+  --duration-fast: 120ms;
+  --duration-base: 160ms;
+  --duration-medium: 200ms; /* the most common transition length in the UI */
+  --duration-slow: 240ms;
+
+  --spacing: 0.25rem;
+
+  /* Control heights — the roomier modern scale. Defined as tokens so the
+     component stylesheets can stop hard-coding 24/28/32px in ~53 places.
+
+     DENSITY TIERS — pick a tier by how often the user *consumes information*
+     in that region, not by aesthetics. "偏松" is the canvas character of this
+     product, but it must not be applied globally: an IDE has high-density
+     work surfaces where extra breathing room costs real screen real estate.
+
+       compact      24 / 28   file tree, message stream, list rows, chips
+       cozy         28 / 32   sidebars, panel headers, navigation
+       comfortable  32 / 40   settings, dialogs, forms — low-frequency surfaces
+
+     The tiers already exist in practice (file tree uses 24, settings uses
+     32/40); this comment exists so a future change does not "unify" them into
+     a single value and quietly cost three lines of code per screen. */
+    --control-height-xs: 24px; /* dense rows: message rows, file chips */
+    --control-height-sm: 28px;
+    --control-height-md: 32px;
+    --control-height-lg: 40px;
+    --control-height-xl: 48px;
+
+  /* Icon sizes — a separate scale from control heights. Icons sit inside
+     controls, so the two must not be conflated. */
+  --icon-size-sm: 16px;
+  --icon-size-md: 20px;
+  --icon-size-lg: 24px;
+
+  /* Attachment thumbnails in the message timeline. Not a control height —
+     it is a media preview size, so it scales independently. */
+  --attachment-thumb-size: 48px;
+
+  /* Keyboard focus ring. ~30 component rules suppress the native outline with
+     `outline: none`, and several of those signal focus with a background shift
+     alone — invisible to keyboard users. These tokens give them a shared ring. */
+  --focus-ring-width: 2px;
+  --focus-ring-color: var(--border-selected);
+  --focus-ring-offset: 2px;
+
+  --breakpoint-sm: 40rem;
+  --breakpoint-md: 48rem;
+  --breakpoint-lg: 64rem;
+  --breakpoint-xl: 80rem;
+  --breakpoint-2xl: 96rem;
+
+  --container-3xs: 16rem;
+  --container-2xs: 18rem;
+  --container-xs: 20rem;
+  --container-sm: 24rem;
+  --container-md: 28rem;
+  --container-lg: 32rem;
+  --container-xl: 36rem;
+  --container-2xl: 42rem;
+  --container-3xl: 48rem;
+  --container-4xl: 56rem;
+  --container-5xl: 64rem;
+  --container-6xl: 72rem;
+  --container-7xl: 80rem;
+
+  /* Radii step up in a single scale so nested surfaces always read as nested:
+     a card inside a panel inside a dialog keeps a consistent optical inset. */
+  --radius-xs: 0.25rem; /* 4px  — tags, badges */
+  --radius-sm: 0.375rem; /* 6px  — small controls, inputs */
+  --radius-md: 0.5rem; /* 8px  — buttons (default) */
+  --radius-lg: 0.625rem; /* 10px — cards */
+  --radius-xl: 0.75rem; /* 12px — panels */
+  --radius-2xl: 1rem; /* 16px — dialogs, popovers */
+
+  /* Shadows: two short-range layers. The previous 3–5 layer stacks carried
+     long diffusion tails (up to 36px/80px) that read as muddy grey haze on a
+     desktop canvas and cost far more to repaint on every hover. */
+  --shadow-xs: 0 1px 2px light-dark(hsl(0 0% 0% / 0.04), hsl(0 0% 0% / 0.4));
+  --shadow-md:
+    0 4px 12px -2px light-dark(hsl(0 0% 0% / 0.08), hsl(0 0% 0% / 0.45)),
+    0 1px 3px light-dark(hsl(0 0% 0% / 0.04), hsl(0 0% 0% / 0.3));
+  --shadow-lg:
+    0 16px 40px -12px light-dark(hsl(0 0% 0% / 0.18), hsl(0 0% 0% / 0.55)),
+    0 4px 12px -4px light-dark(hsl(0 0% 0% / 0.1), hsl(0 0% 0% / 0.4));
+
+  /* ─── Light: one overhead source for the whole UI ───
+     Elevation used to be expressed only as "how dark is the drop shadow",
+     which leaves surfaces reading as flat areas with a decorative blur
+     under them. Instead we assume a single light source above the interface
+     and light every raised surface accordingly: a lit top edge (facing the
+     light) and a faint shaded bottom edge (turned away from it).
+
+     `light-dark()` keeps one declaration for both schemes. In light mode the
+     lit edge is near-white — almost invisible against a white surface, but
+     it is what turns a painted 1px border into an edge that looks lit, which
+     is the whole point. */
+  /* Static fallbacks first. WebKitGTK (Linux) does not support light-dark()
+     or relative colour syntax — see the compatibility note in
+     diff-engine/styles.css. That matters here because these tokens are
+     composed INTO other box-shadows (`box-shadow: X, var(--light-raised)`):
+     if the var resolves to nothing the whole box-shadow declaration is
+     invalid, and the element loses X as well. A guaranteed-valid static value
+     keeps the composite shadow intact; engines that do support light-dark()
+     take the precise value on the next line. */
+  --light-lit-edge: inset 0 1px 0 0 rgba(255, 255, 255, 0.5);
+  --light-shaded-edge: inset 0 -1px 0 0 rgba(0, 0, 0, 0.1);
+  --light-lit-edge: inset 0 1px 0 0 light-dark(rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.06));
+  --light-shaded-edge: inset 0 -1px 0 0 light-dark(rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.28));
+  /* Compose after any drop shadow, e.g. `box-shadow: var(--shadow-md), var(--light-raised);` */
+  --light-raised: var(--light-lit-edge), var(--light-shaded-edge);
+
+  /* Sunken surfaces (inputs, wells, inset regions) are lit the OPPOSITE way:
+     light falls into the recess, so the upper inner wall is shadowed while
+     the lower inner wall catches it. Getting this backwards is what makes an
+     input look like a raised slab with a border drawn on it. */
+  /* Same static-fallback pattern as the raised pair above, for the same
+     reason: these get composed into other box-shadows. */
+  --light-inset-top: inset 0 1px 0 0 rgba(0, 0, 0, 0.12);
+  --light-inset-bottom: inset 0 -1px 0 0 rgba(255, 255, 255, 0.4);
+  --light-inset-top: inset 0 1px 0 0 light-dark(rgba(0, 0, 0, 0.06), rgba(0, 0, 0, 0.3));
+  --light-inset-bottom: inset 0 -1px 0 0 light-dark(rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.05));
+  --light-sunken: var(--light-inset-top), var(--light-inset-bottom);
+
+  /* Focus is not only ringed, it is lit: a faint halo that reads as a beam
+     landing on the control. Kept separate from the 2px outline below so the
+     accessible focus indicator is never the thing we removed. */
+  --light-focus-glow: 0 0 0 4px light-dark(rgba(22, 99, 254, 0.1), rgba(90, 150, 255, 0.16));
+
+  /* Streaming / in-progress breathing. Deliberately slow and faint — under
+     ~2s it reads as blinking, above ~0.15 alpha it reads as a glowing box. */
+  --light-breathe: light-dark(rgba(22, 99, 254, 0.09), rgba(120, 170, 255, 0.13));
+
+  /* Scroll edges. Content scrolling out of view should read as receding into
+     haze rather than being cut off by an invisible line — the edge glow is
+     what makes a masked fade look like depth instead of a clipping bug. */
+  --light-edge-glow: rgba(255, 255, 255, 0.5);
+  --light-edge-glow: light-dark(rgba(255, 255, 255, 0.85), rgba(130, 165, 235, 0.1));
+
+  /* Ember: recency as leftover warmth. Amber rather than the brand blue —
+     recent work should feel warm (just-used), not merely highlighted.
+     Decays to nothing over ~24h (the curve lives in home.tsx).
+
+     Stored as a full colour, not bare channels: light-dark() requires both
+     of its arguments to be valid <color> values, so `light-dark(180 83 9,
+     …)` silently fails to parse and the caller's gradient is dropped. Callers
+     scale the alpha with the relative-colour syntax already used elsewhere in
+     the codebase, e.g. `rgb(from var(--light-ember) r g b / <a>)`. */
+  --light-ember: rgb(180 83 9);
+  --light-ember: light-dark(rgb(180 83 9), rgb(251 191 36));
+
+  /* Editor recess — by far the faintest step in the scale, and deliberately
+     so. The code surface is stared at for hours; anything more than a hint
+     becomes visible fatigue. Top edge only: the bottom of the editor abuts
+     the terminal/status panel, whose own lit top edge would fight a second
+     highlight on the same seam. */
+  --light-editor-recess: inset 0 2px 4px -3px rgba(0, 0, 0, 0.04);
+  --light-editor-recess: inset 0 2px 4px -3px light-dark(rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.35));
+
+  /* Border-shadows: the 1px ring is the border, the rest is a single soft
+     lift. Selection/focus rings are kept — they carry meaning. */
+  --shadow-xxs-border: 0 0 0 0.5px var(--border-weak-base, rgba(0, 0, 0, 0.07));
+  --shadow-xs-border:
+    0 0 0 1px var(--border-base, rgba(11, 6, 0, 0.2)), 0 1px 2px -1px rgba(19, 16, 16, 0.05);
+  --shadow-xs-border-base:
+    0 0 0 1px var(--border-weak-base, rgba(17, 0, 0, 0.12)), 0 1px 2px -1px rgba(19, 16, 16, 0.05);
+  --shadow-xs-border-select:
+    0 0 0 3px var(--border-weak-selected, rgba(0, 102, 255, 0.22)),
+    0 0 0 1px var(--border-selected, rgba(0, 102, 255, 0.95));
+  --shadow-xs-border-focus:
+    0 0 0 1px var(--border-base, rgba(11, 6, 0, 0.2)), 0 0 0 2px var(--background-weak, #f1f0f0),
+    0 0 0 3px var(--border-selected, rgba(0, 102, 255, 0.95));
+  --shadow-xs-border-hover:
+    0 0 0 1px var(--border-weak-selected, rgba(0, 102, 255, 0.2)), 0 1px 2px -1px rgba(19, 16, 16, 0.05);
+  --shadow-xs-border-critical-base: 0 0 0 1px var(--border-critical-selected, #fc543a);
+  --shadow-xs-border-critical-focus:
+    0 0 0 3px var(--border-critical-weak, rgba(251, 34, 0, 0.18)),
+    0 0 0 1px var(--border-critical-selected, #fc543a);
+  /* Floating surfaces (dialogs, popovers). The lit edge now comes from
+     --light-raised instead of being hard-coded here, so floating surfaces are
+     lit by the same overhead source as everything else — and they gain the
+     shaded bottom edge this token never had.
+
+     Baking it in rather than asking each caller to append it is deliberate:
+     7 call sites reference this token and most of them do it through a
+     Tailwind arbitrary value (`shadow-[var(--shadow-lg-border-base)]`),
+     where appending a second comma-separated shadow is fragile. One edit
+     here lights all of them consistently. */
+  --shadow-lg-border-base:
+    0 0 0 1px var(--border-weak-base, rgba(0, 0, 0, 0.07)),
+    var(--light-raised),
+    0 16px 40px -12px rgba(0, 0, 0, 0.18), 0 4px 12px -4px rgba(0, 0, 0, 0.1);
+
+
+  color-scheme: light;
+  --text-mix-blend-mode: multiply;
+
+  /* GENERATED-COLOR-BLOCK-START
+     晨雾 (dawn) — light. Source: themes/dawn.json via resolve.ts.
+     Do not edit by hand — run `bun run gen-theme-fallback.ts` instead. */
+  --background-base: #f6f8fb;
+  --background-weak: #ebeef1;
+  --background-strong: #f6f8fb;
+  --background-stronger: #fcfcfc;
+  --surface-base: rgba(32, 35, 42, 0.05);
+  --base: rgba(32, 35, 42, 0.05);
+  --surface-base-hover: rgba(32, 35, 42, 0.085);
+  --surface-base-active: rgba(32, 35, 42, 0.085);
+  --surface-base-interactive-active: rgba(236, 243, 254, 0.3);
+  --base2: rgba(32, 35, 42, 0.05);
+  --base3: rgba(32, 35, 42, 0.05);
+  --surface-inset-base: rgba(32, 35, 42, 0.05);
+  --surface-inset-base-hover: rgba(32, 35, 42, 0.085);
+  --surface-inset-strong: rgba(229, 231, 235, 0.09);
+  --surface-inset-strong-hover: rgba(229, 231, 235, 0.09);
+  --surface-raised-base: rgba(32, 35, 42, 0.03);
+  --surface-float-base: #20232a;
+  --surface-float-base-hover: #3d4047;
+  --surface-raised-base-hover: rgba(32, 35, 42, 0.05);
+  --surface-raised-base-active: rgba(32, 35, 42, 0.085);
+  --surface-raised-strong: #f6f8fb;
+  --surface-raised-strong-hover: #ffffff;
+  --surface-raised-stronger: #ffffff;
+  --surface-raised-stronger-hover: #ffffff;
+  --surface-weak: rgba(32, 35, 42, 0.085);
+  --surface-weaker: rgba(32, 35, 42, 0.13);
+  --surface-strong: #ffffff;
+  --surface-raised-stronger-non-alpha: #ffffff;
+  --surface-brand-base: #1663fe;
+  --surface-brand-hover: #145be8;
+  --surface-interactive-base: #d1e1fd;
+  --surface-interactive-hover: #bed4fc;
+  --surface-interactive-weak: #e0eafd;
+  --surface-interactive-weak-hover: #d1e1fd;
+  --surface-success-base: #98faac;
+  --surface-success-weak: #b9fec4;
+  --surface-success-strong: #0f7433;
+  --surface-warning-base: #fed8b9;
+  --surface-warning-weak: #fee4d1;
+  --surface-warning-strong: #8e4e03;
+  --surface-critical-base: #fdd5d0;
+  --surface-critical-weak: #fee3df;
+  --surface-critical-strong: #b21a1b;
+  --surface-info-base: #b4eafd;
+  --surface-info-weak: #cef1fd;
+  --surface-info-strong: #106b83;
+  --surface-diff-unchanged-base: #ffffff00;
+  --surface-diff-skip-base: #f0f3f6;
+  --surface-diff-hidden-base: #e6ebf4;
+  --surface-diff-hidden-weak: #ebeff7;
+  --surface-diff-hidden-weaker: #e0e7f2;
+  --surface-diff-hidden-strong: #d6deee;
+  --surface-diff-hidden-stronger: #c5d1e7;
+  --surface-diff-add-base: #e0fbe3;
+  --surface-diff-add-weak: #f0fef1;
+  --surface-diff-add-weaker: #f8fff9;
+  --surface-diff-add-strong: #bdefc4;
+  --surface-diff-add-stronger: #7ec78b;
+  --surface-diff-delete-base: #feeeec;
+  --surface-diff-delete-weak: #fff7f6;
+  --surface-diff-delete-weaker: #fffcfb;
+  --surface-diff-delete-strong: #fec2ba;
+  --surface-diff-delete-stronger: #ec5a4f;
+  --input-base: #f6f8fb;
+  --input-hover: #f0f3f6;
+  --input-active: #fcfdff;
+  --input-selected: #e0eafd;
+  --input-focus: #fcfdff;
+  --input-disabled: #e5e7eb;
+  --text-base: #171a21;
+  --text-weak: #5c5f65;
+  --text-weaker: #888b91;
+  --text-strong: #080b11;
+  --text-invert-base: #f0f3f6;
+  --text-invert-weak: #ebeef1;
+  --text-invert-weaker: #e5e7eb;
+  --text-invert-strong: #f6f8fb;
+  --text-interactive-base: #145be8;
+  --text-on-brand-base: #ffffff;
+  --text-on-interactive-base: #000000;
+  --text-on-interactive-weak: #000000;
+  --text-on-success-base: #000000;
+  --text-on-critical-base: #000000;
+  --text-on-critical-weak: #000000;
+  --text-on-critical-strong: #ffffff;
+  --text-on-warning-base: #000000;
+  --text-on-info-base: #000000;
+  --text-diff-add-base: #2a713c;
+  --text-diff-delete-base: #e24b42;
+  --text-diff-delete-strong: #4f0204;
+  --text-diff-add-strong: #023010;
+  --text-on-info-weak: #000000;
+  --text-on-info-strong: #ffffff;
+  --text-on-warning-weak: #000000;
+  --text-on-warning-strong: #ffffff;
+  --text-on-success-weak: #000000;
+  --text-on-success-strong: #ffffff;
+  --text-on-brand-weak: #ffffff;
+  --text-on-brand-weaker: #ffffff;
+  --text-on-brand-strong: #ffffff;
+  --button-primary-base: #20232a;
+  --button-secondary-base: #f6f8fb;
+  --button-secondary-hover: #f0f3f6;
+  --button-ghost-hover: rgba(32, 35, 42, 0.05);
+  --button-ghost-hover2: rgba(32, 35, 42, 0.085);
+  --border-base: #c0c3c7;
+  --border-hover: #b3b5ba;
+  --border-active: #a6a8ad;
+  --border-selected: rgba(22, 99, 254, 0.99);
+  --border-disabled: #c9cbcf;
+  --border-focus: #a6a8ad;
+  --border-weak-base: #dbdde0;
+  --border-strong-base: #a6a8ad;
+  --border-strong-hover: #999ba0;
+  --border-strong-active: #8c8e93;
+  --border-strong-selected: rgba(190, 212, 252, 0.6);
+  --border-strong-disabled: #d2d4d8;
+  --border-strong-focus: #8c8e93;
+  --border-weak-hover: #ced0d3;
+  --border-weak-active: #c0c3c7;
+  --border-weak-selected: rgba(209, 225, 253, 0.5);
+  --border-weak-disabled: #dfe1e5;
+  --border-weak-focus: #c0c3c7;
+  --border-weaker-base: #e4e6e9;
+  --border-subtle: #dbdde0;
+  --border-interactive-base: #a1c2fd;
+  --border-interactive-hover: #81aaf8;
+  --border-interactive-active: #1663fe;
+  --border-interactive-selected: #1663fe;
+  --border-interactive-disabled: #adb0b5;
+  --border-interactive-focus: #1663fe;
+  --border-success-base: #58e17c;
+  --border-success-hover: #26cb60;
+  --border-success-selected: #1ba34b;
+  --border-warning-base: #feac67;
+  --border-warning-hover: #f78c11;
+  --border-warning-selected: #e78313;
+  --border-critical-base: #fba89e;
+  --border-critical-hover: #fa8376;
+  --border-critical-selected: #db2928;
+  --border-info-base: #58d2f8;
+  --border-info-hover: #28bce4;
+  --border-info-selected: #0f91b1;
+  --border-color: #ffffff;
+  --icon-base: #5c5f65;
+  --icon-hover: #171a21;
+  --icon-active: #080b11;
+  --icon-selected: #080b11;
+  --icon-disabled: #adb0b5;
+  --icon-focus: #080b11;
+  --icon-invert-base: #ffffff;
+  --icon-weak-base: #c2c5c9;
+  --icon-weak-hover: #adb0b5;
+  --icon-weak-active: #8e9196;
+  --icon-weak-selected: #666a70;
+  --icon-weak-disabled: #d2d4d8;
+  --icon-weak-focus: #8e9196;
+  --icon-strong-base: #20232a;
+  --icon-strong-hover: #151313;
+  --icon-strong-active: #020202;
+  --icon-strong-selected: #020202;
+  --icon-strong-disabled: #adb0b5;
+  --icon-strong-focus: #020202;
+  --icon-brand-base: #20232a;
+  --icon-interactive-base: #1663fe;
+  --icon-success-base: #58e17c;
+  --icon-success-hover: #1c9646;
+  --icon-success-active: #0f7433;
+  --icon-warning-base: #fea88e;
+  --icon-warning-hover: #ce4c1f;
+  --icon-warning-active: #a23914;
+  --icon-critical-base: #d10315;
+  --icon-critical-hover: #d10315;
+  --icon-critical-active: #b21a1b;
+  --icon-info-base: #58d2f8;
+  --icon-info-hover: #28bce4;
+  --icon-info-active: #106b83;
+  --icon-on-brand-base: #ffffff;
+  --icon-on-brand-hover: #ffffff;
+  --icon-on-brand-selected: #ffffff;
+  --icon-on-interactive-base: #000000;
+  --icon-agent-plan-base: #0f91b1;
+  --icon-agent-docs-base: #e05220;
+  --icon-agent-ask-base: #409ff9;
+  --icon-agent-build-base: #1663fe;
+  --icon-on-success-base: #000000;
+  --icon-on-success-hover: #ffffff;
+  --icon-on-success-selected: #ffffff;
+  --icon-on-warning-base: #000000;
+  --icon-on-warning-hover: #ffffff;
+  --icon-on-warning-selected: #ffffff;
+  --icon-on-critical-base: #000000;
+  --icon-on-critical-hover: #ffffff;
+  --icon-on-critical-selected: #ffffff;
+  --icon-on-info-base: #000000;
+  --icon-on-info-hover: #ffffff;
+  --icon-on-info-selected: #ffffff;
+  --icon-diff-add-base: #2a713c;
+  --icon-diff-add-hover: #023010;
+  --icon-diff-add-active: #023010;
+  --icon-diff-delete-base: #e24b42;
+  --icon-diff-delete-hover: #af2220;
+  --icon-diff-modified-base: #FF8C00;
+  --syntax-comment: var(--text-weak);
+  --syntax-regexp: var(--text-base);
+  --syntax-string: #0c6c2f;
+  --syntax-keyword: #6810d4;
+  --syntax-primitive: #0e4cc7;
+  --syntax-operator: var(--text-base);
+  --syntax-variable: var(--text-strong);
+  --syntax-property: #0d647a;
+  --syntax-type: #854801;
+  --syntax-constant: #6810d4;
+  --syntax-punctuation: var(--text-base);
+  --syntax-object: var(--text-strong);
+  --syntax-success: #0f7433;
+  --syntax-warning: #a23914;
+  --syntax-critical: #b21a1b;
+  --syntax-info: #0d647a;
+  --syntax-diff-add: #2a713c;
+  --syntax-diff-delete: #af2220;
+  --syntax-diff-unknown: #ff0000;
+  --markdown-heading: #0e4cc7;
+  --markdown-text: #171a21;
+  --markdown-link: #0e4cc7;
+  --markdown-link-text: #0d647a;
+  --markdown-code: #0c6c2f;
+  --markdown-block-quote: #854801;
+  --markdown-emph: #854801;
+  --markdown-strong: #6810d4;
+  --markdown-horizontal-rule: #c0c3c7;
+  --markdown-list-item: #0e4cc7;
+  --markdown-list-enumeration: #0d647a;
+  --markdown-image: #0e4cc7;
+  --markdown-image-text: #0d647a;
+  --markdown-code-block: #171a21;
+  --avatar-background-pink: #feeef8;
+  --avatar-background-mint: #e1fbf4;
+  --avatar-background-orange: #fff1e7;
+  --avatar-background-purple: #f9f1fe;
+  --avatar-background-cyan: #e7f9fb;
+  --avatar-background-lime: #eefadc;
+  --avatar-background-rose: #ffe9ef;
+  --avatar-background-amber: #fef3da;
+  --avatar-background-teal: #e2f8f6;
+  --avatar-background-blue: #e8f0fe;
+  --avatar-background-violet: #f0ecfd;
+  --avatar-background-emerald: #e6f8ec;
+  --avatar-text-pink: #cd1d8d;
+  --avatar-text-mint: #147d6f;
+  --avatar-text-orange: #ed5f00;
+  --avatar-text-purple: #8445bc;
+  --avatar-text-cyan: #0894b3;
+  --avatar-text-lime: #5d770d;
+  --avatar-text-rose: #d6226b;
+  --avatar-text-amber: #b76e00;
+  --avatar-text-teal: #0f7d75;
+  --avatar-text-blue: #1c5fc4;
+  --avatar-text-violet: #5b3ec4;
+  --avatar-text-emerald: #128a4f;
+  --text-stronger: #080b11;
+
+  @media (prefers-color-scheme: dark) {
+    color-scheme: dark;
+    --text-mix-blend-mode: plus-lighter;
+
+    /* 晨雾 — dark */
+    --background-base: #0a0d12;
+    --background-weak: #111419;
+    --background-strong: #0a0d12;
+    --background-stronger: #15181d;
+    --surface-base: rgba(228, 230, 233, 0.07);
+    --base: rgba(228, 230, 233, 0.07);
+    --surface-base-hover: rgba(228, 230, 233, 0.11);
+    --surface-base-active: rgba(228, 230, 233, 0.11);
+    --surface-base-interactive-active: rgba(1, 12, 42, 0.3);
+    --base2: rgba(228, 230, 233, 0.07);
+    --base3: rgba(228, 230, 233, 0.07);
+    --surface-inset-base: rgba(228, 230, 233, 0.07);
+    --surface-inset-base-hover: rgba(228, 230, 233, 0.11);
+    --surface-inset-strong: rgba(10, 13, 18, 0.5);
+    --surface-inset-strong-hover: rgba(10, 13, 18, 0.5);
+    --surface-raised-base: rgba(228, 230, 233, 0.04);
+    --surface-float-base: #0d1015;
+    --surface-float-base-hover: #111419;
+    --surface-raised-base-hover: rgba(228, 230, 233, 0.07);
+    --surface-raised-base-active: rgba(228, 230, 233, 0.11);
+    --surface-raised-strong: rgba(228, 230, 233, 0.16);
+    --surface-raised-strong-hover: rgba(228, 230, 233, 0.29);
+    --surface-raised-stronger: rgba(228, 230, 233, 0.29);
+    --surface-raised-stronger-hover: rgba(228, 230, 233, 0.38);
+    --surface-weak: rgba(228, 230, 233, 0.11);
+    --surface-weaker: rgba(228, 230, 233, 0.16);
+    --surface-strong: rgba(228, 230, 233, 0.38);
+    --surface-raised-stronger-non-alpha: #111419;
+    --surface-brand-base: #1366f0;
+    --surface-brand-hover: #307bfe;
+    --surface-interactive-base: #033993;
+    --surface-interactive-hover: #0b50c1;
+    --surface-interactive-weak: #01286e;
+    --surface-interactive-weak-hover: #033993;
+    --surface-success-base: #014f35;
+    --surface-success-weak: #083826;
+    --surface-success-strong: #26f8b1;
+    --surface-warning-base: #533e0c;
+    --surface-warning-weak: #3c2c05;
+    --surface-warning-strong: #fbcd6b;
+    --surface-critical-base: #7e0619;
+    --surface-critical-weak: #5e010f;
+    --surface-critical-strong: #fec3bf;
+    --surface-info-base: #064b55;
+    --surface-info-weak: #01363e;
+    --surface-info-strong: #7ae6fb;
+    --surface-diff-unchanged-base: #0a0d12;
+    --surface-diff-skip-base: rgba(228, 230, 233, 0.04);
+    --surface-diff-hidden-base: #19202c;
+    --surface-diff-hidden-weak: #131821;
+    --surface-diff-hidden-weaker: #1e2633;
+    --surface-diff-hidden-strong: #263142;
+    --surface-diff-hidden-stronger: #384760;
+    --surface-diff-add-base: #00130a;
+    --surface-diff-add-weak: #011c11;
+    --surface-diff-add-weaker: #00130a;
+    --surface-diff-add-strong: #002819;
+    --surface-diff-add-stronger: #3bf6b3;
+    --surface-diff-delete-base: #240103;
+    --surface-diff-delete-weak: #300306;
+    --surface-diff-delete-weaker: #240103;
+    --surface-diff-delete-strong: #43040a;
+    --surface-diff-delete-stronger: #fec2bf;
+    --input-base: #0d1015;
+    --input-hover: #111419;
+    --input-active: #033993;
+    --input-selected: #0b50c1;
+    --input-focus: #033993;
+    --input-disabled: #15181d;
+    --text-base: #e8eaed;
+    --text-weak: #abaeb2;
+    --text-weaker: #808388;
+    --text-strong: #fdfdfd;
+    --text-invert-base: #c0c3c6;
+    --text-invert-weak: #65686d;
+    --text-invert-weaker: #45484d;
+    --text-invert-strong: #e4e6e9;
+    --text-interactive-base: #bed5fb;
+    --text-on-brand-base: #ffffff;
+    --text-on-interactive-base: #ffffff;
+    --text-on-interactive-weak: #ffffff;
+    --text-on-success-base: #ffffff;
+    --text-on-critical-base: #ffffff;
+    --text-on-critical-weak: #ffffff;
+    --text-on-critical-strong: #000000;
+    --text-on-warning-base: #ffffff;
+    --text-on-info-base: #ffffff;
+    --text-diff-add-base: #3bf6b3;
+    --text-diff-delete-base: #eb2b40;
+    --text-diff-delete-strong: #fafafa;
+    --text-diff-add-strong: #136a4b;
+    --text-on-info-weak: #ffffff;
+    --text-on-info-strong: #000000;
+    --text-on-warning-weak: #ffffff;
+    --text-on-warning-strong: #000000;
+    --text-on-success-weak: #ffffff;
+    --text-on-success-strong: #000000;
+    --text-on-brand-weak: #ffffff;
+    --text-on-brand-weaker: #ffffff;
+    --text-on-brand-strong: #000000;
+    --button-primary-base: #e4e6e9;
+    --button-secondary-base: #111419;
+    --button-secondary-hover: #15181d;
+    --button-ghost-hover: rgba(228, 230, 233, 0.07);
+    --button-ghost-hover2: rgba(228, 230, 233, 0.11);
+    --border-base: #45474c;
+    --border-hover: #4d5055;
+    --border-active: #56595d;
+    --border-selected: rgba(19, 102, 240, 0.9);
+    --border-disabled: #3c3f43;
+    --border-focus: #56595d;
+    --border-weak-base: #33363a;
+    --border-strong-base: #56595d;
+    --border-strong-hover: #5f6266;
+    --border-strong-active: #686b6f;
+    --border-strong-selected: rgba(1, 40, 110, 0.6);
+    --border-strong-disabled: #373a3f;
+    --border-strong-focus: #686b6f;
+    --border-weak-hover: #3c3f43;
+    --border-weak-active: #45474c;
+    --border-weak-selected: rgba(3, 29, 77, 0.6);
+    --border-weak-disabled: #2e3136;
+    --border-weak-focus: #45474c;
+    --border-weaker-base: #2a2d32;
+    --border-subtle: #33363a;
+    --border-interactive-base: #033993;
+    --border-interactive-hover: #0b50c1;
+    --border-interactive-active: #1366f0;
+    --border-interactive-selected: #1366f0;
+    --border-interactive-disabled: #45484d;
+    --border-interactive-focus: #1366f0;
+    --border-success-base: #014f35;
+    --border-success-hover: #0a6b4a;
+    --border-success-selected: #25a375;
+    --border-warning-base: #533e0c;
+    --border-warning-hover: #735504;
+    --border-warning-selected: #c39317;
+    --border-critical-base: #7e0619;
+    --border-critical-hover: #a81227;
+    --border-critical-selected: #e60a35;
+    --border-info-base: #064b55;
+    --border-info-hover: #106573;
+    --border-info-selected: #15a3b8;
+    --border-color: #ffffff;
+    --icon-base: #919398;
+    --icon-hover: #c0c3c6;
+    --icon-active: #e4e6e9;
+    --icon-selected: #e4e6e9;
+    --icon-disabled: #313439;
+    --icon-focus: #e4e6e9;
+    --icon-invert-base: #0a0d12;
+    --icon-weak-base: #23262c;
+    --icon-weak-hover: #e4e6e9;
+    --icon-weak-active: #65686d;
+    --icon-weak-selected: #65686d;
+    --icon-weak-disabled: #15181d;
+    --icon-weak-focus: #65686d;
+    --icon-strong-base: #e4e6e9;
+    --icon-strong-hover: #f6f3f3;
+    --icon-strong-active: #fcfcfc;
+    --icon-strong-selected: #fdfcfc;
+    --icon-strong-disabled: #45484d;
+    --icon-strong-focus: #fdfcfc;
+    --icon-brand-base: #ffffff;
+    --icon-interactive-base: #1366f0;
+    --icon-success-base: #25a375;
+    --icon-success-hover: #31b483;
+    --icon-success-active: #26f8b1;
+    --icon-warning-base: #c37a03;
+    --icon-warning-hover: #d78814;
+    --icon-warning-active: #fec88f;
+    --icon-critical-base: #e60a35;
+    --icon-critical-hover: #fc1b3e;
+    --icon-critical-active: #fec3bf;
+    --icon-info-base: #15a3b8;
+    --icon-info-hover: #24b4cb;
+    --icon-info-active: #7ae6fb;
+    --icon-on-brand-base: #ffffff;
+    --icon-on-brand-hover: #000000;
+    --icon-on-brand-selected: #000000;
+    --icon-on-interactive-base: #ffffff;
+    --icon-agent-plan-base: #15a3b8;
+    --icon-agent-docs-base: #c37a03;
+    --icon-agent-ask-base: #2a96f0;
+    --icon-agent-build-base: #bed5fb;
+    --icon-on-success-base: #ffffff;
+    --icon-on-success-hover: #000000;
+    --icon-on-success-selected: #000000;
+    --icon-on-warning-base: #ffffff;
+    --icon-on-warning-hover: #000000;
+    --icon-on-warning-selected: #000000;
+    --icon-on-critical-base: #ffffff;
+    --icon-on-critical-hover: #000000;
+    --icon-on-critical-selected: #000000;
+    --icon-on-info-base: #ffffff;
+    --icon-on-info-hover: #000000;
+    --icon-on-info-selected: #000000;
+    --icon-diff-add-base: #3bf6b3;
+    --icon-diff-add-hover: #0f9b6d;
+    --icon-diff-add-active: #3bf6b3;
+    --icon-diff-delete-base: #eb2b40;
+    --icon-diff-delete-hover: #fec2bf;
+    --icon-diff-modified-base: #feda93;
+    --syntax-comment: var(--text-weak);
+    --syntax-regexp: var(--text-base);
+    --syntax-string: #6affc1;
+    --syntax-keyword: #e0d9fd;
+    --syntax-primitive: #cee0fd;
+    --syntax-operator: var(--text-weak);
+    --syntax-variable: var(--text-strong);
+    --syntax-property: #9fedfd;
+    --syntax-type: #feda93;
+    --syntax-constant: #e0d9fd;
+    --syntax-punctuation: var(--text-weak);
+    --syntax-object: var(--text-strong);
+    --syntax-success: #26f8b1;
+    --syntax-warning: #fec88f;
+    --syntax-critical: #fec3bf;
+    --syntax-info: #9fedfd;
+    --syntax-diff-add: #3bf6b3;
+    --syntax-diff-delete: #fec2bf;
+    --syntax-diff-unknown: #ff0000;
+    --markdown-heading: #cee0fd;
+    --markdown-text: #e8eaed;
+    --markdown-link: #cee0fd;
+    --markdown-link-text: #9fedfd;
+    --markdown-code: #6affc1;
+    --markdown-block-quote: #feda93;
+    --markdown-emph: #feda93;
+    --markdown-strong: #e0d9fd;
+    --markdown-horizontal-rule: #45474c;
+    --markdown-list-item: #cee0fd;
+    --markdown-list-enumeration: #9fedfd;
+    --markdown-image: #cee0fd;
+    --markdown-image-text: #9fedfd;
+    --markdown-code-block: #e8eaed;
+    --avatar-background-pink: #501b3f;
+    --avatar-background-mint: #033a34;
+    --avatar-background-orange: #5f2a06;
+    --avatar-background-purple: #432155;
+    --avatar-background-cyan: #0f3058;
+    --avatar-background-lime: #2b3711;
+    --avatar-background-rose: #4d1426;
+    --avatar-background-amber: #4a3300;
+    --avatar-background-teal: #073a39;
+    --avatar-background-blue: #16294d;
+    --avatar-background-violet: #2c2150;
+    --avatar-background-emerald: #093d27;
+    --avatar-text-pink: #e34ba9;
+    --avatar-text-mint: #95f3d9;
+    --avatar-text-orange: #ff802b;
+    --avatar-text-purple: #9d5bd2;
+    --avatar-text-cyan: #369eff;
+    --avatar-text-lime: #c4f042;
+    --avatar-text-rose: #f485ac;
+    --avatar-text-amber: #f0b955;
+    --avatar-text-teal: #6fe0d7;
+    --avatar-text-blue: #7aa6f0;
+    --avatar-text-violet: #b6a4f5;
+    --avatar-text-emerald: #6fe0a3;
+    --text-stronger: #fdfdfd;
+  }
+}

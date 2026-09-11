@@ -1,0 +1,121 @@
+import { Provider } from "../provider"
+import { ValidationFailed } from "../provider/auth"
+import { NamedError } from "@duoduo-ai/shared/util/error"
+import { NotFoundError } from "../storage"
+import { Session } from "../session"
+import * as Worktree from "../worktree"
+import type { ContentfulStatusCode } from "hono/utils/http-status"
+import type { ErrorHandler, MiddlewareHandler } from "hono"
+import { HTTPException } from "hono/http-exception"
+import { Log } from "../util"
+import { Flag } from "@/flag/flag"
+import { APP_CORS_HOST } from "@/config/domains"
+import { basicAuth } from "hono/basic-auth"
+import { cors } from "hono/cors"
+import { compress } from "hono/compress"
+
+const log = Log.create({ service: "server" })
+
+export const ErrorMiddleware: ErrorHandler = (err, c) => {
+  log.error("failed", {
+    error: err,
+  })
+  if (err instanceof NamedError) {
+    let status: ContentfulStatusCode
+    if (err instanceof NotFoundError) status = 404
+    else if (err instanceof Provider.ModelNotFoundError) status = 400
+    else if (ValidationFailed.isInstance(err)) status = 400
+    else if (
+      Worktree.NotGitError.isInstance(err) ||
+      Worktree.NameGenerationFailedError.isInstance(err) ||
+      Worktree.CreateFailedError.isInstance(err) ||
+      Worktree.StartCommandFailedError.isInstance(err) ||
+      Worktree.RemoveFailedError.isInstance(err) ||
+      Worktree.ResetFailedError.isInstance(err)
+    )
+      status = 400
+    else status = 500
+    return c.json(err.toObject(), { status })
+  }
+  if (err instanceof Session.BusyError) {
+    return c.json(new NamedError.Unknown({ message: err.message }).toObject(), { status: 400 })
+  }
+  if (err instanceof HTTPException) return err.getResponse()
+  const message = err instanceof Error && err.stack ? err.stack : err.toString()
+  return c.json(new NamedError.Unknown({ message }).toObject(), {
+    status: 500,
+  })
+}
+
+export const AuthMiddleware: MiddlewareHandler = async (c, next) => {
+  // Allow CORS preflight requests to succeed without auth.
+  // Browser clients sending Authorization headers will preflight with OPTIONS.
+  if (c.req.method === "OPTIONS") return next()
+  const password = Flag.DUODUO_SERVER_PASSWORD
+  if (!password) return next()
+  const username = Flag.DUODUO_SERVER_USERNAME ?? "duoduo"
+
+  const token = c.req.query("auth_token")
+  if (token) {
+    const isWebSocket = c.req.header("upgrade")?.toLowerCase() === "websocket"
+    if (!isWebSocket) {
+      return new Response(
+        JSON.stringify({
+          error: "auth_token in URL query is not supported for HTTP requests, use Authorization header instead",
+        }),
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        },
+      )
+    }
+    c.req.raw.headers.set("authorization", `Basic ${token}`)
+  }
+
+  return basicAuth({ username, password })(c, next)
+}
+
+export const LoggerMiddleware: MiddlewareHandler = async (c, next) => {
+  const skip = c.req.path === "/log"
+  if (!skip) {
+    log.info("request", {
+      method: c.req.method,
+      path: c.req.path,
+    })
+  }
+  const timer = log.time("request", {
+    method: c.req.method,
+    path: c.req.path,
+  })
+  await next()
+  if (!skip) timer.stop()
+}
+
+export function CorsMiddleware(opts?: { cors?: string[] }): MiddlewareHandler {
+  // 放行 APP_CORS_HOST 及其任意级子域；域名来自 config/domains，避免散落硬编码
+  const corsHost = APP_CORS_HOST.replace(/\./g, "\\.")
+  const corsRe = new RegExp(`^https:\\/\\/([a-z0-9-]+\\.)*${corsHost}$`)
+  return cors({
+    maxAge: 86_400,
+    origin(input) {
+      if (!input) return
+
+      if (input.startsWith("http://localhost:")) return input
+      if (input.startsWith("http://127.0.0.1:")) return input
+      if (input === "tauri://localhost" || input === "http://tauri.localhost" || input === "https://tauri.localhost")
+        return input
+
+      if (corsRe.test(input)) return input
+      if (opts?.cors?.includes(input)) return input
+    },
+  })
+}
+
+const zipped = compress()
+export const CompressionMiddleware: MiddlewareHandler = (c, next) => {
+  const path = c.req.path
+  const method = c.req.method
+  if (path === "/event" || path === "/global/event") return next()
+  if (method === "POST" && /\/session\/[^/]+\/(message|prompt_async)$/.test(path)) return next()
+  return zipped(c, next)
+}

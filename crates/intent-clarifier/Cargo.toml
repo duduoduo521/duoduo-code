@@ -1,0 +1,13 @@
+[package]
+name = "intent-clarifier"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "intent-clarifier crate for DuoDuo smart layer"
+
+[dependencies]
+duo-types = { workspace = true }
+unified-error = { workspace = true }
+anyhow = { workspace = true }
+memory-system = { workspace = true }
+tracing = { workspace = true }

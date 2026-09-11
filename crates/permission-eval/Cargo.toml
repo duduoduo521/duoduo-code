@@ -1,0 +1,14 @@
+[package]
+name = "permission-eval"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Permission evaluation engine with wildcard pattern matching"
+
+[dependencies]
+anyhow = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+once_cell = "1"

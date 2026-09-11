@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@duoduo-ai/plugin",
+  "version": "1.14.21",
+  "type": "module",
+  "license": "MIT",
+  "description": "DuoDuo AI IDE Plugin SDK — types and helpers for building server and TUI plugins",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/duduoduo521/duoduo-code",
+    "directory": "packages/plugin"
+  },
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./dist/index.js"
+    },
+    "./tool": {
+      "types": "./src/tool.ts",
+      "import": "./dist/tool.js"
+    },
+    "./tui": {
+      "types": "./src/tui.ts",
+      "import": "./dist/tui.js"
+    },
+    "./shell": {
+      "types": "./src/shell.ts",
+      "import": "./dist/shell.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc",
+    "prepublishOnly": "bun run build"
+  },
+  "dependencies": {
+    "zod": "^3.23.0 || ^4.0.0"
+  },
+  "peerDependencies": {
+    "effect": ">=4.0.0",
+    "@duoduo-ai/sdk": ">=1.14.0",
+    "@opentui/core": ">=0.1.99",
+    "@opentui/solid": ">=0.1.99"
+  },
+  "peerDependenciesMeta": {
+    "effect": {
+      "optional": true
+    },
+    "@duoduo-ai/sdk": {
+      "optional": true
+    },
+    "@opentui/core": {
+      "optional": true
+    },
+    "@opentui/solid": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "effect": "catalog:",
+    "@duoduo-ai/sdk": "workspace:*",
+    "@opentui/core": "0.1.99",
+    "@opentui/solid": "0.1.99",
+    "@tsconfig/node22": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

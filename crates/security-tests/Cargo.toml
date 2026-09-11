@@ -1,0 +1,20 @@
+[package]
+name = "security-tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Centralized security-path property tests for the DuoDuo smart layer"
+
+[dependencies]
+agent-executor = { workspace = true }
+permission-eval = { workspace = true }
+security-design = { workspace = true }
+blackboard-coordinator = { workspace = true }
+blackboard-store = { workspace = true }
+duo-types = { workspace = true }
+
+[dev-dependencies]
+proptest = "1"
+tempfile = "3"
+regex = "1"
+serde_json = "1"

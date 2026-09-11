@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DuoDuo AI IDE</title>
+    <link rel="icon" type="image/png" href="/favicon-96x96-v3.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="/favicon-v3.svg" />
+    <link rel="shortcut icon" href="/favicon-v3.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon-v3.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <meta name="theme-color" content="#f6f8fb" />
+    <meta name="theme-color" content="#0a0d12" media="(prefers-color-scheme: dark)" />
+    <meta property="og:image" content="/social-share.png" />
+    <meta property="twitter:image" content="/social-share.png" />
+    <script id="theme-preload-script" src="/theme-preload.js"></script>
+  </head>
+  <body class="antialiased overscroll-none text-12-regular overflow-hidden">
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root" class="flex flex-col h-dvh">
+      <!-- Inline splash screen with logo shown before JS hydrates.
+           Uses position:fixed to cover the full viewport including the Overlay titlebar area.
+           Removed only when the editor is fully rendered and visible. -->
+      <div
+        id="__duoduo_splash__"
+        style="
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          z-index: 99999;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          width: 100%;
+          height: 100%;
+        "
+      >
+        <style>
+          html {
+            /* Fallback before theme-preload.js runs; will be overridden */
+            background-color: #0a0d12;
+          }
+          @media (prefers-color-scheme: light) {
+            html {
+              background-color: #f6f8fb;
+            }
+          }
+          /* Splash colors are pure CSS on purpose. The production CSP
+             (`script-src 'self' 'wasm-unsafe-eval'`, injected by
+             scripts/inject-csp.ts) blocks inline <script>, so any JS-driven
+             splash theming silently never runs and the splash is stuck on the
+             dark default. `theme-preload.js` is external (allowed by CSP)
+             and sets `data-color-scheme` on <html> from the user's explicit
+             preference before the body is parsed, so the [data-color-scheme]
+             selectors below win over the media-query fallback. */
+          #__duoduo_splash__ {
+            background-color: #0a0d12;
+          }
+          #__duoduo_splash__ .splash-status {
+            color: rgba(255, 255, 255, 0.45);
+          }
+          #__duoduo_splash__ .ring {
+            border: 2.5px solid rgba(91, 147, 245, 0.4) transparent rgba(91, 147, 245, 0.4)
+              transparent;
+          }
+          @media (prefers-color-scheme: light) {
+            #__duoduo_splash__ {
+              background-color: #f6f8fb;
+            }
+            #__duoduo_splash__ .splash-status {
+              color: rgba(15, 18, 25, 0.45);
+            }
+            #__duoduo_splash__ .ring {
+              border-color: rgba(46, 107, 230, 0.35) transparent rgba(46, 107, 230, 0.35) transparent;
+            }
+          }
+          html[data-color-scheme="dark"] #__duoduo_splash__ {
+            background-color: #0a0d12;
+          }
+          html[data-color-scheme="dark"] #__duoduo_splash__ .splash-status {
+            color: rgba(255, 255, 255, 0.45);
+          }
+          html[data-color-scheme="dark"] #__duoduo_splash__ .ring {
+            border: 2.5px solid rgba(91, 147, 245, 0.4) transparent rgba(91, 147, 245, 0.4)
+              transparent;
+          }
+          html[data-color-scheme="light"] #__duoduo_splash__ {
+            background-color: #f8f8f8;
+          }
+          html[data-color-scheme="light"] #__duoduo_splash__ .splash-status {
+            color: rgba(15, 18, 25, 0.45);
+          }
+          html[data-color-scheme="light"] #__duoduo_splash__ .ring {
+            border-color: rgba(46, 107, 230, 0.35) transparent rgba(46, 107, 230, 0.35) transparent;
+          }
+          #__duoduo_splash__ .splash-logo {
+            width: 40%;
+            max-width: 240px;
+            height: auto;
+            margin-bottom: 28px;
+            object-fit: contain;
+          }
+          #__duoduo_splash__ .splash-status {
+            font-family:
+              -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui,
+              "PingFang SC", "Microsoft YaHei", sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+            line-height: 1;
+            margin-bottom: 0;
+          }
+          #__duoduo_splash__ .ring {
+            width: 26px;
+            height: 26px;
+            margin-top: 22px;
+            border-radius: 50%;
+            animation: __duoduo_spin 0.8s linear infinite;
+          }
+          @keyframes __duoduo_spin {
+            to {
+              transform: rotate(360deg);
+            }
+          }
+        </style>
+        <img class="splash-logo" src="/logo-2000.png" alt="DuoDuo" />
+        <span class="splash-status">稍等片刻...</span>
+        <div class="ring"></div>
+      </div>
+    </div>
+    <script src="/src/entry.tsx" type="module"></script>
+  </body>
+</html>

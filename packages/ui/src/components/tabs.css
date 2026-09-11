@@ -1,0 +1,819 @@
+/* ────────────────────────────────────────────────────────────
+   Tabs — "precision strip" design language
+   · 36px slim bar, borderless transparent tabs
+   · Active tab: soft raised surface + 2px accent underline
+   · Close button reveals on hover / when active
+   · All state changes animated with the global motion tokens
+   ──────────────────────────────────────────────────────────── */
+[data-component="tabs"] {
+  --tabs-bar-height: 36px;
+  --tabs-compact-pill-height: 24px;
+  --tabs-compact-pill-radius: 6px;
+  --tabs-compact-pill-padding-x: 4px;
+
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background-color: var(--background-stronger);
+  overflow: clip;
+
+  &[data-wrap-tabs="true"] {
+    overflow: visible;
+  }
+
+  [data-slot="tabs-list"] {
+    height: var(--tabs-bar-height);
+    width: 100%;
+    position: relative;
+    display: flex;
+    align-items: center;
+    overflow-x: auto;
+
+    /* Hide scrollbar */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    &::-webkit-scrollbar {
+      display: none;
+    }
+
+    /* When tab wrapping is enabled, allow the list to grow vertically */
+    &[data-wrap-tabs="true"] {
+      height: auto;
+      min-height: var(--tabs-bar-height);
+      overflow-x: visible;
+      flex-wrap: wrap;
+    }
+
+    /* After element to fill remaining space — a single quiet hairline
+       separates the strip from the content below. */
+    &::after {
+      content: "";
+      display: block;
+      flex-grow: 1;
+      height: 100%;
+      border-bottom: 1px solid var(--border-weaker-base);
+      background-color: transparent;
+    }
+
+    &:empty::after {
+      display: none;
+    }
+  }
+
+  [data-slot="tabs-trigger-wrapper"] {
+    position: relative;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-weak);
+
+    /* text-13-medium */
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-small);
+    font-style: normal;
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-large);
+    letter-spacing: var(--letter-spacing-normal);
+
+    white-space: nowrap;
+    flex-shrink: 0;
+    max-width: 280px;
+    border: none;
+    background-color: transparent;
+    transition:
+      color var(--duration-fast) ease,
+      background-color var(--duration-fast) ease;
+
+    /* Active accent underline — springs in from the center */
+    &::after {
+      content: "";
+      position: absolute;
+      left: 10px;
+      right: 10px;
+      bottom: 0;
+      height: 2px;
+      border-radius: 2px 2px 0 0;
+      background-color: var(--text-interactive-base);
+      opacity: 0;
+      transform: scaleX(0.4);
+      transform-origin: center;
+      transition:
+        opacity var(--duration-base) var(--ease-out),
+        transform var(--duration-base) var(--ease-out);
+    }
+
+    [data-slot="tabs-trigger"] {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      padding: 0 10px 0 12px;
+      outline: none;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+
+      &:focus-visible {
+        outline: none;
+        box-shadow: none;
+      }
+    }
+
+    [data-slot="tabs-trigger-close-button"] {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      transition: opacity var(--duration-fast) ease;
+    }
+
+    [data-component="icon-button"] {
+      margin: -0.25rem;
+    }
+
+    &:disabled {
+      pointer-events: none;
+      color: var(--text-weaker);
+    }
+    &:focus-visible {
+      outline: none;
+      box-shadow: none;
+    }
+
+    &:hover:not(:disabled) {
+      color: var(--text-base);
+      background-color: var(--surface-base-hover);
+
+      [data-slot="tabs-trigger-close-button"] {
+        opacity: 0.7;
+      }
+    }
+
+    &:has([data-selected]) {
+      color: var(--text-strong);
+      background-color: var(--surface-base-active);
+
+      &::after {
+        opacity: 1;
+        transform: scaleX(1);
+      }
+
+      [data-slot="tabs-trigger-close-button"] {
+        opacity: 1;
+      }
+    }
+
+    &:has([data-slot="tabs-trigger-close-button"]) {
+      padding-right: 8px;
+
+      [data-slot="tabs-trigger"] {
+        padding-right: 0;
+      }
+    }
+  }
+
+  [data-slot="tabs-content"] {
+    overflow-y: auto;
+    flex: 1;
+    /* Without min-height:0 a flex item refuses to shrink below its content
+       height, so a tall tab panel grows past the (overflow:clip) tabs root and
+       its bottom gets clipped. This lets the panel fill the remaining space and
+       scroll internally instead — fixes settings tabs losing their footer. */
+    min-height: 0;
+
+    /* Hide scrollbar */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    &::-webkit-scrollbar {
+      display: none;
+    }
+
+    &:focus-visible {
+      outline: none;
+    }
+  }
+
+  /* ─── Review panel: compact centered pills with underline ─── */
+  #review-panel &[data-variant="normal"][data-orientation="horizontal"] {
+    background-color: var(--background-stronger);
+
+    [data-slot="tabs-list"] {
+      height: var(--tabs-bar-height);
+      padding-left: 12px;
+      padding-right: 0;
+      --tabs-review-gap: 12px;
+      --tabs-review-fade: 16px;
+      gap: var(--tabs-review-gap);
+      background-color: var(--background-stronger);
+      border-bottom: 1px solid var(--border-weaker-base);
+
+      &[data-wrap-tabs="true"] {
+        height: auto;
+        min-height: var(--tabs-bar-height);
+        overflow-x: visible;
+        flex-wrap: wrap;
+        row-gap: 2px;
+        align-content: flex-start;
+
+        [data-slot="tabs-trigger-wrapper"]::after {
+          bottom: 0;
+        }
+      }
+
+      &::after {
+        display: none;
+      }
+
+      > .sticky {
+        border-bottom: none;
+        background-color: var(--background-stronger);
+
+        &::before {
+          content: "";
+          position: absolute;
+          top: 0;
+          bottom: 0;
+          left: calc(var(--tabs-review-fade) * -1);
+          width: var(--tabs-review-fade);
+          pointer-events: none;
+          background: linear-gradient(90deg, transparent, var(--background-stronger));
+        }
+      }
+    }
+
+    [data-slot="tabs-trigger-wrapper"] {
+      height: var(--tabs-compact-pill-height);
+      margin-block: 0;
+      max-width: 320px;
+      padding-inline: var(--tabs-compact-pill-padding-x);
+      box-sizing: border-box;
+      border: 1px solid transparent;
+      border-radius: var(--tabs-compact-pill-radius);
+      background-color: transparent;
+      gap: 8px;
+      color: var(--text-weak);
+      transition:
+        color var(--duration-fast) ease,
+        background-color var(--duration-fast) ease,
+        border-color var(--duration-fast) ease;
+
+      &::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: calc((var(--tabs-compact-pill-height) - var(--tabs-bar-height)) / 2);
+        height: 2px;
+        border-radius: 2px 2px 0 0;
+        background-color: var(--text-interactive-base);
+        opacity: 0;
+        transform: scaleX(0.5);
+        transform-origin: center;
+        transition:
+          opacity var(--duration-base) var(--ease-out),
+          transform var(--duration-base) var(--ease-out);
+      }
+
+      &[data-value="review"] {
+        padding-left: 8px;
+        padding-right: 8px;
+      }
+
+      [data-slot="tabs-trigger"] {
+        height: 100%;
+        padding: 0 !important;
+      }
+
+      &:has([data-slot="tabs-trigger-close-button"]) {
+        padding-right: 5px;
+        [data-slot="tabs-trigger"] {
+          padding-right: 0 !important;
+        }
+      }
+
+      &:has([data-selected]) {
+        color: var(--text-strong);
+        background-color: var(--surface-base-active);
+        border-color: var(--border-weak-base);
+
+        &::after {
+          opacity: 1;
+          transform: scaleX(1);
+        }
+      }
+
+      &:hover:not(:disabled):not(:has([data-selected])) {
+        color: var(--text-base);
+        background-color: var(--surface-base-hover);
+      }
+
+      /*
+        File tabs: use monochrome icon by default.
+        Full-color icon is shown on hover/selected.
+      */
+      [data-slot="tabs-trigger"] {
+        .tab-fileicon-color,
+        .tab-fileicon-mono {
+          pointer-events: none;
+        }
+
+        .tab-fileicon-color {
+          display: none;
+        }
+
+        .tab-fileicon-mono {
+          display: block;
+          color: currentColor;
+        }
+
+        &[data-selected],
+        &:hover {
+          .tab-fileicon-color {
+            display: block;
+          }
+
+          .tab-fileicon-mono {
+            display: none;
+          }
+        }
+      }
+    }
+  }
+
+  /* ─── Alt variant: classic 2px underline, no background ─── */
+  &[data-variant="alt"] {
+    [data-slot="tabs-list"] {
+      padding-left: 24px;
+      padding-right: 24px;
+      gap: 8px;
+      border-bottom: 1px solid var(--border-weaker-base);
+      background-color: transparent;
+
+      &::after {
+        border: none;
+        background-color: transparent;
+      }
+      &:empty::after {
+        display: none;
+      }
+    }
+
+    [data-slot="tabs-trigger-wrapper"] {
+      border: none;
+      color: var(--text-weak);
+      background-color: transparent;
+      border-bottom-width: 2px;
+      border-bottom-style: solid;
+      border-bottom-color: transparent;
+      gap: 4px;
+
+      /* text-14-regular */
+      font-family: var(--font-family-sans);
+      font-size: var(--font-size-base);
+      font-style: normal;
+      font-weight: var(--font-weight-regular);
+      line-height: var(--line-height-x-large);
+      letter-spacing: var(--letter-spacing-normal);
+
+      /* Underline comes from the border, not the accent pseudo-element */
+      &::after {
+        display: none;
+      }
+
+      [data-slot="tabs-trigger"] {
+        height: 100%;
+        padding: 4px;
+        background-color: transparent;
+        border-bottom-width: 2px;
+        border-bottom-color: transparent;
+      }
+
+      [data-slot="tabs-trigger-close-button"] {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      [data-component="icon-button"] {
+        width: 16px;
+        height: 16px;
+        margin: 0;
+      }
+
+      &:hover:not(:disabled):not(:has([data-selected])) {
+        color: var(--text-base);
+        background-color: transparent;
+      }
+
+      &:has([data-selected]) {
+        color: var(--text-strong);
+        background-color: transparent;
+        border-bottom-color: var(--icon-strong-base);
+      }
+
+      &:has([data-slot="tabs-trigger-close-button"]) {
+        padding-right: 0;
+        [data-slot="tabs-trigger"] {
+          padding-right: 0;
+        }
+      }
+    }
+  }
+
+  /* ─── Pill variant: soft segmented tabs ─── */
+  &[data-variant="pill"][data-orientation="horizontal"] {
+    background-color: transparent;
+
+    [data-slot="tabs-list"] {
+      height: auto;
+      padding: 6px 0;
+      gap: 2px;
+      background-color: var(--background-base);
+
+      &::after {
+        display: none;
+      }
+    }
+
+    [data-slot="tabs-trigger-wrapper"] {
+      height: 30px;
+      border: none;
+      border-radius: var(--radius-md);
+      background-color: transparent;
+      gap: 0;
+
+      &::after {
+        display: none;
+      }
+
+      /* text-13-medium */
+      font-family: var(--font-family-sans);
+      font-size: var(--font-size-small);
+      font-style: normal;
+      font-weight: var(--font-weight-medium);
+      line-height: var(--line-height-large);
+      letter-spacing: var(--letter-spacing-normal);
+
+      [data-slot="tabs-trigger"] {
+        height: 100%;
+        width: 100%;
+        padding: 0 12px;
+        background-color: transparent;
+      }
+
+      &:hover:not(:disabled) {
+        background-color: var(--surface-base-hover);
+        color: var(--text-strong);
+      }
+
+      &:active:not(:disabled) {
+        background-color: var(--surface-base-active);
+      }
+
+      &:has([data-selected]) {
+        background-color: var(--surface-base-active);
+        color: var(--text-strong);
+
+        &:hover:not(:disabled) {
+          background-color: var(--surface-base-active);
+        }
+      }
+    }
+  }
+
+  &[data-variant="pill"][data-orientation="horizontal"][data-scope="filetree"] {
+    [data-slot="tabs-list"] {
+      height: var(--tabs-bar-height);
+      padding-inline: 12px;
+      gap: 6px;
+      align-items: center;
+      background-color: var(--background-stronger);
+      box-sizing: border-box;
+      border-bottom: 1px solid var(--border-weaker-base);
+    }
+
+    [data-slot="tabs-trigger-wrapper"] {
+      height: var(--tabs-compact-pill-height);
+      border-radius: var(--tabs-compact-pill-radius);
+      color: var(--text-weak);
+      box-sizing: border-box;
+      border: 1px solid transparent;
+      transition:
+        color var(--duration-fast) ease,
+        background-color var(--duration-fast) ease,
+        border-color var(--duration-fast) ease;
+
+      &:not(:has([data-selected])):hover:not(:disabled) {
+        color: var(--text-base);
+        /* Hover lights the tab rather than just tinting it. */
+        box-shadow: var(--light-raised-top);
+      }
+
+      &:has([data-selected]) {
+        color: var(--text-strong);
+        border-color: var(--border-weak-base);
+        /* The active tab is the one pulled forward, so its top edge faces the
+           light. Border alone left it looking like an outlined rectangle
+           sitting in the strip instead of a tab standing in front of it. */
+        box-shadow: var(--light-raised-top);
+      }
+    }
+  }
+
+  /* ─── Vertical orientation ─── */
+  &[data-orientation="vertical"] {
+    flex-direction: row;
+
+    [data-slot="tabs-list"] {
+      flex-direction: column;
+      width: auto;
+      height: 100%;
+      overflow-x: hidden;
+      overflow-y: auto;
+      padding: 8px;
+      gap: 2px;
+      background-color: var(--background-base);
+      border-right: 1px solid var(--border-weaker-base);
+
+      &::after {
+        display: none;
+      }
+    }
+
+    [data-slot="tabs-trigger-wrapper"] {
+      width: 100%;
+      height: var(--control-height-md);
+      border: none;
+      border-radius: var(--radius-md);
+      background-color: transparent;
+
+      &::after {
+        display: none;
+      }
+
+      [data-slot="tabs-trigger"] {
+        height: 100%;
+        padding: 0 8px;
+        gap: 8px;
+        justify-content: flex-start;
+      }
+
+      &:hover:not(:disabled) {
+        background-color: var(--surface-base-hover);
+      }
+
+      &:has([data-selected]) {
+        background-color: var(--surface-base-active);
+        color: var(--text-strong);
+      }
+    }
+
+    [data-slot="tabs-content"] {
+      overflow-x: auto;
+      overflow-y: auto;
+    }
+
+    &[data-variant="alt"] {
+      [data-slot="tabs-list"] {
+        padding: 8px;
+        gap: 2px;
+        border: none;
+
+        &::after {
+          display: none;
+        }
+      }
+
+      [data-slot="tabs-trigger-wrapper"] {
+        height: var(--control-height-md);
+        border: none;
+        border-radius: var(--radius-md);
+
+        [data-slot="tabs-trigger"] {
+          border: none;
+          padding: 0 8px;
+          gap: 8px;
+          justify-content: flex-start;
+        }
+
+        &:hover:not(:disabled) {
+          background-color: var(--surface-base-hover);
+        }
+
+        &:has([data-selected]) {
+          background-color: var(--surface-base-hover);
+          color: var(--text-strong);
+        }
+      }
+    }
+
+    /* ─── Settings sidebar navigation ─── */
+    &[data-variant="settings"] {
+      [data-slot="tabs-list"] {
+        width: 150px;
+        min-width: 150px;
+
+        @media (min-width: 640px) {
+          width: 200px;
+          min-width: 200px;
+        }
+        padding: 12px;
+        gap: 2px;
+        background-color: var(--background-base);
+        border-right: 1px solid var(--border-weaker-base);
+
+        &::after {
+          display: none;
+        }
+      }
+
+      [data-slot="tabs-section-title"] {
+        width: 100%;
+        padding: 8px 8px 4px 8px;
+        font-family: var(--font-family-sans);
+        font-size: var(--font-size-caption);
+        font-weight: var(--font-weight-semibold);
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--text-weaker);
+      }
+
+      [data-slot="tabs-trigger-wrapper"] {
+        height: var(--control-height-md);
+        border: none;
+        border-radius: var(--radius-md);
+
+        /* text-13-medium */
+        font-family: var(--font-family-sans);
+        font-size: var(--font-size-small);
+        font-weight: var(--font-weight-medium);
+        line-height: var(--line-height-large);
+
+        [data-slot="tabs-trigger"] {
+          border: none;
+          padding: 0 8px;
+          gap: 10px;
+          justify-content: flex-start;
+          width: 100%;
+          height: 100%;
+        }
+
+        [data-component="icon"] {
+          color: var(--icon-base);
+        }
+
+        &:hover:not(:disabled) {
+          background-color: var(--surface-base-hover);
+        }
+
+        &:has([data-slot="tabs-trigger"]:focus-visible) {
+          background-color: var(--surface-base-hover);
+          box-shadow: var(--shadow-xs-border-focus);
+        }
+
+        &:has([data-selected]) {
+          background-color: var(--surface-base-active);
+          color: var(--text-strong);
+
+          [data-component="icon"] {
+            color: var(--icon-strong-base);
+          }
+
+          &:hover:not(:disabled) {
+            background-color: var(--surface-base-active);
+          }
+        }
+      }
+
+      [data-slot="tabs-content"] {
+        /* Matches the dialog-panel colour via the real token. The previous
+           `surface-stronger-non-alpha` (without `raised-`) does not exist in
+           the generated theme block — fallback to `initial` made the right
+           pane transparent, so the scrollable list beneath bled through and
+           visually overlapped the left tabs-list. */
+        background-color: var(--surface-raised-stronger-non-alpha);
+      }
+    }
+  }
+}
+
+/* ─── Drag preview mirrors the active tab look ─── */
+[data-component="tabs-drag-preview"] {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: var(--tabs-bar-height, 36px);
+  max-width: 320px;
+  padding-inline: var(--tabs-compact-pill-padding-x, 4px);
+  overflow: hidden;
+  color: var(--text-strong);
+  opacity: 0.6;
+}
+
+[data-component="tabs-drag-preview"]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc((var(--tabs-bar-height, 36px) - var(--tabs-compact-pill-height, 24px)) / 2);
+  height: var(--tabs-compact-pill-height, 24px);
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--tabs-compact-pill-radius, 6px);
+  background-color: var(--surface-base-active);
+}
+
+[data-component="tabs-drag-preview"]::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background-color: var(--text-interactive-base);
+}
+
+[data-component="tabs-drag-preview"] > * {
+  position: relative;
+}
+
+/* ─── Tab wrapping mode (enabled via settings.general.tabWrapping) ─── */
+[data-wrap-tabs="true"][data-slot="tabs-list"] {
+  height: auto;
+  min-height: var(--tabs-bar-height, 36px);
+  overflow-x: visible;
+  flex-wrap: wrap;
+}
+[data-wrap-tabs="true"][data-slot="tabs-list"]::after {
+  display: none;
+}
+[data-wrap-tabs="true"][data-slot="tabs-list"] [data-slot="tabs-trigger-wrapper"] {
+  white-space: normal;
+  height: auto;
+  min-height: var(--tabs-bar-height, 36px);
+}
+
+/* ─── File tabs (session file editor) ───
+   Inherits the borderless strip above; this scope only reserves room
+   for the sticky "+" button and keeps wrapping rows tidy. */
+[data-component="tabs"][data-scope="file-tabs"] {
+  [data-slot="tabs-list"] {
+    /* Reserve space so the sticky "+" button never covers a tab (scroll mode). */
+    padding-right: 44px;
+
+    &::after {
+      border-bottom: none;
+      background-color: transparent;
+    }
+  }
+
+  /* Wrapping enabled: tidy, VSCode-like multi-row tab strip. */
+  &[data-wrap-tabs="true"] {
+    [data-slot="tabs-list"] {
+      height: auto;
+      min-height: var(--tabs-bar-height);
+      max-height: none;
+      padding-right: 0;
+      overflow: visible;
+      flex-wrap: wrap;
+      align-content: flex-start;
+      align-items: flex-start;
+
+      &::after {
+        display: none;
+      }
+
+      /* The "+" button flows inline with the tabs instead of sticking over them. */
+      .file-tab-add {
+        position: static;
+        align-self: center;
+        height: var(--tabs-bar-height) !important;
+        min-height: var(--tabs-bar-height);
+      }
+    }
+
+    [data-slot="tabs-trigger-wrapper"] {
+      white-space: nowrap;
+      height: var(--tabs-bar-height);
+      min-height: var(--tabs-bar-height);
+      align-items: center;
+    }
+
+    [data-slot="tabs-trigger"] {
+      height: 100% !important;
+      min-height: 0;
+      padding-top: 0;
+      padding-bottom: 0;
+    }
+
+    /* Let the editor content fill whatever vertical space remains instead of
+       overlapping the (now taller) wrapping tab bar. */
+    [data-slot="tabs-content"] {
+      flex: 1 1 auto;
+      min-height: 0;
+      height: auto;
+    }
+  }
+}

@@ -1,0 +1,14 @@
+# status: 200
+# 慢速流：每 chunk 间 800ms 延迟，覆盖 abort/loading UI
+# delay-ms: 200
+data: {"id":"chatcmpl-mock-008","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-008","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"content":"slow"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-008","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"content":" stream"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-008","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"content":" done"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-008","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":5,"completion_tokens":3,"total_tokens":8}}
+
+data: [DONE]

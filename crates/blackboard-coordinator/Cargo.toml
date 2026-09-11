@@ -1,0 +1,20 @@
+[package]
+name = "blackboard-coordinator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Blackboard coordinator for multi-agent coordination"
+
+[dependencies]
+ast-engine = { workspace = true }
+duo-types = { workspace = true }
+blackboard-store = { workspace = true }
+file-lock-manager = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+uuid = { workspace = true }
+async-trait = { workspace = true }

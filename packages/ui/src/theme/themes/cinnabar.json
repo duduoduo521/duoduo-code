@@ -1,0 +1,29 @@
+{
+  "$schema": "../desktop-theme.schema.json",
+  "name": "朱砂",
+  "id": "cinnabar",
+  "light": {
+    "palette": {
+      "neutral": "#faf9f7",
+      "ink": "#241f1b",
+      "primary": "#c2410c",
+      "accent": "#a16207",
+      "success": "#4d7c0f",
+      "warning": "#b45309",
+      "error": "#b91c1c",
+      "info": "#0e7490"
+    }
+  },
+  "dark": {
+    "palette": {
+      "neutral": "#1a1714",
+      "ink": "#ede8e3",
+      "primary": "#fb923c",
+      "accent": "#fbbf24",
+      "success": "#a3e635",
+      "warning": "#fcd34d",
+      "error": "#fca5a5",
+      "info": "#67e8f9"
+    }
+  }
+}

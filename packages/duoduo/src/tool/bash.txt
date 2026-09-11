@@ -1,0 +1,29 @@
+Execute a bash command in a persistent shell session, with optional timeout and security handling.
+
+Be aware: OS: ${os}, Shell: ${shell}
+All commands run in the current working directory by default. Use the `workdir` parameter instead of `cd <dir> && <cmd>`.
+
+IMPORTANT: For terminal operations only (git, npm, docker, etc). Do NOT use it for file operations (read/write/edit/search) — use the dedicated tools.
+
+## Before executing
+1. Directory verification: if creating files/dirs, first `ls` the parent to confirm it exists.
+2. Execution: quote paths containing spaces (e.g. `rm "path with spaces/file.txt"`). Capture the output.
+
+## Usage notes
+- `command` is required. Optional `timeout` ms; default 120000 (2 min).
+- Write a clear 5-10 word description of what the command does.
+- Output > ${maxLines} lines or ${maxBytes} bytes is truncated to a file. Use Read (offset/limit) or Grep to inspect — do NOT use `head`/`tail` to truncate; full output is already saved.
+- Prefer dedicated tools over shell equivalents: Glob (not find/ls/gci), Grep (not grep/rg/findstr/sls), Read (not cat/head/tail), Edit (not sed/awk), Write (not echo >/cat <<EOF). Output text directly (not echo/printf). Never run native content-search.
+- Multiple commands: independent ones run as parallel Bash calls in one message. ${chaining} Use `;` only when order matters but failures are tolerable. DO NOT separate commands with newlines (ok inside quoted strings).
+
+## Git (only when user asks to commit)
+Git Safety Protocol: NEVER update git config; NEVER force push / hard reset / skip hooks unless explicitly requested; warn on force-push to main/master; avoid `commit --amend` (only if user requested AND head commit is yours AND not pushed); if commit fails/rejected by hook, fix and make a NEW commit; NEVER commit unless explicitly asked.
+1. Parallel: `git status`, `git diff`, `git log` (match repo message style).
+2. Draft a concise (1-2 sentence) message focused on "why".
+3. Stage files, commit, then `git status` to verify. Do NOT read/explore code beyond git commands; do NOT use todowrite/Task; never `git` with `-i`; never empty commit; never push unless asked.
+
+## Pull requests (gh via Bash)
+When asked: parallel `git status`/`git diff`/track-remote check/`git log` + `git diff [base]...HEAD`; analyze ALL commits (not just latest); draft summary; create branch/push -u/PR via `gh pr create` (HEREDOC body). Return the PR URL. Do NOT use todowrite/Task.
+
+## Other
+- View PR comments: `gh api repos/foo/bar/pulls/123/comments`

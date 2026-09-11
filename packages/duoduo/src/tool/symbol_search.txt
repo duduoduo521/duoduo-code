@@ -1,0 +1,10 @@
+Search for symbols (functions, classes, structs, interfaces, enums, constants) across the codebase using the language server protocol.
+
+Usage notes:
+  - Provides precise symbol locations with file path and line number
+  - Supports filtering by symbol kind (function, class, struct, interface, enum, const, all)
+  - Use file_pattern to narrow results to specific directories or file types (e.g. 'src/**/*.rs')
+  - Returns symbol name, kind, file path, and line number for each match
+  - Default limit of 20 results; increase for broader searches, decrease for focused results
+  - Use this tool when you need to find definitions, declarations, or references by name
+  - If no language server is available, it returns a message directing you to use grep instead

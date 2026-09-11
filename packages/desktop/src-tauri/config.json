@@ -1,0 +1,63 @@
+{
+  "$schema": "https://www.dd322.cn/code/config.json",
+  "provider": {
+    "ollama": {
+      "name": "Ollama",
+      "npm": "@ai-sdk/openai-compatible",
+      "options": {
+        "baseURL": "http://localhost:11434/v1"
+      },
+      "models": {
+        "baytout3/Gemma-4-Uncensored-HauhauCS-Aggressive:e4b": {
+          "name": "baytout3/Gemma-4-Uncensored-HauhauCS-Aggressive:e4b",
+          "limit": {
+            "context": 128000,
+            "output": 8192
+          }
+        },
+        "isotnek/Nanbeige4.1-3B-heretic:latest": {
+          "name": "isotnek/Nanbeige4.1-3B-heretic:latest",
+          "limit": {
+            "context": 128000,
+            "output": 8192
+          }
+        },
+        "svjack/Qwen3-4B-Instruct-2507-heretic:latest": {
+          "name": "svjack/Qwen3-4B-Instruct-2507-heretic:latest",
+          "limit": {
+            "context": 128000,
+            "output": 8192
+          }
+        },
+        "R4C3R/qwen2.5-3b-heretic:latest": {
+          "name": "R4C3R/qwen2.5-3b-heretic:latest",
+          "limit": {
+            "context": 128000,
+            "output": 8192
+          }
+        },
+        "qwen3.5-fast:latest": {
+          "name": "qwen3.5-fast:latest",
+          "limit": {
+            "context": 128000,
+            "output": 8192
+          }
+        },
+        "jaahas/qwen3.5-uncensored:2b-q6_K": {
+          "name": "jaahas/qwen3.5-uncensored:2b-q6_K",
+          "limit": {
+            "context": 128000,
+            "output": 8192
+          }
+        },
+        "haervwe/qwen3-vl-4b-heretic:latest": {
+          "name": "haervwe/qwen3-vl-4b-heretic:latest",
+          "limit": {
+            "context": 128000,
+            "output": 8192
+          }
+        }
+      }
+    }
+  }
+}

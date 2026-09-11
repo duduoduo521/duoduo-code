@@ -1,0 +1,69 @@
+.DS_Store
+node_modules
+.worktrees
+.sst
+.env
+.idea
+.vscode
+.codex
+*~
+playground
+tmp
+dist
+ts-dist
+.turbo
+**/.serena
+.serena/
+/result
+refs
+
+Session.vim
+/duoduo.json
+a.out
+target
+.scripts
+.direnv/
+
+
+# Keys (public key is OK, private key must never be committed)
+keys/duoduo.key
+*.key
+!*.key.pub
+
+# Build artifacts
+update-upload/
+dist-artifacts/
+
+# Generated pdf.js runtime assets (copied from pdfjs-dist by copy-pdfjs-assets.ts)
+packages/app/public/pdfjs/
+
+# Temp/debug files
+tsc_errors*.txt
+架构优化.md
+*.iso_bak
+
+# Test runner output (junit reports)
+.artifacts/
+
+# Local dev files
+duoduo-dev
+opencode-dev
+UPCOMING_CHANGELOG.md
+logs/
+*.bun-build
+tsconfig.tsbuildinfo
+
+# duoduo per-project data (now stored under the OS user data dir, not in the project tree)
+.duoduo/
+# pasted large-text temp files (also covered by .duoduo/ above, listed explicitly for clarity)
+.duoduo/tmp/
+# Build-time LSP preloaded binaries (fetched by packages/desktop/scripts/fetch-lsp-binaries.ts
+# during release builds; recreated on demand, never committed — single files exceed the
+# 100MB push limit, e.g. deno 111M / clangd 137M)
+packages/desktop/src-tauri/resources/
+packages/desktop/src-tauri/lsp-fetch-work/
+# Build-time LSP preloaded binaries (fetched by packages/desktop/scripts/fetch-lsp-binaries.ts
+# during release builds; recreated on demand, never committed — single files exceed the
+# 100MB push limit, e.g. deno 111M / clangd 137M)
+packages/desktop/src-tauri/resources/
+packages/desktop/src-tauri/lsp-fetch-work/

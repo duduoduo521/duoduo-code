@@ -1,0 +1,24 @@
+[package]
+name = "unified-error"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "unified-error crate for DuoDuo smart layer"
+
+[features]
+default = []
+# Enables IntoResponse impl for axum HTTP response conversion
+http = ["axum"]
+# Enables From<JoinError> impl for tokio spawn_blocking error conversion
+tokio-runtime = ["tokio"]
+
+[dependencies]
+thiserror = { workspace = true }
+serde = { workspace = true }
+anyhow = { workspace = true }
+
+# Optional: HTTP response conversion (IntoResponse for axum)
+axum = { workspace = true, optional = true }
+
+# Optional: tokio JoinError conversion
+tokio = { workspace = true, optional = true }

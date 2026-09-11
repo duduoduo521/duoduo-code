@@ -1,0 +1,329 @@
+import { createSimpleContext } from "@duoduo-ai/ui/context"
+import { base64Encode } from "@duoduo-ai/shared/util/encode"
+import { useParams } from "@solidjs/router"
+import { batch, createEffect, createMemo } from "solid-js"
+import { createStore } from "solid-js/store"
+import { useModels } from "@/context/models"
+import { useProviders } from "@/hooks/use-providers"
+import { Persist, persisted } from "@/utils/persist"
+import { useSDK } from "./sdk"
+import { useSync } from "./sync"
+
+export type ModelKey = { providerID: string; modelID: string }
+
+type State = {
+  agent?: string
+  model?: ModelKey
+}
+
+type Saved = {
+  session: Record<string, State | undefined>
+}
+
+const WORKSPACE_KEY = "__workspace__"
+const handoff = new Map<string, State>()
+
+const handoffKey = (dir: string, id: string) => `${dir}\n${id}`
+
+const migrate = (value: unknown) => {
+  if (!value || typeof value !== "object") return { session: {} }
+
+  const item = value as {
+    session?: Record<string, State | undefined>
+    pick?: Record<string, State | undefined>
+  }
+
+  if (item.session && typeof item.session === "object") return { session: item.session }
+  if (!item.pick || typeof item.pick !== "object") return { session: {} }
+
+  return {
+    session: Object.fromEntries(Object.entries(item.pick).filter(([key]) => key !== WORKSPACE_KEY)),
+  }
+}
+
+const clone = (value: State | undefined) => {
+  if (!value) return undefined
+  return {
+    ...value,
+    model: value.model ? { ...value.model } : undefined,
+  } satisfies State
+}
+
+// oxlint-disable-next-line unbound-method -- method does not reference this (closure-only / pre-bound)
+export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
+  name: "Local",
+  init: () => {
+    const params = useParams()
+    const sdk = useSDK()
+    const sync = useSync()
+    const providers = useProviders()
+    const models = useModels()
+
+    const id = createMemo(() => params.id || undefined)
+    const list = createMemo(() => sync.data.agent.filter((item) => item.mode !== "subagent" && !item.hidden))
+    const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
+
+    const [saved, setSaved] = persisted(
+      {
+        ...Persist.workspace(sdk.directory, "model-selection", ["model-selection.v1"]),
+        migrate,
+      },
+      createStore<Saved>({
+        session: {},
+      }),
+    )
+
+    const [store, setStore] = createStore<{
+      current?: string
+      draft?: State
+      last?: {
+        type: "agent" | "model"
+        agent?: string
+        model?: ModelKey | null
+      }
+    }>({
+      current: list()[0]?.name,
+      draft: undefined,
+      last: undefined,
+    })
+
+    const validModel = (model: ModelKey) => {
+      const provider = providers.all().find((item) => item.id === model.providerID)
+      return !!provider?.models[model.modelID] && connected().has(model.providerID)
+    }
+
+    const firstModel = (...items: Array<() => ModelKey | undefined>) => {
+      for (const item of items) {
+        const model = item()
+        if (!model) continue
+        if (validModel(model)) return model
+      }
+    }
+
+    const pickAgent = (name: string | undefined) => {
+      const items = list()
+      if (items.length === 0) return undefined
+      return items.find((item) => item.name === name) ?? items[0]
+    }
+
+    createEffect(() => {
+      const items = list()
+      if (items.length === 0) {
+        if (store.current !== undefined) setStore("current", undefined)
+        return
+      }
+      if (items.some((item) => item.name === store.current)) return
+      setStore("current", items[0]?.name)
+    })
+
+    const scope = createMemo<State | undefined>(() => {
+      const session = id()
+      if (!session) return store.draft
+      return saved.session[session] ?? handoff.get(handoffKey(sdk.directory, session))
+    })
+
+    createEffect(() => {
+      const session = id()
+      if (!session) return
+
+      const key = handoffKey(sdk.directory, session)
+      const next = handoff.get(key)
+      if (!next) return
+      if (saved.session[session] !== undefined) {
+        handoff.delete(key)
+        return
+      }
+
+      setSaved("session", session, clone(next))
+      handoff.delete(key)
+    })
+
+    const configuredModel = () => {
+      if (!sync.data.config.model) return
+      const parts = sync.data.config.model.split("/")
+      const providerID = parts[0]!
+      const modelID = parts[1]!
+      const model: ModelKey = { providerID, modelID }
+      if (validModel(model)) return model
+    }
+
+    const recentModel = () => {
+      for (const item of models.recent.list()) {
+        if (validModel(item)) return item
+      }
+    }
+
+    const defaultModel = () => {
+      const defaults = providers.default()
+      for (const provider of providers.connected()) {
+        const configured = defaults[provider.id]
+        if (configured) {
+          const model: ModelKey = { providerID: provider.id, modelID: configured }
+          if (validModel(model)) return model
+        }
+
+        const first = Object.values(provider.models)[0]
+        if (!first) continue
+        const model: ModelKey = { providerID: provider.id, modelID: first.id }
+        if (validModel(model)) return model
+      }
+    }
+
+    const fallback = createMemo<ModelKey | undefined>(() => configuredModel() ?? recentModel() ?? defaultModel())
+
+    const agent = {
+      list,
+      current() {
+        return pickAgent(scope()?.agent ?? store.current)
+      },
+      set(name: string | undefined) {
+        const item = pickAgent(name)
+        if (!item) {
+          setStore("current", undefined)
+          return
+        }
+
+        batch(() => {
+          setStore("current", item.name)
+          setStore("last", {
+            type: "agent",
+            agent: item.name,
+            model: item.model,
+          })
+          const prev = scope()
+          const next = {
+            agent: item.name,
+            model: item.model ?? prev?.model,
+          } satisfies State
+          const session = id()
+          if (session) {
+            setSaved("session", session, next)
+            return
+          }
+          setStore("draft", next)
+        })
+      },
+      move(direction: 1 | -1) {
+        const items = list()
+        if (items.length === 0) {
+          setStore("current", undefined)
+          return
+        }
+
+        let next = items.findIndex((item) => item.name === agent.current()?.name) + direction
+        if (next < 0) next = items.length - 1
+        if (next >= items.length) next = 0
+        const item = items[next]
+        if (!item) return
+        agent.set(item.name)
+      },
+    }
+
+    const current = () => {
+      const item = firstModel(
+        () => scope()?.model,
+        () => agent.current()?.model,
+        fallback,
+      )
+      if (!item) return undefined
+      return models.find(item)
+    }
+
+    const snapshot = () => {
+      const model = current()
+      return {
+        agent: agent.current()?.name,
+        model: model ? { providerID: model.provider.id, modelID: model.id } : undefined,
+      } satisfies State
+    }
+
+    const write = (next: Partial<State>) => {
+      const state = {
+        ...(scope() ?? { agent: agent.current()?.name }),
+        ...next,
+      } satisfies State
+
+      const session = id()
+      if (session) {
+        setSaved("session", session, state)
+        return
+      }
+      setStore("draft", state)
+    }
+
+    const recent = createMemo(() => models.recent.list().map(models.find).filter(Boolean))
+
+    const model = {
+      ready: models.ready,
+      current,
+      recent,
+      list: models.list,
+      cycle(direction: 1 | -1) {
+        const items = recent()
+        const item = current()
+        if (!item) return
+
+        const index = items.findIndex((entry) => entry?.provider.id === item.provider.id && entry?.id === item.id)
+        if (index === -1) return
+
+        let next = index + direction
+        if (next < 0) next = items.length - 1
+        if (next >= items.length) next = 0
+
+        const entry = items[next]
+        if (!entry) return
+        model.set({ providerID: entry.provider.id, modelID: entry.id })
+      },
+      set(item: ModelKey | undefined, options?: { recent?: boolean }) {
+        batch(() => {
+          setStore("last", {
+            type: "model",
+            agent: agent.current()?.name,
+            model: item ?? null,
+          })
+          write({ model: item })
+          if (!item) return
+          if (!options?.recent) return
+          models.recent.push(item)
+        })
+      },
+    }
+
+    const result = {
+      slug: createMemo(() => base64Encode(sdk.directory)),
+      model,
+      agent,
+      session: {
+        reset() {
+          setStore("draft", undefined)
+        },
+        promote(dir: string, session: string) {
+          const next = clone(snapshot())
+          if (!next) return
+
+          if (dir === sdk.directory) {
+            setSaved("session", session, next)
+            setStore("draft", undefined)
+            return
+          }
+
+          handoff.set(handoffKey(dir, session), next)
+          setStore("draft", undefined)
+        },
+        restore(msg: { sessionID: string; agent: string; model: ModelKey }) {
+          const session = id()
+          if (!session) return
+          if (msg.sessionID !== session) return
+          if (saved.session[session] !== undefined) return
+          if (handoff.has(handoffKey(sdk.directory, session))) return
+
+          setSaved("session", session, {
+            agent: msg.agent,
+            model: msg.model,
+          })
+        },
+      },
+    }
+    return result
+  },
+})

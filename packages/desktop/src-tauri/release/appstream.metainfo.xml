@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.duoduo.desktop</id>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>DuoDuoCode</name>
+  <summary>AI-powered desktop IDE with memory</summary>
+
+  <developer id="com.duoduo">
+    <name>DuoDuo</name>
+  </developer>
+
+  <description>
+    <p>
+      DuoDuoCode is an AI-powered desktop IDE that helps you write and run code with any AI model,
+      featuring a six-layer memory system and Rust smart layer.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">com.duoduo.desktop.desktop</launchable>
+
+  <content_rating type="oars-1.1" />
+
+  <url type="bugtracker">https://github.com/duduoduo521/duoduo-code/issues</url>
+  <url type="homepage">https://www.dd322.cn/code</url>
+  <url type="vcs-browser">https://github.com/duduoduo521/duoduo-code</url>
+
+  <releases>
+    <release version="0.1.0" date="2026-05-31">
+      <url type="details">https://github.com/duduoduo521/duoduo-code/releases/tag/v0.1.0</url>
+    </release>
+  </releases>
+</component>

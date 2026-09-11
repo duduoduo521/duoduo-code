@@ -1,0 +1,15 @@
+[package]
+name = "security-design"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "security-design crate for DuoDuo smart layer"
+
+[dependencies]
+serde = { workspace = true }
+anyhow = { workspace = true }
+unified-error = { workspace = true }
+duo-types = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+regex = { workspace = true }

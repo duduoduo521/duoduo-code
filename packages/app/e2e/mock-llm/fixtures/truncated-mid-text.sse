@@ -1,0 +1,6 @@
+# status: 200
+# 流到一半 socket 断开（mock server 在发送完最后一行后强制结束流，无 [DONE]）
+# truncate-after: 2
+data: {"id":"chatcmpl-mock-006","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-006","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"content":"Partial response that gets cut o"},"finish_reason":null}]}

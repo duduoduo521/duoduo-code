@@ -1,0 +1,58 @@
+[package]
+name = "im-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "IM bridge for Feishu WebSocket long-connection integration"
+
+[dependencies]
+# Internal crates
+duo-types = { workspace = true }
+duo-utils = { workspace = true }
+unified-error = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+futures = { workspace = true }
+
+# HTTP client (REST API calls for sending messages, token refresh)
+reqwest = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Protobuf (Feishu pbbp2 heartbeat frame)
+prost = "0.13"
+
+# WebSocket client
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+
+# Logging
+tracing = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+
+# Async trait support
+async-trait = "0.1"
+
+# UUID
+uuid = { workspace = true }
+
+# URL parsing
+url = "2"
+
+# Time
+chrono = { workspace = true }
+
+# No build-dependencies needed — pbbp2 proto types are hand-defined in code.
+
+[dev-dependencies]
+# Local HTTP test server for network/integration tests. Reuses the workspace
+# axum (0.7) and tokio so no new versions are pulled in.
+axum = { workspace = true }
+tokio = { workspace = true }
+duo-types = { workspace = true }

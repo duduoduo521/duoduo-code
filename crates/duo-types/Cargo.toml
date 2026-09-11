@@ -1,0 +1,12 @@
+[package]
+name = "duo-types"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "duo-types crate for DuoDuo smart layer"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }

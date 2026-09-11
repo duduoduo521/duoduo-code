@@ -1,0 +1,30 @@
+Create and manage a structured task list for the current coding session to track progress on complex or multi-step work.
+
+## When to use
+- A task needs 3+ distinct steps, or careful planning / multiple operations.
+- The user explicitly asks for a todo list, or provides a list of tasks (numbered/comma-separated).
+- After new instructions: capture requirements as todos immediately.
+- When starting work on a task: set it `in_progress` (only ONE at a time). Complete current before starting new.
+- After finishing: mark complete and add follow-ups.
+- When dispatching subagent tasks (Task tool): create one todo per subagent task so counts match; update to `completed`/`cancelled` as they report.
+
+## When NOT to use
+- A single, trivial, or conversational/informational task. Just do it directly.
+
+## States
+- `pending` → `in_progress` → `completed`
+- `pending` → `cancelled`
+- You MUST set `in_progress` before working on a task; never skip it.
+
+## CRITICAL: status-sync (call todowrite at these exact moments)
+- BEFORE starting a task: set it `in_progress`. Do NOT begin work without updating.
+- IMMEDIATELY after completing: set `completed`. Do NOT batch — update as soon as done.
+- When a task is no longer needed: set `cancelled`.
+The list shown to the user MUST always reflect actual progress.
+
+## Full-list replacement
+Every call passes the COMPLETE list with latest statuses. Items omitted are removed.
+
+## Item quality
+Specific, actionable, clear names; break complex tasks into smaller steps.
+When in doubt, use this tool — proactive tracking ensures all requirements are met.

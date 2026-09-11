@@ -1,0 +1,24 @@
+// IntelGear gear-plugin component contract (v0.1.0).
+//
+// A gear-plugin is a WebAssembly *component* (wasmtime component model) that
+// implements the `gear-plugin` world. The host (agent-executor `wasm_backend`)
+// drives it over this ABI:
+//
+//   load()                  -> JSON string describing the plugin (id / version)
+//   list-tools()           -> JSON string: { "tools": [ {name, description, inputSchema} ] }
+//   call-tool(name, args)  -> JSON string: tool output text
+//
+// All payloads are JSON-encoded strings so the host keeps one stable ABI
+// regardless of the guest language. The only host import is `log` for diagnostics.
+//
+// NOTE: the host links `log` as a *top-level* import (linker.root().func_wrap),
+// so it must NOT be wrapped in a named interface here.
+package duoduo:gear-plugin@0.1.0;
+
+world gear-plugin {
+  import log: func(level: string, message: string);
+
+  export load: func() -> string;
+  export list-tools: func() -> string;
+  export call-tool: func(name: string, arguments: string) -> string;
+}

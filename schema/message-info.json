@@ -1,0 +1,35 @@
+{
+  "messageInfo": {
+    "roles": [
+      "user",
+      "assistant"
+    ],
+    "userRequired": [
+      "id",
+      "sessionID",
+      "role",
+      "time",
+      "agent",
+      "model"
+    ],
+    "assistantRequired": [
+      "id",
+      "sessionID",
+      "role",
+      "time",
+      "parentID",
+      "modelID",
+      "providerID",
+      "mode",
+      "agent",
+      "path",
+      "tokens"
+    ],
+    "specialCaseFields": [
+      "sessionID",
+      "parentID",
+      "modelID",
+      "providerID"
+    ]
+  }
+}

@@ -1,0 +1,102 @@
+[package]
+name = "duo-smart-layer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "DuoDuo smart layer sidecar binary"
+
+[lib]
+name = "duo_smart_layer"
+path = "src/lib.rs"
+
+[[bin]]
+name = "duo-smart-layer"
+path = "src/main.rs"
+
+[dependencies]
+# Internal crates
+duo-types = { workspace = true }
+unified-error = { workspace = true, features = ["http", "tokio-runtime"] }
+memory-system = { workspace = true }
+quality-pipeline = { workspace = true }
+intent-clarifier = { workspace = true }
+context-builder = { workspace = true }
+config-manager = { workspace = true }
+feedback-loop = { workspace = true }
+session-manager = { workspace = true }
+agent-scheduler = { workspace = true }
+blackboard-coordinator = { workspace = true }
+code-search = { workspace = true }
+knowledge-graph-store = { workspace = true }
+dna-engine = { workspace = true }
+agent-executor = { workspace = true }
+im-bridge = { workspace = true }
+security-design = { workspace = true }
+prompt-cache = { workspace = true }
+prompt-template = { workspace = true }
+db-layer = { workspace = true }
+duo-utils = { workspace = true, features = ["secret-store"] }
+ast-engine = { workspace = true }
+permission-eval = { workspace = true }
+
+# Async runtime
+tokio = { workspace = true }
+
+# HTTP server
+axum = { workspace = true }
+tower-http = { workspace = true }
+http = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender = "0.2"
+
+# OpenTelemetry
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+opentelemetry-otlp = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+
+# Streaming
+tokio-stream = { workspace = true, features = ["sync"] }
+futures = { workspace = true }
+tokio-util = { workspace = true }
+
+# Utilities
+uuid = { workspace = true }
+ulid = { workspace = true }
+anyhow = { workspace = true }
+async-trait = "0.1"
+reqwest = { workspace = true }
+# CRITICAL: rustls 0.23 no longer auto-installs a process-level CryptoProvider.
+# tokio-tungstenite (Feishu WebSocket) and reqwest/hyper-rustls use rustls, so the
+# `ring` provider must be explicitly installed at startup (see main.rs). The `ring`
+# feature is required so `rustls::crypto::ring::default_provider()` is available.
+rustls = { version = "0.23", features = ["ring"] }
+base64 = "0.22"
+
+# Secure key storage
+keyring = "3"
+aes-gcm = "0.10"
+sha2 = "0.10"
+hkdf = "0.12"
+rand = "0.9"
+chrono = { workspace = true }
+dirs = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_Diagnostics_ToolHelp"] }
+
+[dev-dependencies]
+tower = { workspace = true }
+http-body-util = "0.1"
+tempfile = "3"

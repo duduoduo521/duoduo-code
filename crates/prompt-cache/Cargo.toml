@@ -1,0 +1,25 @@
+[package]
+name = "prompt-cache"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Request-hash-level LLM response cache (LRU + SQLite persistence)"
+
+[dependencies]
+duo-types = { workspace = true }
+duo-utils = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+lru = "0.12"
+rusqlite = { workspace = true }
+r2d2 = { workspace = true }
+r2d2_sqlite = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+tokio = { workspace = true }
+db-layer = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

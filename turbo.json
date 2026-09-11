@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json.schemastore.org/turbo.json",
+  "globalEnv": ["CI", "DUODUO_DISABLE_SHARE"],
+  "globalPassThroughEnv": ["CI", "DUODUO_DISABLE_SHARE"],
+  "tasks": {
+    "typecheck": {
+      "dependsOn": []
+    },
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
+    },
+    "duoduo#test": {
+      "dependsOn": ["^build"],
+      "outputs": [],
+      "passThroughEnv": ["*"]
+    },
+    "duoduo#test:ci": {
+      "dependsOn": ["^build"],
+      "outputs": [".artifacts/unit/junit.xml"],
+      "passThroughEnv": ["*"]
+    }
+  }
+}

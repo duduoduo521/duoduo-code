@@ -1,0 +1,26 @@
+diff --git a/dist/openApi-Dy5wknYZ.cjs b/dist/openApi-Dy5wknYZ.cjs
+index 6464ee2..73412b4 100644
+--- a/dist/openApi-Dy5wknYZ.cjs
++++ b/dist/openApi-Dy5wknYZ.cjs
+@@ -35,7 +35,7 @@ node_fs = __toESM(node_fs);
+ let node_path = require("node:path");
+ node_path = __toESM(node_path);
+ let node_url = require("node:url");
+-let typescript = require("typescript");
++let typescript = require("@typescript/typescript6");
+ typescript = __toESM(typescript);
+ let node_os = require("node:os");
+ let semver = require("semver");
+diff --git a/dist/openApi-Gs-XGatv.mjs b/dist/openApi-Gs-XGatv.mjs
+index 38a8597..f2e7545 100644
+--- a/dist/openApi-Gs-XGatv.mjs
++++ b/dist/openApi-Gs-XGatv.mjs
+@@ -5,7 +5,7 @@ import colors from "ansi-colors";
+ import fs from "node:fs";
+ import path from "node:path";
+ import { fileURLToPath } from "node:url";
+-import ts from "typescript";
++import ts from "@typescript/typescript6";
+ import { EOL } from "node:os";
+ import * as semver from "semver";
+ import { getResolvedInput, sendRequest } from "@hey-api/json-schema-ref-parser";

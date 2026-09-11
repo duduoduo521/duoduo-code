@@ -1,0 +1,39 @@
+[package]
+name = "knowledge-graph-store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "knowledge-graph-store crate for DuoDuo smart layer"
+
+[dependencies]
+duo-types = { workspace = true }
+duo-utils = { workspace = true }
+unified-error = { workspace = true }
+anyhow = { workspace = true }
+petgraph = { workspace = true }
+bincode = { workspace = true }
+ignore = { workspace = true }
+rusqlite = { workspace = true }
+r2d2 = { workspace = true }
+r2d2_sqlite = { workspace = true }
+tokio = { workspace = true }
+ast-engine = { workspace = true }
+tree-sitter = { workspace = true }
+regex = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+db-layer = { workspace = true }
+instant-distance = { workspace = true }
+reqwest = { workspace = true }
+# OS scheduling priority for background indexing (kept out of the UI's way).
+# `libc` and `windows-sys` are already present in the dependency tree, so no
+# new download is required.
+libc = "0.2"
+windows-sys = { version = "0.52", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_SystemInformation",
+] }
+chrono = { workspace = true }
+security-design = { workspace = true }

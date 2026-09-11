@@ -1,0 +1,66 @@
+[package]
+name = "ast-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "AST engine with tree-sitter support for multi-agent coordination"
+
+[dependencies]
+duo-types = { workspace = true }
+duo-utils = { workspace = true }
+unified-error = { workspace = true }
+anyhow = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# Unified tree-sitter runtime (0.24) — a single instance shared by every
+# per-language grammar crate below (via `links = "tree-sitter"`), so the
+# `Language`/`Parser`/`Node`/`Tree` types are identical everywhere.
+tree-sitter = { workspace = true }
+# Per-language grammar crates (all tree-sitter 0.24 compatible). Compiled in
+# unconditionally (no feature gating) so `with_parser` can resolve any of them
+# at runtime. Languages without a 0.24-compatible grammar crate (swift/kotlin/
+# toml/markdown/sql/vue/svelte/protobuf/graphql/…) fall back to regex extraction
+# in `knowledge-graph-store`.
+tree-sitter-rust = { workspace = true }
+tree-sitter-typescript = { workspace = true }
+tree-sitter-python = { workspace = true }
+tree-sitter-go = { workspace = true }
+tree-sitter-java = { workspace = true }
+tree-sitter-javascript = { workspace = true }
+tree-sitter-c = { workspace = true }
+tree-sitter-cpp = { workspace = true }
+tree-sitter-c-sharp = { workspace = true }
+tree-sitter-ruby = { workspace = true }
+tree-sitter-php = { workspace = true }
+tree-sitter-scala = { workspace = true }
+tree-sitter-lua = { workspace = true }
+tree-sitter-dart = { workspace = true }
+tree-sitter-elixir = { workspace = true }
+tree-sitter-yaml = { workspace = true }
+tree-sitter-json = { workspace = true }
+tree-sitter-html = { workspace = true }
+tree-sitter-css = { workspace = true }
+tree-sitter-bash = { workspace = true }
+tree-sitter-haskell = { workspace = true }
+tree-sitter-nix = { workspace = true }
+tree-sitter-ocaml = { workspace = true }
+tree-sitter-pascal = { workspace = true }
+tree-sitter-powershell = { workspace = true }
+tree-sitter-r = { workspace = true }
+tree-sitter-fortran = { workspace = true }
+tree-sitter-solidity = { workspace = true }
+tree-sitter-xml = { workspace = true }
+tree-sitter-cmake = { workspace = true }
+tree-sitter-fish = { workspace = true }
+tree-sitter-julia = { workspace = true }
+tree-sitter-kotlin-ng = { workspace = true }
+tree-sitter-zig = { workspace = true }
+tree-sitter-sequel = { workspace = true }
+# 额外语言 grammar crate（tree-sitter-language ^0.1 抽象层，0.24.5 兼容，ABI 13/14 实测通过）。
+tree-sitter-toml-ng = { workspace = true }
+tree-sitter-svelte-next = { workspace = true }
+tree-sitter-clojure-orchard = { workspace = true }
+tree-sitter-erlang = { workspace = true }
+tree-sitter-ada = { workspace = true }
+tree-sitter-dockerfile-updated = { workspace = true }

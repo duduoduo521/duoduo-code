@@ -1,0 +1,254 @@
+[data-component="button"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-style: solid;
+  border-width: 1px;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  user-select: none;
+  cursor: default;
+  outline: none;
+  white-space: nowrap;
+  transition:
+    background-color var(--duration-fast) ease,
+    border-color var(--duration-fast) ease,
+    color var(--duration-fast) ease,
+    box-shadow var(--duration-fast) ease,
+    transform var(--duration-fast) var(--ease-out);
+
+  &:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+
+  &[data-variant="primary"] {
+    background-color: var(--button-primary-base);
+    border-color: var(--border-weak-base);
+    color: var(--icon-invert-base);
+
+    [data-slot="icon-svg"] {
+      color: var(--icon-invert-base);
+    }
+
+    &:hover:not(:disabled) {
+      background-color: var(--icon-strong-hover);
+    }
+    &:focus:not(:disabled) {
+      background-color: var(--icon-strong-focus);
+    }
+    &:active:not(:disabled) {
+      background-color: var(--icon-strong-active);
+    }
+    &:disabled {
+      background-color: var(--icon-strong-disabled);
+
+      [data-slot="icon-svg"] {
+        color: var(--icon-invert-base);
+      }
+    }
+  }
+
+  /* Destructive action button (delete / clear / reset confirmations).
+     Saturated red (--border-critical-selected is the one critical ramp value
+     that reads as a proper button red in BOTH themes — the surface-critical
+     ramp flips between washed-out pink in light and pale rose in dark) with
+     white label. Hover/active darken via color-mix instead of another ramp
+     step, so the press feedback direction is consistent in light and dark. */
+  &[data-variant="critical"] {
+    background-color: var(--border-critical-selected);
+    border-color: transparent;
+    /* White label on this red is correct in both themes; the on-critical text
+       tokens invert per theme and would turn black-on-red in dark mode. */
+    color: #fff;
+
+    [data-slot="icon-svg"] {
+      color: #fff;
+    }
+
+    &:hover:not(:disabled) {
+      background-color: color-mix(in oklab, var(--border-critical-selected) 86%, black);
+    }
+    &:focus:not(:disabled) {
+      background-color: color-mix(in oklab, var(--border-critical-selected) 86%, black);
+    }
+    &:active:not(:disabled) {
+      background-color: color-mix(in oklab, var(--border-critical-selected) 78%, black);
+    }
+    &:disabled {
+      background-color: var(--surface-disabled);
+      color: var(--text-weak);
+      cursor: not-allowed;
+    }
+  }
+
+  &[data-variant="ghost"] {
+    border-color: transparent;
+    background-color: transparent;
+    color: var(--text-strong);
+
+    [data-slot="icon-svg"] {
+      color: var(--icon-base);
+    }
+
+    &:hover:not(:disabled) {
+      background-color: var(--surface-base-hover);
+    }
+    &:focus-visible:not(:disabled) {
+      background-color: var(--surface-base-hover);
+    }
+    &:active:not(:disabled) {
+      background-color: var(--surface-base-active);
+    }
+    &:disabled {
+      color: var(--text-weak);
+      cursor: not-allowed;
+
+      [data-slot="icon-svg"] {
+        color: var(--icon-disabled);
+      }
+    }
+    &[data-selected="true"]:not(:disabled) {
+      background-color: var(--surface-base-hover);
+    }
+    &[data-active="true"] {
+      background-color: var(--surface-base-active);
+    }
+  }
+
+  &[data-variant="secondary"] {
+    border: transparent;
+    background-color: var(--button-secondary-base);
+    color: var(--text-strong);
+    /* Raised: lit top edge, shaded bottom edge, on top of the existing
+       1px ring. The button now reads as an object under the same overhead
+       light as everything else, instead of a flat area with a border. */
+    box-shadow: var(--shadow-xs-border-base), var(--light-raised);
+
+    &:hover:not(:disabled) {
+      background-color: var(--button-secondary-hover);
+    }
+    &:focus:not(:disabled) {
+      background-color: var(--button-secondary-base);
+    }
+    &:focus-visible:not(:active) {
+      background-color: var(--button-secondary-base);
+      /* Ring + lighting + the focus halo. The halo is additive: the 2px
+         outline below still carries the accessible focus indicator. */
+      box-shadow: var(--shadow-xs-border-focus), var(--light-raised), var(--light-focus-glow);
+    }
+    &:focus-visible:active {
+      box-shadow: none;
+    }
+    &:active:not(:disabled) {
+      background-color: var(--button-secondary-base);
+    }
+    &:disabled {
+      border-color: var(--border-disabled);
+      background-color: var(--surface-disabled);
+      color: var(--text-weak);
+      cursor: not-allowed;
+    }
+
+    [data-slot="icon-svg"] {
+      color: var(--icon-base);
+    }
+  }
+
+  /* Horizontal padding steps in lockstep with the height steps (28/32/40),
+     so the "text-to-edge" breathing room stays proportional instead of
+     collapsing at the most-used `normal` tier. The old ladder was
+     8 / 6 / 12px — `normal` was tighter than `small`, which is why default
+     buttons read as cramped next to their own 32px input/select siblings. */
+  &[data-size="small"] {
+    height: var(--control-height-sm);
+    padding: 0 10px;
+    &[data-icon] {
+      padding: 0 12px 0 8px;
+    }
+
+    font-size: var(--font-size-small);
+    gap: 6px;
+
+    /* text-13-medium */
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-small);
+    font-style: normal;
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-large);
+    letter-spacing: var(--letter-spacing-normal);
+  }
+
+  &[data-size="normal"] {
+    height: var(--control-height-md);
+    padding: 0 14px;
+    &[data-icon] {
+      padding: 0 14px 0 10px;
+    }
+
+    font-size: var(--font-size-small);
+    gap: 8px;
+
+    /* text-13-medium */
+    font-family: var(--font-family-sans);
+    font-size: var(--font-size-small);
+    font-style: normal;
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-large);
+    letter-spacing: var(--letter-spacing-normal);
+  }
+
+  &[data-size="large"] {
+    height: var(--control-height-lg);
+    padding: 0 18px;
+
+    &[data-icon] {
+      padding: 0 18px 0 14px;
+    }
+
+    gap: 8px;
+
+    /* text-14-medium */
+    font-family: var(--font-family-sans);
+    font-size: 14px;
+    font-style: normal;
+    font-weight: var(--font-weight-medium);
+    line-height: var(--line-height-large); /* 142.857% */
+    letter-spacing: var(--letter-spacing-normal);
+  }
+
+  &:focus {
+    outline: none;
+  }
+
+  /* `primary` and `ghost` signal focus with a background shift alone, which is
+     easy to miss when tabbing. `secondary` already draws its own ring via
+     box-shadow, so this only fills the gap rather than doubling up. */
+  &:focus-visible {
+    outline: var(--focus-ring-width) solid var(--focus-ring-color);
+    outline-offset: var(--focus-ring-offset);
+  }
+}
+
+[data-component="button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"] {
+  background-color: var(--surface-base-active);
+}
+
+[data-component="button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"] [data-slot="icon-svg"] {
+  color: var(--icon-strong-base);
+}
+
+[data-component="button"].titlebar-icon[data-variant="ghost"][aria-expanded="true"]:hover:not(:disabled) {
+  background-color: var(--surface-base-active);
+}
+
+[data-component="button"].titlebar-icon[data-variant="ghost"][aria-current="page"] {
+  background-color: var(--surface-base-active);
+}
+
+[data-component="button"].titlebar-icon[data-variant="ghost"][aria-current="page"] [data-slot="icon-svg"] {
+  color: var(--icon-strong-base);
+}
+
+[data-component="button"].titlebar-icon[data-variant="ghost"][aria-current="page"]:hover:not(:disabled) {
+  background-color: var(--surface-base-active);
+}

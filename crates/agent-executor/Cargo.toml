@@ -1,0 +1,69 @@
+[package]
+name = "agent-executor"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "agent-executor crate for DuoDuo smart layer"
+
+[dependencies]
+duo-types = { workspace = true }
+async-trait = { workspace = true }
+unified-error = { workspace = true }
+context-builder = { workspace = true }
+blackboard-coordinator = { workspace = true }
+duo-utils = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+uuid = { workspace = true }
+reqwest = { workspace = true }
+tracing = { workspace = true }
+futures = { workspace = true }
+tokio-stream = { workspace = true }
+tokio-util = { workspace = true }
+bytes = { workspace = true }
+regex = { workspace = true }
+walkdir = "2"
+url = "2"
+htmd = "0.5"
+security-design = { workspace = true }
+permission-eval = { workspace = true }
+prompt-cache = { workspace = true }
+prompt-template = { workspace = true }
+config-manager = { workspace = true }
+feedback-loop = { workspace = true }
+memory-system = { workspace = true }
+chrono = { workspace = true }
+ignore = { workspace = true }
+session-manager = { workspace = true }
+knowledge-graph-store = { workspace = true }
+code-search = { workspace = true }
+# ③ contract planner (B5): stateless in-process contract-consistency check on
+# sub-agent writes. quality-pipeline is a pure crate (no network/IO), matching
+# the existing heavy-dependency pattern in this crate.
+quality-pipeline = { workspace = true }
+toml = { workspace = true }
+# IntelGear WASM backend (Phase 3): sandbox plugins as WebAssembly components.
+# Optional + feature-gated so the default build carries no wasmtime dependency.
+wasmtime = { version = "47", optional = true }
+
+[features]
+# Enables the wasmtime component-model backend for IntelGear plugins.
+wasm-backend = ["dep:wasmtime"]
+
+[target.'cfg(unix)'.dependencies]
+# `kill(-pgid, SIGKILL)` — terminates the whole process group of a bash
+# command. `libc` is already in the dependency tree (same pin as
+# knowledge-graph-store / duo-smart-layer), so this adds nothing new.
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+# `OpenProcess` + `GetExitCodeProcess` — liveness probe for the cross-process
+# snapshot lock (P1-30). Same version/features the desktop already uses.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading"] }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tracing-subscriber = { workspace = true }
+tempfile = "3"

@@ -1,0 +1,424 @@
+/* ---------------------------------------------------------------------------
+ * Diff Engine Styles
+ *
+ * Replaces the Shadow DOM-injected styles from @pierre/diffs.
+ * All selectors target regular DOM — ::selection works natively.
+ *
+ * COMPATIBILITY: All colors are hardcoded rgba() — no color-mix(),
+ * no rgb(from ...), no light-dark(). These CSS Level 4+ features are
+ * not supported on WebKitGTK (Linux). Dark mode uses [data-color-scheme]
+ * overrides. CSS Custom Highlight API (::highlight) is Safari 17.2+ /
+ * Chromium 105+ only — find.ts has a JS fallback for unsupported browsers.
+ * --------------------------------------------------------------------------- */
+
+[data-component="diff-viewer"],
+[data-diff] {
+  --diffs-font-family: var(--font-family-mono);
+  --diffs-font-size: var(--font-size-small);
+  --diffs-line-height: 24px;
+  --diffs-tab-size: 2;
+  --diffs-min-number-column-width: 4ch;
+  /* Horizontal scroll lives on the outer container so cross-line text
+     selection isn't broken by per-line scroll containers. */
+  overflow-x: auto;
+}
+
+[data-component="file-viewer"],
+[data-file] {
+  --diffs-font-family: var(--font-family-mono);
+  --diffs-font-size: var(--font-size-small);
+  --diffs-line-height: 24px;
+  --diffs-tab-size: 2;
+  --diffs-min-number-column-width: 4ch;
+  overflow-x: auto;
+}
+
+/* ========================================================================= */
+/* ::selection — use the browser/system default highlight color (same as     */
+/* a <textarea>). No custom rule = native blue selection.                    */
+/* ========================================================================= */
+
+/* ========================================================================= */
+/* Container focus — tabindex={0} for Ctrl+F                                */
+/* ========================================================================= */
+
+[data-diff]:focus,
+[data-file]:focus {
+  outline: none;
+}
+
+/* Allow native text selection across the whole viewer, defending against
+   any ambient `user-select: none` from ancestors (Tauri/Electron containers,
+   webkit defaults, etc.). */
+[data-diff],
+[data-file] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ========================================================================= */
+/* Diff Viewer — Row layout                                                  */
+/* ========================================================================= */
+
+.diff-row {
+  display: flex;
+  align-items: stretch;
+  min-height: var(--diffs-line-height, 24px);
+  line-height: var(--diffs-line-height, 24px);
+  font-family: var(--diffs-font-family);
+  font-size: var(--diffs-font-size);
+  tab-size: var(--diffs-tab-size);
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* ---- Line numbers ---- */
+
+.diff-line-number {
+  flex: 0 0 auto;
+  min-width: var(--diffs-min-number-column-width, 4ch);
+  padding: 0 8px;
+  text-align: right;
+  color: rgba(0, 0, 0, 0.45);
+  background-color: var(--background-stronger);
+  user-select: none;
+  cursor: default;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.diff-line-number-old {
+  border-right: 1px solid var(--border-subtle);
+}
+
+.diff-line-number-new {
+  border-right: 1px solid var(--border-subtle);
+}
+
+/* ---- Diff indicator (+/-) ---- */
+
+.diff-indicator {
+  flex: 0 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+  color: rgba(0, 0, 0, 0.45);
+  font-family: var(--diffs-font-family);
+}
+
+/* ---- Code content ----
+   IMPORTANT: do NOT put `overflow-x: auto` on each line. That creates a
+   separate scroll container / block-formatting-context per line, which
+   on WebKit/Chromium breaks cross-line text selection (selecting N lines
+   only highlights N-1 or N-2 lines, especially when dragging fast).
+   Horizontal scrolling, if needed, must live on the outer container. */
+.diff-line-content {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0 8px;
+  white-space: pre;
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+}
+
+/* ========================================================================= */
+/* Diff Viewer — Line type backgrounds (light mode)                          */
+/* ========================================================================= */
+
+.diff-line-addition {
+  background-color: rgba(18, 201, 5, 0.08);
+}
+.diff-line-addition .diff-line-number {
+  background-color: rgba(18, 201, 5, 0.15);
+}
+
+.diff-line-deletion {
+  background-color: rgba(252, 83, 58, 0.08);
+}
+.diff-line-deletion .diff-line-number {
+  background-color: rgba(252, 83, 58, 0.15);
+}
+
+/* .diff-line-context: inherits base background — no override needed */
+
+.diff-hunk-header {
+  background-color: rgba(18, 201, 5, 0.06);
+}
+
+.diff-hunk-header-content {
+  padding: 0 8px;
+  font-family: var(--diffs-font-family);
+  font-size: var(--diffs-font-size);
+  color: rgba(0, 0, 0, 0.45);
+  white-space: pre;
+}
+
+.diff-no-newline {
+  color: rgba(0, 0, 0, 0.45);
+  font-style: italic;
+}
+
+/* ========================================================================= */
+/* Diff Viewer — Dark mode overrides                                         */
+/* ========================================================================= */
+
+[data-color-scheme="dark"] [data-diff] .diff-line-addition,
+[data-diff][data-color-scheme="dark"] .diff-line-addition {
+  background-color: rgba(18, 201, 5, 0.12);
+}
+[data-color-scheme="dark"] [data-diff] .diff-line-addition .diff-line-number,
+[data-diff][data-color-scheme="dark"] .diff-line-addition .diff-line-number {
+  background-color: rgba(18, 201, 5, 0.2);
+}
+
+[data-color-scheme="dark"] [data-diff] .diff-line-deletion,
+[data-diff][data-color-scheme="dark"] .diff-line-deletion {
+  background-color: rgba(252, 83, 58, 0.12);
+}
+[data-color-scheme="dark"] [data-diff] .diff-line-deletion .diff-line-number,
+[data-diff][data-color-scheme="dark"] .diff-line-deletion .diff-line-number {
+  background-color: rgba(252, 83, 58, 0.2);
+}
+
+[data-color-scheme="dark"] [data-diff] .diff-hunk-header,
+[data-diff][data-color-scheme="dark"] .diff-hunk-header {
+  background-color: rgba(18, 201, 5, 0.15);
+}
+
+[data-color-scheme="dark"] [data-diff] .diff-line-number,
+[data-color-scheme="dark"] [data-diff] .diff-indicator,
+[data-color-scheme="dark"] [data-diff] .diff-hunk-header-content,
+[data-color-scheme="dark"] [data-diff] .diff-no-newline,
+[data-diff][data-color-scheme="dark"] .diff-line-number,
+[data-diff][data-color-scheme="dark"] .diff-indicator,
+[data-diff][data-color-scheme="dark"] .diff-hunk-header-content,
+[data-diff][data-color-scheme="dark"] .diff-no-newline {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* ========================================================================= */
+/* Diff Viewer — Selection highlight                                         */
+/* ========================================================================= */
+
+/* ---- Light mode ---- */
+
+.diff-row[data-selected-line] {
+  background-color: rgba(252, 243, 203, 0.65) !important;
+  box-shadow: inset 2px 0 0 #e5a100;
+}
+
+.diff-row[data-selected-line] .diff-line-number {
+  background-color: rgba(252, 243, 203, 0.85) !important;
+  color: #1c1917 !important;
+}
+
+/* Soften word-diff emphasis when the line is selected */
+.diff-row[data-selected-line] [data-diff-span] {
+  background-color: transparent !important;
+  box-shadow: none;
+  border-bottom: none;
+}
+
+/* ---- Dark mode ---- */
+
+[data-color-scheme="dark"] [data-diff] .diff-row[data-selected-line],
+[data-diff][data-color-scheme="dark"] .diff-row[data-selected-line] {
+  background-color: rgba(42, 42, 42, 0.65) !important;
+  box-shadow: inset 2px 0 0 #e5a100;
+}
+
+[data-color-scheme="dark"] [data-diff] .diff-row[data-selected-line] .diff-line-number,
+[data-diff][data-color-scheme="dark"] .diff-row[data-selected-line] .diff-line-number {
+  background-color: rgba(42, 42, 42, 0.85) !important;
+  color: #fdfbfb !important;
+}
+
+/* ========================================================================= */
+/* Diff Viewer — Comment highlight                                           */
+/* ========================================================================= */
+
+.diff-row[data-comment-selected]:not([data-selected-line]) {
+  box-shadow: inset 0 0 0 9999px rgba(252, 243, 203, 0.65);
+}
+
+.diff-row[data-comment-selected] .diff-line-number:not([data-selected-line]) {
+  box-shadow: inset 0 0 0 9999px rgba(252, 243, 203, 0.85);
+  color: #1c1917;
+}
+
+[data-color-scheme="dark"] [data-diff] .diff-row[data-comment-selected]:not([data-selected-line]),
+[data-diff][data-color-scheme="dark"] .diff-row[data-comment-selected]:not([data-selected-line]) {
+  box-shadow: inset 0 0 0 9999px rgba(42, 42, 42, 0.65);
+}
+
+[data-color-scheme="dark"] [data-diff] .diff-row[data-comment-selected] .diff-line-number:not([data-selected-line]),
+[data-diff][data-color-scheme="dark"] .diff-row[data-comment-selected] .diff-line-number:not([data-selected-line]) {
+  box-shadow: inset 0 0 0 9999px rgba(42, 42, 42, 0.85);
+  color: #fdfbfb;
+}
+
+/* ========================================================================= */
+/* Diff Viewer — Word-diff inline highlighting                               */
+/* ========================================================================= */
+
+[data-diff-span][data-diff-remove] {
+  background-color: rgba(252, 83, 58, 0.35);
+  border-radius: 2px;
+}
+
+[data-diff-span][data-diff-add] {
+  background-color: rgba(18, 201, 5, 0.07);
+  border-radius: 2px;
+}
+
+/* JS fallback highlight marks (for WebKitGTK where ::highlight is not supported) */
+
+mark[data-find-match] {
+  background-color: rgba(252, 243, 203, 0.35);
+  color: inherit;
+  border-radius: 1px;
+}
+
+mark[data-find-match-current] {
+  background-color: rgba(251, 221, 70, 0.55);
+  color: inherit;
+  border-radius: 1px;
+}
+
+/* ========================================================================= */
+/* Diff Viewer — Split (side-by-side) layout                                 */
+/* ========================================================================= */
+
+.diff-viewer-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
+  align-items: stretch;
+}
+
+/* Hunk header banner spans both columns */
+.diff-split-header {
+  grid-column: 1 / -1;
+}
+
+/* Placeholder cell for an unmatched side (e.g. an addition with no paired
+   deletion, or vice versa). Uses the gutter background so the alignment reads
+   as "no code on this side". */
+.diff-split-empty {
+  background-color: var(--background-stronger);
+}
+
+/* Grid items must not overflow their column */
+.diff-viewer-split .diff-row {
+  min-width: 0;
+}
+
+/* ========================================================================= */
+/* File Viewer — Row layout                                                  */
+/* ========================================================================= */
+
+.file-row {
+  display: flex;
+  align-items: stretch;
+  min-height: var(--diffs-line-height, 24px);
+  line-height: var(--diffs-line-height, 24px);
+  font-family: var(--diffs-font-family);
+  font-size: var(--diffs-font-size);
+  tab-size: var(--diffs-tab-size);
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.file-line-number {
+  flex: 0 0 auto;
+  min-width: var(--diffs-min-number-column-width, 4ch);
+  padding: 0 8px;
+  text-align: right;
+  color: rgba(0, 0, 0, 0.45);
+  background-color: var(--background-stronger);
+  user-select: none;
+  cursor: default;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  border-right: 1px solid var(--border-subtle);
+}
+
+.file-line-content {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 0 8px;
+  white-space: pre;
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+}
+
+/* ========================================================================= */
+/* File Viewer — Selection highlight                                         */
+/* ========================================================================= */
+
+.file-row[data-selected-line] {
+  background-color: rgba(252, 243, 203, 0.65) !important;
+  box-shadow: inset 2px 0 0 #e5a100;
+}
+
+.file-row[data-selected-line] .file-line-number {
+  background-color: rgba(252, 243, 203, 0.85) !important;
+  color: #1c1917 !important;
+}
+
+[data-color-scheme="dark"] [data-file] .file-row[data-selected-line],
+[data-file][data-color-scheme="dark"] .file-row[data-selected-line] {
+  background-color: rgba(42, 42, 42, 0.65) !important;
+  box-shadow: inset 2px 0 0 #e5a100;
+}
+
+[data-color-scheme="dark"] [data-file] .file-row[data-selected-line] .file-line-number,
+[data-file][data-color-scheme="dark"] .file-row[data-selected-line] .file-line-number {
+  background-color: rgba(42, 42, 42, 0.85) !important;
+  color: #fdfbfb !important;
+}
+
+/* ========================================================================= */
+/* File Viewer — Dark mode                                                   */
+/* ========================================================================= */
+
+[data-color-scheme="dark"] [data-file] .file-line-number,
+[data-file][data-color-scheme="dark"] .file-line-number {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* ========================================================================= */
+/* File Viewer — Virtual scroll (Chromium/Safari 18+, no WebKitGTK)          */
+/* ========================================================================= */
+
+.file-row-virtualized {
+  content-visibility: auto;
+  contain-intrinsic-size: auto var(--diffs-line-height, 24px);
+}
+
+/* ========================================================================= */
+/* File Viewer — Comment highlight                                           */
+/* ========================================================================= */
+
+.file-row[data-comment-selected]:not([data-selected-line]) {
+  box-shadow: inset 0 0 0 9999px rgba(252, 243, 203, 0.65);
+}
+
+.file-row[data-comment-selected] .file-line-number:not([data-selected-line]) {
+  box-shadow: inset 0 0 0 9999px rgba(252, 243, 203, 0.85);
+  color: #1c1917;
+}
+
+[data-color-scheme="dark"] [data-file] .file-row[data-comment-selected]:not([data-selected-line]),
+[data-file][data-color-scheme="dark"] .file-row[data-comment-selected]:not([data-selected-line]) {
+  box-shadow: inset 0 0 0 9999px rgba(42, 42, 42, 0.65);
+}
+
+[data-color-scheme="dark"] [data-file] .file-row[data-comment-selected] .file-line-number:not([data-selected-line]),
+[data-file][data-color-scheme="dark"] .file-row[data-comment-selected] .file-line-number:not([data-selected-line]) {
+  box-shadow: inset 0 0 0 9999px rgba(42, 42, 42, 0.85);
+  color: #fdfbfb;
+}

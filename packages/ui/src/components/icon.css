@@ -1,0 +1,50 @@
+[data-component="icon"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  /* resize: both; */
+  aspect-ratio: 1/1;
+  color: var(--icon-base);
+
+  &[data-size="small"] {
+    width: var(--icon-size-sm);
+    height: var(--icon-size-sm);
+  }
+
+  &[data-size="normal"] {
+    width: var(--icon-size-md);
+    height: var(--icon-size-md);
+  }
+
+  &[data-size="medium"] {
+    width: var(--icon-size-lg);
+    height: var(--icon-size-lg);
+  }
+
+  &[data-size="large"] {
+    width: var(--icon-size-lg);
+    height: var(--icon-size-lg);
+  }
+
+  [data-slot="icon-svg"] {
+    width: 100%;
+    height: auto;
+
+    /* Every stroked glyph in icon.tsx carries stroke-linecap="square", and
+       most leave stroke-width at the SVG default of 1. On a 20×20 viewBox
+       rendered at 16–20px that combination is the main reason the icon set
+       reads hard and slightly cheap: square terminals cut the strokes off
+       abruptly, and a 1px stroke scales down to ~0.8px and goes muddy.
+
+       Rounded joins/terminals and a real stroke width fix this without
+       redrawing a single path — these are presentation attributes, and CSS
+       wins over them, so this overrides the per-glyph values.
+
+       stroke-width is behind a variable so a glyph that genuinely needs a
+       different weight can opt out with --icon-stroke-width. */
+    stroke-width: var(--icon-stroke-width, 1.5);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+}

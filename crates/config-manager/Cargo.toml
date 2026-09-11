@@ -1,0 +1,15 @@
+[package]
+name = "config-manager"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "config-manager crate for DuoDuo smart layer"
+
+[dependencies]
+duo-types = { workspace = true }
+duo-utils = { workspace = true, features = ["secret-store"] }
+serde = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+toml = { workspace = true }
+im-bridge = { workspace = true }

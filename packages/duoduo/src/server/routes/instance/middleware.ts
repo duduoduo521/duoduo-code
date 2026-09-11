@@ -1,0 +1,36 @@
+import type { MiddlewareHandler } from "hono"
+import { Instance } from "@/project/instance"
+import { InstanceBootstrap } from "@/project/bootstrap"
+import { AppRuntime } from "@/effect/app-runtime"
+import { AppFileSystem } from "@duoduo-ai/shared/filesystem"
+import { WorkspaceContext } from "@/control-plane/workspace-context"
+import { WorkspaceID } from "@/control-plane/schema"
+
+export function InstanceMiddleware(workspaceID?: WorkspaceID): MiddlewareHandler {
+  return async (c, next) => {
+    const raw =
+      process.env.DUO_FIXED_DIRECTORY || c.req.query("directory") || c.req.header("x-duoduo-directory") || process.cwd()
+    const directory = AppFileSystem.resolve(
+      (() => {
+        try {
+          return decodeURIComponent(raw)
+        } catch {
+          return raw
+        }
+      })(),
+    )
+
+    return WorkspaceContext.provide({
+      workspaceID,
+      async fn() {
+        return Instance.provide({
+          directory,
+          init: () => AppRuntime.runPromise(InstanceBootstrap),
+          async fn() {
+            return next()
+          },
+        })
+      },
+    })
+  }
+}

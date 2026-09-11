@@ -1,0 +1,40 @@
+{
+  "part": {
+    "types": [
+      "text",
+      "subtask",
+      "reasoning",
+      "file",
+      "tool",
+      "step-start",
+      "step-finish",
+      "snapshot",
+      "patch",
+      "agent",
+      "retry",
+      "compaction",
+      "review"
+    ],
+    "baseRequired": [
+      "id",
+      "sessionID",
+      "messageID",
+      "type"
+    ],
+    "toolStateStatuses": [
+      "pending",
+      "running",
+      "completed",
+      "error"
+    ],
+    "toolRequired": [
+      "id",
+      "sessionID",
+      "messageID",
+      "type",
+      "callID",
+      "tool",
+      "state"
+    ]
+  }
+}

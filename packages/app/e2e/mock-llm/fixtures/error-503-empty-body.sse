@@ -1,0 +1,3 @@
+# status: 503
+# content-type: text/plain
+# 空 body 503，覆盖 bug #7 errorMessage 处理空 Error 路径

@@ -1,0 +1,7 @@
+# status: 200
+# finish_reason=length，输出被强制截断
+data: {"id":"chatcmpl-mock-007","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"role":"assistant","content":"This output was truncated by the model max output limit"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-007","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{},"finish_reason":"length"}],"usage":{"prompt_tokens":10,"completion_tokens":4096,"total_tokens":4106}}
+
+data: [DONE]

@@ -1,0 +1,11 @@
+# status: 401
+# content-type: text/html
+# HTML 网关 401，覆盖 bug #11 message() 解析 HTML body 路径
+<!DOCTYPE html>
+<html>
+<head><title>401 Authorization Required</title></head>
+<body>
+<center><h1>401 Authorization Required</h1></center>
+<hr><center>nginx/1.20.1</center>
+</body>
+</html>

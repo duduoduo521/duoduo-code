@@ -1,0 +1,234 @@
+# 根 Cargo.toml（位于 duoduo-ai-ide/ 根目录）
+# members 路径使用 "crates/xxx" 因为 Cargo.toml 在项目根目录
+# Rust 智能层源码统一在 duoduo-ai-ide monorepo 内
+[workspace]
+resolver = "2"
+members = [
+    "crates/duo-types",
+    "crates/duo-utils",
+    "crates/memory-system",
+    "crates/quality-pipeline",
+    "crates/intent-clarifier",
+    "crates/context-builder",
+    "crates/dna-engine",
+    "crates/feedback-loop",
+    "crates/unified-error",
+    "crates/security-design",
+    "crates/ast-engine",
+    "crates/code-search",
+    "crates/knowledge-graph-store",
+    "crates/agent-scheduler",
+    "crates/agent-executor",
+    "crates/session-manager",
+    "crates/config-manager",
+    "crates/im-bridge",
+    "crates/duo-smart-layer",
+    "crates/blackboard-store",
+    "crates/file-lock-manager",
+    "crates/blackboard-coordinator",
+    "crates/prompt-cache",
+    "crates/prompt-template",
+    "crates/db-layer",
+    "crates/permission-eval",
+    "crates/security-tests",
+    "packages/desktop/src-tauri",
+]
+[workspace.dependencies]
+# 序列化
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 异步运行时
+tokio = { version = "1", features = [
+    "rt-multi-thread", "macros", "sync", "time", "net", "signal", "fs",
+    "process", "io-util",
+] }
+tokio-stream = "0.1"
+tokio-util = { version = "0.7", features = ["rt"] }
+futures = "0.3"
+
+# HTTP 服务器
+axum = "0.7"
+tower = "0.5"
+tower-http = { version = "0.5", features = ["cors", "trace", "catch-panic"] }
+http = "1"
+
+# 数据库
+rusqlite = { version = "0.31", features = ["bundled-full"] }
+r2d2 = "0.8"
+r2d2_sqlite = "0.24"
+
+# 日志
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# OpenTelemetry
+opentelemetry = "0.27"
+opentelemetry_sdk = { version = "0.27", features = ["rt-tokio"] }
+opentelemetry-otlp = { version = "0.27", features = ["http-proto", "reqwest-client"] }
+tracing-opentelemetry = "0.28"
+
+# 错误处理
+thiserror = "1"
+anyhow = "1"
+
+# 正则
+regex = "1"
+
+# 统一 tree-sitter 运行时 (0.24) — 所有 per-language grammar crate 共用同一份
+# 实例（`links = "tree-sitter"`），保证 `Language`/`Parser`/`Node` 类型一致。
+# 锚定 0.24.5 以满足 `tree-sitter-zig` 的 `^0.24.5` 约束，同时兼容其余 crate
+# 的 `^0.24` / `^0.23` / `>=0.21` 约束（均落在 0.24.x 区间）。
+tree-sitter = "0.24.5"
+# 32+ per-language grammar crate（tree-sitter 0.24 兼容；swift/kotlin/toml/markdown/
+# sql/vue/svelte/protobuf/graphql/clojure/erlang/nim/crystal/perl/ada/dockerfile/ini
+# 等无 0.24 兼容版本，由 knowledge-graph-store 走 regex 兜底）。
+# 全部以非 optional 依赖编入 ast-engine（无 feature 门控），`with_parser` 可在运行时
+# 直接解析任意语言。
+tree-sitter-rust = "=0.23.3"
+tree-sitter-typescript = "0.23.2"
+tree-sitter-python = "0.23.6"
+tree-sitter-go = "0.23.4"
+tree-sitter-java = "0.23.5"
+tree-sitter-javascript = "0.23.1"
+tree-sitter-c = "0.23.4"
+tree-sitter-cpp = "0.23.4"
+tree-sitter-c-sharp = "=0.23.1"
+tree-sitter-ruby = "0.23.1"
+tree-sitter-php = "0.23.11"
+tree-sitter-scala = "0.24.1"
+tree-sitter-lua = "0.1.0"
+tree-sitter-dart = "0.0.4"
+tree-sitter-elixir = "0.2.0"
+tree-sitter-yaml = "0.7.0"
+tree-sitter-json = "0.24.8"
+tree-sitter-html = "0.23.2"
+tree-sitter-css = "0.23.2"
+tree-sitter-bash = "0.23.3"
+tree-sitter-haskell = "0.21.0"
+tree-sitter-nix = "0.3.0"
+tree-sitter-ocaml = "0.24.2"
+tree-sitter-pascal = "0.10.2"
+tree-sitter-powershell = "0.2.0"
+tree-sitter-r = "1.0.1"
+tree-sitter-fortran = "0.5.1"
+tree-sitter-solidity = "=1.2.11"
+tree-sitter-xml = "0.7.0"
+tree-sitter-cmake = "0.5.0"
+tree-sitter-fish = "3.6.0"
+tree-sitter-julia = "0.23.1"
+tree-sitter-kotlin-ng = "1.1.0"
+tree-sitter-zig = "1.1.2"
+# SQL: tree-sitter-sequel (derekstride, formerly tree-sitter-sql) uses the
+# official `tree-sitter-language ^0.1` abstraction layer, so its runtime dep is
+# `tree-sitter-language` (zero deps) and it does NOT pin a `tree-sitter` version
+# → no second `tree-sitter` C lib, unifies with our 0.24.5. The prebuilt
+# `parser.c` shipped in the .crate must report ABI 13/14 (verified by
+# `sql_parser_abi_compatible_with_024`); if it reports 15, regenerate with the
+# 0.24 CLI (vendoring) instead of relying on the published artifact.
+tree-sitter-sequel = "0.3.11"
+
+# ── 额外语言 grammar crate（社区维护，基于官方 `tree-sitter-language ^0.1` 抽象层）──
+# 经 ast-engine 的 `all_enabled_languages_abi_compatible_with_024` 实测，以下 crate 的
+# 发布 parser.c 为 ABI 13/14，可被 0.24.5 运行时加载：
+tree-sitter-toml-ng = "0.7.0"
+tree-sitter-svelte-next = "0.1.1"
+tree-sitter-clojure-orchard = "0.2.5"
+tree-sitter-erlang = "0.19.0"
+tree-sitter-ada = "0.1.0"
+tree-sitter-dockerfile-updated = "0.2.0"
+# 以下 crate 的发布 parser.c 为 ABI 15（由 0.25/0.26 CLI 生成），0.24.5 运行时会拒绝
+# 加载；需 vendoring 源码 + 用 0.24 CLI 重新生成 parser.c（ABI 14）后方可启用：
+#   tree-sitter-swift, tree-sitter-vue-next, tree-sitter-proto, tree-sitter-graphql,
+#   ts-parser-perl, tree-sitter-ini, tree-sitter-md
+
+# 图计算
+petgraph = { version = "0.6", features = ["serde-1"] }
+
+# 二进制序列化（KG 缓存）
+bincode = "1"
+
+# HNSW 向量索引（记忆语义检索）— instant-distance 支持 serde 持久化
+instant-distance = { version = "0.6", features = ["with-serde"] }
+
+# .gitignore 解析
+ignore = "0.4"
+
+# HTTP 客户端（调用 LLM API）
+# NOTE: default-features=false + rustls-tls to avoid the native-tls/openssl-sys
+# dependency, which otherwise requires a Linux OpenSSL sysroot for cross-compilation
+# (cargo zigbuild --target x86_64-unknown-linux-gnu). The codebase uses rustls
+# (see duo-smart-layer main.rs: rustls::crypto::ring::default_provider), so this
+# is safe on all platforms.
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "blocking", "rustls-tls"] }
+
+# Bytes (used by reqwest::bytes_stream)
+bytes = "1"
+
+# UUID
+uuid = { version = "1", features = ["v4"] }
+
+# ULID (time-sortable, compatible with TS MessageID.ascending())
+ulid = "1"
+
+# Async trait
+async-trait = "0.1"
+
+# 时间
+chrono = { version = "0.4", features = ["serde"] }
+
+# 目录
+dirs = "6"
+
+# 配置
+toml = "0.8"
+
+
+
+# 内部 crate 依赖
+duo-types = { path = "crates/duo-types" }
+duo-utils = { path = "crates/duo-utils" }
+unified-error = { path = "crates/unified-error" }
+memory-system = { path = "crates/memory-system" }
+quality-pipeline = { path = "crates/quality-pipeline" }
+intent-clarifier = { path = "crates/intent-clarifier" }
+context-builder = { path = "crates/context-builder" }
+dna-engine = { path = "crates/dna-engine" }
+feedback-loop = { path = "crates/feedback-loop" }
+security-design = { path = "crates/security-design" }
+ast-engine = { path = "crates/ast-engine" }
+code-search = { path = "crates/code-search" }
+knowledge-graph-store = { path = "crates/knowledge-graph-store" }
+agent-scheduler = { path = "crates/agent-scheduler" }
+agent-executor = { path = "crates/agent-executor" }
+session-manager = { path = "crates/session-manager" }
+config-manager = { path = "crates/config-manager" }
+im-bridge = { path = "crates/im-bridge" }
+duo-smart-layer = { path = "crates/duo-smart-layer" }
+blackboard-store = { path = "crates/blackboard-store" }
+file-lock-manager = { path = "crates/file-lock-manager" }
+blackboard-coordinator = { path = "crates/blackboard-coordinator" }
+prompt-cache = { path = "crates/prompt-cache" }
+prompt-template = { path = "crates/prompt-template" }
+db-layer = { path = "crates/db-layer" }
+permission-eval = { path = "crates/permission-eval" }
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+codegen-units = 1
+
+[patch.crates-io]
+specta = { git = "https://github.com/specta-rs/specta", rev = "591a5f3ddc78348abf4cbb541d599d65306d92b9" }
+specta-typescript = { git = "https://github.com/specta-rs/specta", rev = "591a5f3ddc78348abf4cbb541d599d65306d92b9" }
+tauri-specta = { git = "https://github.com/specta-rs/tauri-specta", rev = "6720b2848eff9a3e40af54c48d65f6d56b640c0b" }
+
+[profile.dev]
+# 减小 debug 符号体积（.pdb），避免 target 无限膨胀
+debug = "line-tables-only"

@@ -1,0 +1,98 @@
+.scroll-view {
+  position: relative;
+  overflow: hidden;
+}
+
+.scroll-view__viewport {
+  height: 100%;
+  width: 100%;
+  overflow-y: auto;
+  scrollbar-width: none;
+  outline: none;
+}
+
+.scroll-view__viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.scroll-view__thumb {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 12px;
+  transition: opacity var(--duration-medium) var(--ease-out);
+  cursor: default;
+  user-select: none;
+  opacity: 0;
+}
+
+.scroll-view__thumb::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: 9999px;
+  background-color: var(--border-weak-base);
+  backdrop-filter: blur(4px);
+  transition: background-color var(--duration-base) var(--ease-out);
+}
+
+.scroll-view__thumb:hover::after,
+.scroll-view__thumb[data-dragging="true"]::after {
+  background-color: var(--border-strong-base);
+}
+
+.dark .scroll-view__thumb::after,
+[data-theme="dark"] .scroll-view__thumb::after {
+  background-color: var(--border-weak-base);
+}
+
+.dark .scroll-view__thumb:hover::after,
+[data-theme="dark"] .scroll-view__thumb:hover::after,
+.dark .scroll-view__thumb[data-dragging="true"]::after,
+[data-theme="dark"] .scroll-view__thumb[data-dragging="true"]::after {
+  background-color: var(--border-strong-base);
+}
+
+.scroll-view__thumb[data-visible="true"] {
+  opacity: 1;
+}
+
+/* Faint project-logo watermark behind chat messages. Added via the
+   .session-chat-watermark class on the chat ScrollView. It is pinned to the
+   outer (non-scrolling) .scroll-view layer so it stays put while the content
+   scrolls, and sits below the viewport so messages stay readable. */
+.scroll-view.session-chat-watermark::before {
+  content: "";
+  position: absolute;
+  top: 7%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  height: 90%;
+  background-image: url("/logo-2000.png");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
+  opacity: 0.05;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.scroll-view.session-chat-watermark .scroll-view__viewport {
+  position: relative;
+  z-index: 1;
+  /* Messages recede into haze at both edges, matching the list and file-tree
+     scrollports so scrolling feels the same everywhere in the app.
+     Scoped to the chat watermark class (i.e. the message stream) rather than
+     every ScrollView: other uses hold tool output and previews where an edge
+     glow would read as a dirty vignette over the content.
+     Inset shadows paint above the background but below content, so messages
+     stay perfectly legible — and the watermark behind them is unaffected. */
+  box-shadow:
+    inset 0 10px 12px -10px var(--light-edge-glow),
+    inset 0 -10px 12px -10px var(--light-edge-glow);
+}

@@ -1,0 +1,29 @@
+{
+  "$schema": "../desktop-theme.schema.json",
+  "name": "墨紫",
+  "id": "violet",
+  "light": {
+    "palette": {
+      "neutral": "#faf8fc",
+      "ink": "#1b1729",
+      "primary": "#6d5bd0",
+      "accent": "#c026d3",
+      "success": "#15803d",
+      "warning": "#c2410c",
+      "error": "#be123c",
+      "info": "#0369a1"
+    }
+  },
+  "dark": {
+    "palette": {
+      "neutral": "#141220",
+      "ink": "#eae7f2",
+      "primary": "#a78bfa",
+      "accent": "#e879f9",
+      "success": "#4ade80",
+      "warning": "#fbbf24",
+      "error": "#fb7185",
+      "info": "#38bdf8"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+[package]
+name = "feedback-loop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "feedback-loop crate for DuoDuo smart layer"
+
+[dependencies]
+duo-types = { workspace = true }
+unified-error = { workspace = true }
+db-layer = { workspace = true }
+anyhow = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+rusqlite = { workspace = true }
+r2d2 = { workspace = true }
+r2d2_sqlite = { workspace = true }
+tracing = { workspace = true }

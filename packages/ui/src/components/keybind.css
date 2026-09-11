@@ -1,0 +1,19 @@
+[data-component="keybind"] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-base);
+  box-shadow: var(--shadow-xxs-border);
+
+  /* text-11-medium — kbd style */
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--text-weak);
+}

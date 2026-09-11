@@ -1,0 +1,29 @@
+{
+  "$schema": "../desktop-theme.schema.json",
+  "name": "青瓷",
+  "id": "celadon",
+  "light": {
+    "palette": {
+      "neutral": "#f6faf9",
+      "ink": "#14201e",
+      "primary": "#0f766e",
+      "accent": "#0891b2",
+      "success": "#15803d",
+      "warning": "#b45309",
+      "error": "#be123c",
+      "info": "#0369a1"
+    }
+  },
+  "dark": {
+    "palette": {
+      "neutral": "#0f1a18",
+      "ink": "#e3edeb",
+      "primary": "#2dd4bf",
+      "accent": "#22d3ee",
+      "success": "#4ade80",
+      "warning": "#fbbf24",
+      "error": "#fb7185",
+      "info": "#38bdf8"
+    }
+  }
+}

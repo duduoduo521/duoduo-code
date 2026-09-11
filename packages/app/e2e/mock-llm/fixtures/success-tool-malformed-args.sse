@@ -1,0 +1,9 @@
+# status: 200
+# tool_call 参数为非法 JSON，覆盖 bug #6 (Fence.parse 鲁棒性) 与 tool 解析容错
+data: {"id":"chatcmpl-mock-005","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_mock_bad_001","type":"function","function":{"name":"bash","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-005","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"[\"this\",\"is\",\"an\",\"array\"]"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-005","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":30,"completion_tokens":10,"total_tokens":40}}
+
+data: [DONE]

@@ -3,10 +3,11 @@
 本目录定义 **IntelGear WASM 后端**的插件契约，并说明如何产出一个可被宿主加载的
 `gear-plugin` WebAssembly 组件。
 
-> 状态（2026-07-23）：宿主侧路由与运行骨架**已完成并通过编译**（见 `../wasm_backend.rs`、
-> `../host.rs`、`../registry.rs`：`PluginSource::Wasm` → `global_wasm_backend()` →
-> `try_execute_with_ctx` 后端无关路由）。**真实 `.wasm` 组件的产出需要 wasm 工具链，
-> 当前开发环境未安装**，因此本仓库不附带预编译组件，仅提供契约与构建指引。
+> 状态（2026-07-23）：宿主侧路由与运行骨架**已完成并通过编译**（见
+> `../../src/intel_gear/wasm_backend.rs`、`../../src/intel_gear/host.rs`、
+> `../../src/intel_gear/registry.rs`：`PluginSource::Wasm` → `global_wasm_backend()` →
+> `try_execute_with_ctx` 后端无关路由）。**真实 `.wasm` 组件的产出需要 wasm 工具链**，
+> 因此本仓库不附带预编译组件，仅提供契约与构建指引。
 
 ---
 
@@ -31,7 +32,7 @@ world gear-plugin {
 
 ## 2. 如何产出组件（需要工具链）
 
-> 以下步骤在**装有 wasm 工具链**的环境中执行（本仓库 dev 环境未装，故由使用者执行）。
+> 以下步骤在**装有 wasm 工具链**的环境中执行。
 
 ### 方式 A：Rust guest（推荐）
 ```bash
@@ -42,7 +43,7 @@ rustup target add wasm32-wasip1
 # 基于本 WIT 生成 guest 骨架
 cd crates/agent-executor/intel_gear/wit
 cargo component new --world gear-plugin echo-plugin
-# 编辑 src/lib.rs 实现 load/list-tools/call-tool（参考 SDK.md 的 TS 形态映射）
+# 编辑 src/lib.rs 实现 load/list-tools/call-tool（TS 形态映射参考 packages/duoduo/src/plugin/SDK.md）
 cd echo-plugin
 cargo component build --release
 # 产物：target/wasm32-wasip1/release/*.wasm

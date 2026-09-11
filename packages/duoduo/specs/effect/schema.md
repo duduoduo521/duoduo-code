@@ -121,9 +121,9 @@ utility is needed when casting the derived zod schema's output type.
 `unknown` to `{}` in the fallback branch — a bug that affects any schema
 using `Schema.Record(String, Schema.Unknown)`.
 
-Tracked upstream as `effect:core/x228my`: "Types.DeepMutable widens unknown
-to `{}`." Once that lands, the local `DeepMutable` copy can be deleted and
-`Types.DeepMutable` used directly.
+This is a known upstream effect-smol bug: `Types.DeepMutable` widens `unknown`
+to `{}`. Once an upstream fix lands, the local `DeepMutable` copy can be
+deleted and `Types.DeepMutable` used directly.
 
 ## Ordering
 

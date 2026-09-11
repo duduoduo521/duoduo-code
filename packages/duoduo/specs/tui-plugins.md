@@ -11,6 +11,7 @@ Technical reference for the current TUI plugin system.
 - v1 plugin modules are target-exclusive: a module can export `server` or `tui`, never both.
 - Server runtime keeps v0 legacy fallback (function exports / enumerated exports) after v1 parsing.
 - npm packages can be TUI theme-only via `package.json["oc-themes"]` without a `./tui` entrypoint.
+  - Note: the `oc-` prefix (e.g. `oc-themes`) is legacy upstream naming kept as the actual config key for backwards compatibility — the runtime reads this key as-is.
 
 ## TUI config
 

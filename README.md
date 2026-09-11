@@ -13,8 +13,6 @@
   <a href="README.zh.md">简体中文</a>
 </p>
 
-[![DuoDuo IDE](https://www.dd322.cn/code)](https://www.dd322.cn/code)
-
 ---
 
 ## Why DuoDuo IDE?
@@ -517,8 +515,8 @@ DuoDuo IDE is an AI-assisted coding tool that can read, write, and execute code 
 
 The cartoon chinchilla Logo of this project is an original AI-assisted creation. Its private Git prior-art deposit was completed on 2026-04-28, with no reuse of any commercial stock assets; the ownership copyright notice is stored in the `/logo/asset_copyright.md` file.
 
-If any third party claims that this artwork resembles a prior work, please contact the author through the project's provided contact channels, and I will promptly produce all creation evidence for verification and resolution.
+If any third party claims that this artwork resembles a prior work, please contact the author at **duoduo@dd322.cn**, and all creation evidence will be promptly provided for verification and resolution.
 
 ---
 
-**Join our community** on [www.dd322.cn/code](https://www.dd322.cn/code)
+**Join our community** on [www.dd322.cn/code](https://www.dd322.cn/code) — for questions or feedback, email **duoduo@dd322.cn**

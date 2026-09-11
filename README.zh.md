@@ -11,11 +11,8 @@
 
 <p align="center">
   <a href="README.md">English</a> |
-  <a href="README.zh.md">简体中文</a> |
-  <a href="README.md">English</a>
+  <a href="README.zh.md">简体中文</a>
 </p>
-
-[![DuoDuo IDE](https://www.dd322.cn/code)](https://www.dd322.cn/code)
 
 ---
 
@@ -515,8 +512,8 @@ DuoDuo IDE 是 AI 辅助编程工具，能够代您读取、写入并执行代�
 
 本项目卡通毛丝鼠 Logo 为独立 AI 原创形象，2026 年 4 月 28 日已完成私有 Git 前置存证，未复用任何商用图库素材，权属版权声明存放于 /logo/asset_copyright.md 文件。
 
-若任何第三方主张本画面与在先作品存在近似争议，请通过项目预留联系方式联系本人，我将第一时间调取全部创作存证材料核对并协商处理。
+若任何第三方主张本画面与在先作品存在近似争议，请通过 **duoduo@dd322.cn** 联系作者，我将第一时间调取全部创作存证材料核对并协商处理。
 
 ---
 
-**加入我们的社区** 请访问 [www.dd322.cn/code](https://www.dd322.cn/code)
+**加入我们的社区** 请访问 [www.dd322.cn/code](https://www.dd322.cn/code) —— 如有疑问或反馈，欢迎邮件 **duoduo@dd322.cn**

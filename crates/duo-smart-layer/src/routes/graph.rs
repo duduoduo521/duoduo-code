@@ -670,6 +670,13 @@ async fn close_project_index(
     let indexer = state.indexer.get()?;
     let project_id = kg_key(&params.project_path);
     tracing::info!("[kg-diag] close_project_index: project_id={project_id}, clear={}", params.clear);
+    // clear=true is also used by the "delete project" flow: the caller deletes
+    // the project's local data right after this returns. Release the
+    // per-project message store first so its SQLite pools no longer hold the
+    // project's duoduo.db open (an open pool would block deletion on Windows).
+    if params.clear {
+        state.drop_project_message_store(&params.project_path).await;
+    }
     indexer
         .close_project_index(&project_id, params.clear)
         .map_err(UnifiedError::from)?;

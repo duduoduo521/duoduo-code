@@ -622,6 +622,7 @@ export const dict = {
   "sidebar.project.recentSessions": "最近会话",
   "sidebar.project.viewAllSessions": "查看全部会话",
   "sidebar.project.clearNotifications": "清除通知",
+  "sidebar.project.delete": "删除",
   "sidebar.empty.title": "没有打开的项目",
   "sidebar.empty.description": "打开一个项目以开始使用",
 
@@ -1121,6 +1122,13 @@ export const dict = {
   "workspace.reset.archived.one": "将归档 1 个会话。",
   "workspace.reset.archived.many": "将归档 {{count}} 个会话。",
   "workspace.reset.note": "这将把工作区重置为与默认分支一致。",
+  "workspace.deleteProject.title": "删除项目",
+  "workspace.deleteProject.confirm": '确定要删除「{{name}}」的所有本地数据吗？',
+  "workspace.deleteProject.detail":
+    "将永久删除该项目的会话记录、快照、记忆和知识图谱索引，操作不可恢复；不会删除你的项目文件夹，项目仍会保留在最近项目列表中。",
+  "workspace.deleteProject.button": "删除",
+  "workspace.deleteProject.deleted": "已删除「{{name}}」的本地数据",
+  "workspace.deleteProject.failed": "删除项目数据失败",
   "workspace.closeIndex.title": "关闭项目索引",
   "workspace.closeIndex.confirm": "是否清除该项目的知识图谱索引？",
   "workspace.closeIndex.note": "选择「保留索引」将在保留期内保留索引（默认 90 天），下次打开可秒级恢复；选择「清除索引」将立即删除。",

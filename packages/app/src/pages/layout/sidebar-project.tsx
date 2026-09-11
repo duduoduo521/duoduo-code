@@ -27,6 +27,7 @@ export type ProjectSidebarContext = {
   navigateToProject: (directory: string) => void
   openSidebar: () => void
   closeProject: (directory: string, askClear?: boolean) => void
+  deleteProject: (directory: string) => void
   showEditProjectDialog: (project: LocalProject) => void
   showEditSshDialog: (project: LocalProject) => void
   toggleProjectWorkspaces: (project: LocalProject) => void
@@ -70,6 +71,7 @@ const ProjectTile = (props: {
   toggleProjectWorkspaces: (project: LocalProject) => void
   workspacesEnabled: (project: LocalProject) => boolean
   closeProject: (directory: string, askClear?: boolean) => void
+  deleteProject: (directory: string) => void
   setMenu: (value: boolean) => void
   setOpen: (value: boolean) => void
   setSuppressHover: (value: boolean) => void
@@ -185,6 +187,13 @@ const ProjectTile = (props: {
             onSelect={() => props.closeProject(props.project.worktree, true)}
           >
             <ContextMenu.ItemLabel>{props.language.t("common.close")}</ContextMenu.ItemLabel>
+          </ContextMenu.Item>
+          <ContextMenu.Item
+            data-action="project-delete-menu"
+            data-project={base64Encode(props.project.worktree)}
+            onSelect={() => props.deleteProject(props.project.worktree)}
+          >
+            <ContextMenu.ItemLabel>{props.language.t("sidebar.project.delete")}</ContextMenu.ItemLabel>
           </ContextMenu.Item>
         </ContextMenu.Content>
       </ContextMenu.Portal>
@@ -335,6 +344,7 @@ export const SortableProject = (props: {
       toggleProjectWorkspaces={props.ctx.toggleProjectWorkspaces}
       workspacesEnabled={props.ctx.workspacesEnabled}
       closeProject={props.ctx.closeProject}
+      deleteProject={props.ctx.deleteProject}
       setMenu={(value) => setState("menu", value)}
       setOpen={(value) => props.ctx.onHoverOpenChanged(props.project.worktree, value)}
       setSuppressHover={(value) => setState("suppressHover", value)}

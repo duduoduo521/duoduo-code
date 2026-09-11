@@ -71,6 +71,13 @@ export type EventTuiSessionSelect = {
   }
 }
 
+export type EventServerInstanceDisposed = {
+  type: "server.instance.disposed"
+  properties: {
+    directory: string
+  }
+}
+
 export type Project = {
   id: string
   worktree: string
@@ -106,13 +113,6 @@ export type Project = {
 export type EventProjectUpdated = {
   type: "project.updated"
   properties: Project
-}
-
-export type EventServerInstanceDisposed = {
-  type: "server.instance.disposed"
-  properties: {
-    directory: string
-  }
 }
 
 export type EventFileEdited = {
@@ -1697,8 +1697,8 @@ export type GlobalEvent = {
     | EventTuiCommandExecute
     | EventTuiToastShow
     | EventTuiSessionSelect
-    | EventProjectUpdated
     | EventServerInstanceDisposed
+    | EventProjectUpdated
     | EventFileEdited
     | EventPermissionAsked
     | EventPermissionReplied
@@ -2108,8 +2108,8 @@ export type Event =
   | EventTuiCommandExecute
   | EventTuiToastShow
   | EventTuiSessionSelect
-  | EventProjectUpdated
   | EventServerInstanceDisposed
+  | EventProjectUpdated
   | EventFileEdited
   | EventPermissionAsked
   | EventPermissionReplied
@@ -3069,6 +3069,7 @@ export type ProjectCleanupData = {
   body?: {
     days: number
     protectedWorktrees?: Array<string>
+    worktrees?: Array<string>
   }
   path?: never
   query?: {
@@ -5972,7 +5973,6 @@ export type TuiControlResponseResponse = TuiControlResponseResponses[keyof TuiCo
 export type GraphReindexData = {
   body?: {
     projectPath: string
-    projectId?: string
   }
   path?: never
   query?: {

@@ -584,4 +584,22 @@ impl AppState {
             }
         }
     }
+
+    /// Drop the per-project message store for `project_path`, releasing its
+    /// SQLite pools. Called on the "delete project" flow so the project's
+    /// `duoduo.db` file handle is released before the project data directory
+    /// is deleted (an open pool would block the deletion on Windows).
+    pub async fn drop_project_message_store(&self, project_path: &str) {
+        if project_path.is_empty() {
+            return;
+        }
+        let db_path = duo_utils::path::project_data_dir_robust(std::path::Path::new(project_path))
+            .join("duoduo.db")
+            .to_string_lossy()
+            .into_owned();
+        let removed = self.project_message_stores.lock().await.remove(&db_path).is_some();
+        if removed {
+            tracing::info!(%db_path, "Dropped per-project message store (project deleted)");
+        }
+    }
 }

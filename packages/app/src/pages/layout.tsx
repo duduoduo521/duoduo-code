@@ -1626,6 +1626,68 @@ export default function Layout(props: ParentProps) {
     doCloseProject(directory, key, next)
   }
 
+  // 侧栏"删除项目"：先确认，然后删除该项目的全部本地数据（含索引），
+  // 最后复用关闭流程做 UI 收尾（移除侧栏、切换路由）。
+  function deleteProject(directory: string) {
+    const list = layout.projects.list()
+    const key = workspaceKey(directory)
+    const index = list.findIndex((x) => workspaceKey(x.worktree) === key)
+    if (index === -1) return
+    const next = list[index + 1]
+
+    dialog.show(() => (
+      <DialogDeleteProject
+        directory={directory}
+        onDeleted={() => doCloseProject(directory, key, next, true)}
+      />
+    ))
+  }
+
+  function DialogDeleteProject(props: { directory: string; onDeleted: () => void }) {
+    const [busy, setBusy] = createSignal(false)
+    const name = getFilename(props.directory)
+
+    const handleDelete = async () => {
+      setBusy(true)
+      try {
+        // 1. 删 KG 索引；smart-layer 同时释放其持有的项目 DB 连接池。
+        await smartLayer.api?.closeProjectIndex(props.directory, true).catch(() => undefined)
+        // 2. 删项目数据：cleanup 路由（定向模式）先 dispose 实例、关闭全部
+        //    DB 客户端，再删 <data>/database/<id>/、<data>/snapshot/<id>/ 与项目行。
+        await globalSDK.client.project.cleanup({
+          days: 0,
+          protectedWorktrees: [],
+          worktrees: [props.directory],
+        })
+        // 项目记录保留在"最近项目"列表中，无需刷新。
+        showToast({
+          variant: "success",
+          title: language.t("workspace.deleteProject.deleted", { name }),
+        })
+      } catch {
+        showToast({
+          variant: "error",
+          title: language.t("workspace.deleteProject.failed"),
+        })
+      }
+      dialog.close()
+      props.onDeleted()
+    }
+
+    return (
+      <DialogConfirm
+        title={language.t("workspace.deleteProject.title")}
+        danger
+        busy={busy()}
+        confirmLabel={language.t("workspace.deleteProject.button")}
+        message={language.t("workspace.deleteProject.confirm", { name })}
+        detail={language.t("workspace.deleteProject.detail")}
+        onConfirm={handleDelete}
+        onCancel={() => dialog.close()}
+      />
+    )
+  }
+
   // Dispose the backend instance when a project is closed so its entry in the
   // server's instance cache is cleared. Without this, reopening the same project
   // hits the cached instance and InstanceBootstrap — the only trigger of
@@ -1641,12 +1703,18 @@ export default function Layout(props: ParentProps) {
     directory: string,
     key: string,
     next: LocalProject | undefined,
+    destroyData = false,
   ) {
+    const dispose = () => {
+      // 删除流程的实例释放由 cleanup 路由的 disposeDirectory 负责（先释放再删
+      // 数据目录），这里不再重复 dispose。
+      if (!destroyData) disposeProjectInstance(directory)
+    }
     const active = workspaceKey(currentProject()?.worktree ?? "") === key
 
     if (!active) {
       layout.projects.close(directory)
-      disposeProjectInstance(directory)
+      dispose()
       // active relies on currentProject() matching the URL directory against the
       // sidebar worktree. When the two path forms diverge (e.g. realpath redirect
       // on remote-mirror projects), active is a false negative and the app would
@@ -1668,14 +1736,14 @@ export default function Layout(props: ParentProps) {
 
     if (!next) {
       layout.projects.close(directory)
-      disposeProjectInstance(directory)
+      dispose()
       navigate("/")
       return
     }
 
     navigateWithSidebarReset(`/${base64Encode(next.worktree)}/session`)
     layout.projects.close(directory)
-    disposeProjectInstance(directory)
+    dispose()
     queueMicrotask(() => {
       void navigateToProject(next.worktree)
     })
@@ -2409,6 +2477,7 @@ export default function Layout(props: ParentProps) {
     navigateToProject,
     openSidebar: () => layout.sidebar.open(),
     closeProject,
+    deleteProject,
     showEditProjectDialog,
     showEditSshDialog,
     toggleProjectWorkspaces,

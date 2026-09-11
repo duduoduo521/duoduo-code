@@ -671,6 +671,7 @@ export const dict = {
   "sidebar.project.recentSessions": "Recent sessions",
   "sidebar.project.viewAllSessions": "View all sessions",
   "sidebar.project.clearNotifications": "Clear notifications",
+  "sidebar.project.delete": "Delete",
   "sidebar.empty.title": "No projects open",
   "sidebar.empty.description": "Open a project to get started",
 
@@ -1202,6 +1203,13 @@ export const dict = {
   "workspace.reset.archived.one": "1 session will be archived.",
   "workspace.reset.archived.many": "{{count}} sessions will be archived.",
   "workspace.reset.note": "This will reset the workspace to match the default branch.",
+  "workspace.deleteProject.title": "Delete project",
+  "workspace.deleteProject.confirm": 'Delete all local data for "{{name}}"?',
+  "workspace.deleteProject.detail":
+    "This permanently deletes the project's sessions, snapshots, memory and knowledge-graph index. This cannot be undone. Your project folder is not touched and the project stays in your recent projects list.",
+  "workspace.deleteProject.button": "Delete",
+  "workspace.deleteProject.deleted": 'Local data for "{{name}}" deleted',
+  "workspace.deleteProject.failed": "Failed to delete project data",
   "workspace.closeIndex.title": "Close project index",
   "workspace.closeIndex.confirm": "Clear the knowledge graph index for this project?",
   "workspace.closeIndex.note": "Choose \"Keep index\" to retain it for the retention period (default 90 days) and restore instantly next open; choose \"Clear index\" to delete it now.",

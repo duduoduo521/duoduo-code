@@ -613,7 +613,9 @@ export const ProjectRoutes = lazy(() =>
           "Deletes project records older than `days` (0 = all). Open projects and those in the " +
           "left sidebar (protectedWorktrees) are skipped. Deleting a record removes its DB row and " +
           "per-project data directory (sessions/messages/memory); the user's actual project directory " +
-          "is never touched. Remote (Plan C) projects keep their local mirror and credentials.",
+          "is never touched. Remote (Plan C) projects keep their local mirror and credentials. " +
+          "When `worktrees` is set, only these projects are destroyed (days is ignored) and their " +
+          "instances are disposed first.",
         operationId: "project.cleanup",
         responses: {
           200: {
@@ -631,14 +633,23 @@ export const ProjectRoutes = lazy(() =>
         z.object({
           days: z.number(),
           protectedWorktrees: z.array(z.string()).optional(),
+          // 定向模式：只销毁这些 worktree 对应的项目（忽略 days 阈值）。
+          worktrees: z.array(z.string()).optional(),
         }),
       ),
       async (c) => {
         const body = c.req.valid("json")
         try {
+          // 定向模式（侧栏"删除项目"流程）：先释放每个目标项目的实例，
+          // 其 DB 客户端 / watcher / 文件运行时全部停止后再删除数据目录，
+          // 否则打开的句柄会让删除在 Windows 上失败。
+          for (const directory of body.worktrees ?? []) {
+            await Instance.disposeDirectory(directory, 5000)
+          }
           const result = await Project.destroyProjectsBefore({
             days: body.days,
             protectedWorktrees: body.protectedWorktrees,
+            worktrees: body.worktrees,
           })
           return c.json(result)
         } catch (err) {

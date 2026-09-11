@@ -732,6 +732,28 @@ export function closeProject(directory: string) {
   projectClients.delete(directory)
 }
 
+/**
+ * Close every cached project DB client whose data directory is the one for
+ * `directory`. The instance disposer closes only the client keyed by the
+ * instance directory, but cross-project queries (`withProjectDb`) may hold the
+ * same DB under the project's worktree spelling. On Windows an open handle
+ * would block deleting the project data directory, so the destroy path closes
+ * every spelling variant before `rmSync`.
+ */
+export function closeProjectClientsMatching(directory: string) {
+  const target = getProjectPath(directory)
+  for (const [dir, client] of [...projectClients]) {
+    if (getProjectPath(dir) !== target) continue
+    try {
+      client.run("PRAGMA wal_checkpoint(TRUNCATE)")
+    } catch (e) {
+      log.warn("project WAL checkpoint failed during close", { directory: dir, error: e })
+    }
+    client.$client.close()
+    projectClients.delete(dir)
+  }
+}
+
 export function close() {
   // Close global DB
   try {

@@ -1408,7 +1408,7 @@ export class Project extends HeyApiClient {
   /**
    * Clean up old project records
    *
-   * Deletes project records older than `days` (0 = all). Open projects and those in the left sidebar (protectedWorktrees) are skipped. Deleting a record removes its DB row and per-project data directory (sessions/messages/memory); the user's actual project directory is never touched. Remote (Plan C) projects keep their local mirror and credentials.
+   * Deletes project records older than `days` (0 = all). Open projects and those in the left sidebar (protectedWorktrees) are skipped. Deleting a record removes its DB row and per-project data directory (sessions/messages/memory); the user's actual project directory is never touched. Remote (Plan C) projects keep their local mirror and credentials. When `worktrees` is set, only these projects are destroyed (days is ignored) and their instances are disposed first.
    */
   public cleanup<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -1416,6 +1416,7 @@ export class Project extends HeyApiClient {
       workspace?: string
       days?: number
       protectedWorktrees?: Array<string>
+      worktrees?: Array<string>
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1428,6 +1429,7 @@ export class Project extends HeyApiClient {
             { in: "query", key: "workspace" },
             { in: "body", key: "days" },
             { in: "body", key: "protectedWorktrees" },
+            { in: "body", key: "worktrees" },
           ],
         },
       ],
@@ -3754,7 +3756,7 @@ export class File extends HeyApiClient {
   /**
    * Delete file or directory
    *
-   * Delete a file or directory at the specified path.
+   * Delete a file or directory at the specified path. On Windows the path is moved to the recycle bin through the shell API (executed by powershell.exe); when that is unavailable a paced recursive delete is used instead.
    */
   public delete<ThrowOnError extends boolean = false>(
     parameters: {
@@ -4900,14 +4902,13 @@ export class Graph extends HeyApiClient {
   /**
    * Force reindex knowledge graph
    *
-   * Trigger a full reindex of the knowledge graph. Progress is broadcast via SSE (graph.index-status events).
+   * Trigger a full reindex of the knowledge graph. The project is identified by its directory — the backend derives the index key from it, so callers never have to reconstruct one. Progress is broadcast via SSE (graph.index-status events).
    */
   public reindex<ThrowOnError extends boolean = false>(
     parameters?: {
       directory?: string
       workspace?: string
       projectPath?: string
-      projectId?: string
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -4919,7 +4920,6 @@ export class Graph extends HeyApiClient {
             { in: "query", key: "directory" },
             { in: "query", key: "workspace" },
             { in: "body", key: "projectPath" },
-            { in: "body", key: "projectId" },
           ],
         },
       ],

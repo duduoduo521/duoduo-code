@@ -1135,6 +1135,7 @@ function selectRemovableProjects(
   rows: RemovableRow[],
   days: number,
   protectedWorktrees: string[] = [],
+  targetWorktrees?: string[],
 ): RemovableRow[] {
   // days <= 0 表示删除全部（不施加时间阈值）；否则删除 time_initialized 早于阈值的项目
   const threshold = days <= 0 ? Infinity : Date.now() - days * 24 * 60 * 60 * 1000
@@ -1147,9 +1148,14 @@ function selectRemovableProjects(
   // 当前真正打开的项目由调用方（cleanupCount/cleanup 路由）通过 protectedWorktrees 传入。
   const norm = (p: string) => AppFileSystem.resolve(p)
   const protectedSet = new Set(protectedWorktrees.map(norm))
-  return rows.filter(
-    (r) => !protectedSet.has(norm(r.worktree)) && (r.time_initialized ?? 0) < threshold,
-  )
+  // 定向模式：只删除 targetWorktrees 命中的项目（忽略 days 阈值），
+  // 用于侧栏"删除项目"这类单项目精确销毁。
+  const targetSet = targetWorktrees ? new Set(targetWorktrees.map(norm)) : undefined
+  return rows.filter((r) => {
+    if (protectedSet.has(norm(r.worktree))) return false
+    if (targetSet) return targetSet.has(norm(r.worktree))
+    return (r.time_initialized ?? 0) < threshold
+  })
 }
 
 export async function countProjectsBefore(input: {
@@ -1163,12 +1169,29 @@ export async function countProjectsBefore(input: {
 export async function destroyProjectsBefore(input: {
   days: number
   protectedWorktrees?: string[]
+  /** 定向模式：只销毁这些 worktree 对应的项目（忽略 days 阈值）。
+   *  用于侧栏"删除项目"流程的按项目精确销毁。 */
+  worktrees?: string[]
 }): Promise<{ deleted: number }> {
   const rows = Database.use((db) => db.select().from(ProjectTable).all())
-  const removable = selectRemovableProjects(rows, input.days, input.protectedWorktrees)
+  const removable = selectRemovableProjects(
+    rows,
+    input.days,
+    input.protectedWorktrees,
+    input.worktrees,
+  )
   let deleted = 0
   for (const r of removable) {
-    Database.use((db) => db.delete(ProjectTable).where(eq(ProjectTable.id, r.id)).run())
+    // 定向模式（侧栏"删除"）保留项目记录：项目仍在"最近项目"列表中，可随时
+    // 重新打开（打开时从全新数据开始）；记录本身只是名称/图标/路径等元数据。
+    // 批量清理（按 days 阈值）仍删除记录。
+    if (!input.worktrees) {
+      Database.use((db) => db.delete(ProjectTable).where(eq(ProjectTable.id, r.id)).run())
+    }
+    // 实例 disposer 只会关闭按实例目录拼写缓存的 DB 客户端；跨项目查询
+    // （withProjectDb）可能以 worktree 拼写持有同一份 DB。Windows 上未关闭
+    // 的句柄会令目录删除失败，因此销毁前关闭该数据目录下的所有缓存客户端。
+    Database.closeProjectClientsMatching(r.worktree)
     // 删除 per-project 数据目录（含 session / message / 记忆），绝不触碰用户 worktree 目录
     try {
       rmSync(projectDataDir(r.worktree), { recursive: true, force: true })

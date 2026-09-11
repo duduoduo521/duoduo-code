@@ -568,13 +568,30 @@ async function scanProductionDependencies(root: string, packages: Map<string, Pk
   const visited = new Set<string>()
   const queue: string[] = []
 
+  // Workspace packages are first-party code, not third-party dependencies.
+  // Bun links them into node_modules via symlinks, so a naive resolution walk
+  // would re-include them (with missing versions) in the licence list. Skip
+  // them both by package name and by resolved directory.
+  const workspaceNames = new Set<string>()
+  for (const ws of WORKSPACE_DIRS) {
+    const pkg = await readPackageJson(join(root, ws))
+    if (!pkg) continue
+    if (pkg.name) workspaceNames.add(pkg.name as string)
+  }
+  const isWorkspaceDir = (dir: string) => {
+    const norm = dir.replace(/\\/g, "/").toLowerCase()
+    const rootNorm = root.replace(/\\/g, "/").toLowerCase()
+    return WORKSPACE_DIRS.some((ws) => norm === join(rootNorm, ws.replace(/\\/g, "/")))
+  }
+
   for (const ws of WORKSPACE_DIRS) {
     const dir = join(root, ws)
     const pkg = await readPackageJson(dir)
     if (!pkg) continue
     for (const name of shippedDependencies(pkg)) {
+      if (workspaceNames.has(name)) continue
       const dep = resolvePackageDir(dir, name)
-      if (dep) queue.push(dep)
+      if (dep && !isWorkspaceDir(dep)) queue.push(dep)
     }
   }
 
@@ -597,8 +614,9 @@ async function scanProductionDependencies(root: string, packages: Map<string, Pk
     })
 
     for (const depName of shippedDependencies(pkg)) {
+      if (workspaceNames.has(depName)) continue
       const dep = resolvePackageDir(dir, depName)
-      if (dep && !visited.has(dep)) queue.push(dep)
+      if (dep && !visited.has(dep) && !isWorkspaceDir(dep)) queue.push(dep)
     }
   }
 }
@@ -687,7 +705,10 @@ function parseCargoMetadata(): PkgInfo[] {
 // ─── TXT ──────────────────────────────────────────────────────────────
 
 function txtSection(license: string, pkgs: PkgInfo[]): string {
-  const matching = pkgs.filter((p) => p.license === license || p.license.includes(license))
+  // Exact match only: a substring match would double-list dual-licence packages
+  // (e.g. "MIT OR GPL-3.0-OR-LATER" under the plain "MIT" section) and inflate
+  // that section's count.
+  const matching = pkgs.filter((p) => p.license === license)
   if (!matching.length) return ""
 
   let out = `${"=".repeat(80)}\n`
@@ -853,7 +874,7 @@ async function writeHtml(
   let sections = ""
 
   for (const lic of order) {
-    const matching = arr.filter((p) => p.license === lic || p.license.includes(lic))
+    const matching = arr.filter((p) => p.license === lic)
     if (!matching.length) continue
     const anchor = lic.toLowerCase().replace(/[^a-z0-9]+/g, "-")
     const label = LICENSE_LABELS[lic]?.zh || lic

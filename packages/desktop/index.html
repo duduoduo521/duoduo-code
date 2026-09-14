@@ -21,24 +21,26 @@
       <!-- Inline splash screen with logo shown before JS hydrates.
            Uses position:fixed to cover the full viewport including the Overlay titlebar area.
            Removed only when the editor is fully rendered and visible. -->
-      <div
-        id="__duoduo_splash__"
-        style="
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          z-index: 99999;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          width: 100%;
-          height: 100%;
-        "
-      >
+      <div id="__duoduo_splash__">
         <style>
+          /* Layout lives here (inside the <style> element, protected by Tauri's
+             CSP nonce) instead of on the element's style="" attribute, which the
+             production CSP strips once a nonce is present on the directive.
+             See https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy#unsafe-inline */
+          #__duoduo_splash__ {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 99999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+          }
           html {
             /* Fallback before theme-preload.js runs; will be overridden */
             background-color: #0a0d12;

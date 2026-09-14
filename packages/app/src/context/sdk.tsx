@@ -75,6 +75,39 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       })
     }
 
+    // ── Per-project sidecar event bridge ─────────────────────────────────
+    // The per-project sidecar publishes every Bus event (session.status,
+    // message.part.delta/updated, session.updated, ...) to its OWN process.
+    // The global event stream (base sidecar /global/event) never sees them,
+    // so without this bridge the UI is event-blind while the project sidecar
+    // serves the session: no live streaming, no busy/idle transitions — the
+    // resent turn freezes (no "thinking" indicator, send button never flips
+    // to stop). Subscribe to the project sidecar's own /global/event and
+    // forward each event into the shared global emitter, where the existing
+    // directory-scoped reducers already know how to apply it.
+    const startProjectEventBridge = (info: ProjectSidecarInfo, authHeader: string, signal: AbortSignal) => {
+      const eventSdk = createSdkForServer({
+        server: { url: info.url },
+        headers: authHeader ? { Authorization: authHeader } : undefined,
+        signal,
+      })
+      void (async () => {
+        while (!signal.aborted) {
+          try {
+            const events = await eventSdk.global.event({ signal })
+            for await (const event of events.stream) {
+              if (signal.aborted) return
+              globalSDK.event.emit(event.directory ?? info.directory, event.payload as Event)
+            }
+          } catch {
+            // Stream error (sidecar restarting) — fall through and reconnect.
+          }
+          if (signal.aborted) return
+          await new Promise((resolve) => setTimeout(resolve, 1000))
+        }
+      })()
+    }
+
     const client = createMemo(() => {
       const dir = directory()
       if (projectSidecar && projectSidecar.directory === dir && projectSidecarAuthHeader) {
@@ -94,6 +127,9 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
       projectSidecar = null
       projectSidecarAuthHeader = null
 
+      const streamAbort = new AbortController()
+      onCleanup(() => streamAbort.abort())
+
       void tryStartProjectSidecar(dir).then((result) => {
         if (result && directory() === dir) {
           projectSidecar = result.info
@@ -105,11 +141,13 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
           } catch {
             // Monitoring not available — sidecar won't auto-restart
           }
+          startProjectEventBridge(result.info, result.authHeader, streamAbort.signal)
         }
       })
 
-      // Subscribe to events from the global SDK (per-project sidecar events
-      // are still distributed via the global SSE with directory filtering)
+      // Subscribe to events from the global SDK (base sidecar SSE). Events
+      // emitted by the per-project sidecar reach the UI through
+      // startProjectEventBridge above.
       const unsub = globalSDK.event.on(dir, (event) => {
         emitter.emit(event.type, event)
       })

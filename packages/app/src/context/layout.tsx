@@ -594,7 +594,12 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
           const root = rootFor(directory)
           // 显式创建/刷新项目记录（替代原先 instance boot 时隐式建行），
           // 使"清理项目记录"删除后不会被 boot 复活。
-          void globalSdk.client.project.open({ query_directory: root })
+          // POST /project/open 校验 JSON body {directory}；只传 query 会得到
+          // 400 {data:{},error:[...],success:false}，且 void 调用无 catch，
+          // 每次打开项目都会产生一条 Uncaught (in promise)。
+          void globalSdk.client.project
+            .open({ query_directory: root, body_directory: root })
+            .catch(() => {})
           if (server.projects.list().find((x) => x.worktree === root)) return
           WorktreeState.ready(root)
           void globalSync.project.loadSessions(root)

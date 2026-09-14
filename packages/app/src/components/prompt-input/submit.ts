@@ -359,14 +359,21 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       void sync.session.sync(sessionID, { force: true }).catch(() => undefined)
     }, 1500)
 
-    // Send abort request with timeout — if server doesn't respond within 3s,
-    // force-reset session status to idle on the frontend
+    // Send abort request with a 3s watchdog — if the server doesn't respond
+    // within 3s, force-reset session status to idle on the frontend.
+    // The watchdog must not fire after a settled abort: Promise.race does not
+    // cancel timers, so the old unconditional callback fired 3s after EVERY
+    // abort, printing a bogus "did not respond" warning and force-idling the
+    // session — stomping the busy state of a resend started right after a stop.
+    let settled = false
     const abortPromise = sdk.client.session.abort({ sessionID }).then((result) => {
+      settled = true
       return result
     })
 
     const timeoutPromise = new Promise<void>((resolve) => {
       setTimeout(() => {
+        if (settled) return resolve()
         console.warn(
           `[abort] Server did not respond to abort for session ${sessionID} within 3s, forcing local idle state`,
         )
@@ -377,6 +384,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     return Promise.race([abortPromise, timeoutPromise]).catch((err) => {
       // Abort request itself failed (network error, server down, etc.)
+      settled = true
       console.warn(`[abort] Failed to abort session ${sessionID}:`, err?.message || err)
       // Force-reset UI state since server may be unreachable
       sync.set("session_status", sessionID, { type: "idle" })

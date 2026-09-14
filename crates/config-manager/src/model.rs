@@ -137,6 +137,25 @@ pub struct LoopConfig {
     /// aligned with letting the LLM drive task scope.
     #[serde(default = "default_max_steps")]
     pub max_steps: i32,
+    /// ── Sub-agent loop limits (`task` children + G7 parallel fan-out) ──
+    ///
+    /// Autonomous sub-agents have no UI and cannot be prompted mid-loop, so
+    /// they need their own backstops. `-1` = unlimited for every field.
+    /// Defaults (100 rounds / 30 min / 500K tokens / 50 file reads) follow the
+    /// 2026-09 review decision: the previous compile-time defaults (50 rounds
+    /// / 300 s / 100K tokens / 10 reads) cut real sub-tasks off after only a
+    /// handful of rounds under large system prompts.
+    #[serde(default = "default_sub_agent_max_rounds")]
+    pub sub_agent_max_rounds: i32,
+    /// Wall-clock budget for one sub-agent loop, in seconds. `-1` = unlimited.
+    #[serde(default = "default_sub_agent_timeout_secs")]
+    pub sub_agent_timeout_secs: i64,
+    /// Cumulative token budget for one sub-agent loop. `-1` = unlimited.
+    #[serde(default = "default_sub_agent_max_total_tokens")]
+    pub sub_agent_max_total_tokens: i64,
+    /// Max file reads for one sub-agent loop. `-1` = unlimited.
+    #[serde(default = "default_sub_agent_max_file_reads")]
+    pub sub_agent_max_file_reads: i32,
 }
 
 impl Default for LoopConfig {
@@ -153,6 +172,10 @@ impl Default for LoopConfig {
             blackboard: BlackboardConfig::default(),
             parallel_dispatch: false,
             max_steps: default_max_steps(),
+            sub_agent_max_rounds: default_sub_agent_max_rounds(),
+            sub_agent_timeout_secs: default_sub_agent_timeout_secs(),
+            sub_agent_max_total_tokens: default_sub_agent_max_total_tokens(),
+            sub_agent_max_file_reads: default_sub_agent_max_file_reads(),
         }
     }
 }
@@ -168,6 +191,18 @@ fn default_syntax_check() -> bool {
 }
 fn default_max_steps() -> i32 {
     -1
+}
+fn default_sub_agent_max_rounds() -> i32 {
+    100
+}
+fn default_sub_agent_timeout_secs() -> i64 {
+    1800
+}
+fn default_sub_agent_max_total_tokens() -> i64 {
+    500_000
+}
+fn default_sub_agent_max_file_reads() -> i32 {
+    50
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

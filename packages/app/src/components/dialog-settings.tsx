@@ -5,6 +5,7 @@ import { Icon } from "@duoduo-ai/ui/icon"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { SettingsGeneral } from "./settings-general"
+import { SettingsLoop } from "./settings-loop"
 import { SettingsLogs } from "./settings-logs"
 import { SettingsKeybinds } from "./settings-keybinds"
 import { SettingsProviders } from "./settings-providers"
@@ -31,6 +32,10 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
                   <Tabs.Trigger value="general">
                     <Icon name="sliders" />
                     {language.t("settings.tab.general")}
+                  </Tabs.Trigger>
+                  <Tabs.Trigger value="loop">
+                    <Icon name="task" />
+                    {language.t("settings.tab.loop")}
                   </Tabs.Trigger>
                   <Tabs.Trigger value="shortcuts">
                     <Icon name="keyboard" />
@@ -85,6 +90,9 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
         </Tabs.List>
         <Tabs.Content value="general" class="no-scrollbar overflow-y-auto">
           <SettingsGeneral />
+        </Tabs.Content>
+        <Tabs.Content value="loop" class="no-scrollbar overflow-y-auto">
+          <SettingsLoop />
         </Tabs.Content>
         <Tabs.Content value="shortcuts" class="no-scrollbar overflow-y-auto">
           <SettingsKeybinds />

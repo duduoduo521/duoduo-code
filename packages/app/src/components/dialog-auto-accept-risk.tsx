@@ -1,7 +1,6 @@
 import { Component, For } from "solid-js"
 import { useDialog } from "@duoduo-ai/ui/context/dialog"
-import { Dialog } from "@duoduo-ai/ui/dialog"
-import { Button } from "@duoduo-ai/ui/button"
+import { DialogConfirm } from "@/components/dialog-confirm"
 import { useLanguage } from "@/context/language"
 
 interface DialogAutoAcceptRiskProps {
@@ -18,6 +17,10 @@ interface DialogAutoAcceptRiskProps {
  * The switch only replaces "ask" with "allow" — it does not disable the command
  * classifier or the directory boundary, and the dialog says so explicitly so the
  * disclosure matches what actually happens.
+ *
+ * Rendered as the shared `DialogConfirm` so layout/typography match every other
+ * confirm prompt, and it closes via `dialog.back()` so the Settings dialog it
+ * was opened from stays open (a sub-dialog never tears down its parent).
  */
 export const DialogAutoAcceptRisk: Component<DialogAutoAcceptRiskProps> = (props) => {
   const dialog = useDialog()
@@ -31,33 +34,26 @@ export const DialogAutoAcceptRisk: Component<DialogAutoAcceptRiskProps> = (props
     language.t("dialog.autoAcceptRisk.item.misc"),
   ]
 
-  const handleCancel = () => dialog.close()
-
-  const handleConfirm = () => {
-    props.onConfirm()
-    dialog.close()
-  }
-
   return (
-    <Dialog
+    <DialogConfirm
       title={language.t("dialog.autoAcceptRisk.title")}
-      description={language.t("dialog.autoAcceptRisk.description")}
-    >
-      <div class="flex flex-col gap-3">
-        <p class="text-12-regular text-text-weak">{language.t("dialog.autoAcceptRisk.listTitle")}</p>
-        <ul class="flex list-disc flex-col gap-1 pl-4 text-12-regular text-text-strong">
-          <For each={items}>{(item) => <li>{item}</li>}</For>
-        </ul>
-        <p class="text-12-regular text-text-weak">{language.t("dialog.autoAcceptRisk.notCovered")}</p>
-        <div class="mt-2 flex justify-end gap-2">
-          <Button variant="ghost" onClick={handleCancel}>
-            {language.t("dialog.autoAcceptRisk.cancel")}
-          </Button>
-          <Button variant="primary" onClick={handleConfirm}>
-            {language.t("dialog.autoAcceptRisk.confirm")}
-          </Button>
-        </div>
-      </div>
-    </Dialog>
+      message={language.t("dialog.autoAcceptRisk.description")}
+      detail={
+        <>
+          <p>{language.t("dialog.autoAcceptRisk.listTitle")}</p>
+          <ul class="flex list-disc flex-col gap-1 pl-4">
+            <For each={items}>{(item) => <li>{item}</li>}</For>
+          </ul>
+          <p>{language.t("dialog.autoAcceptRisk.notCovered")}</p>
+        </>
+      }
+      confirmLabel={language.t("dialog.autoAcceptRisk.confirm")}
+      cancelLabel={language.t("dialog.autoAcceptRisk.cancel")}
+      onConfirm={() => {
+        props.onConfirm()
+        dialog.back()
+      }}
+      onCancel={() => dialog.back()}
+    />
   )
 }

@@ -1523,6 +1523,15 @@ struct LoopConfigRequest {
     /// G7: parallel multi-agent dispatch enable.
     #[serde(default)]
     parallel_dispatch: Option<bool>,
+    /// Sub-agent loop limits. `-1` = unlimited for every field.
+    #[serde(default)]
+    sub_agent_max_rounds: Option<i32>,
+    #[serde(default)]
+    sub_agent_timeout_secs: Option<i64>,
+    #[serde(default)]
+    sub_agent_max_total_tokens: Option<i64>,
+    #[serde(default)]
+    sub_agent_max_file_reads: Option<i32>,
 }
 
 /// Update the loop configuration from the settings panel.
@@ -1552,6 +1561,18 @@ async fn set_loop_config_handler(
     if let Some(v) = req.parallel_dispatch {
         lc.parallel_dispatch = v;
     }
+    if let Some(v) = req.sub_agent_max_rounds {
+        lc.sub_agent_max_rounds = v;
+    }
+    if let Some(v) = req.sub_agent_timeout_secs {
+        lc.sub_agent_timeout_secs = v;
+    }
+    if let Some(v) = req.sub_agent_max_total_tokens {
+        lc.sub_agent_max_total_tokens = v;
+    }
+    if let Some(v) = req.sub_agent_max_file_reads {
+        lc.sub_agent_max_file_reads = v;
+    }
 
     state
         .config_manager
@@ -1570,6 +1591,10 @@ async fn set_loop_config_handler(
         "reflectOn": lc.reflect_on,
         "maxSteps": lc.max_steps,
         "parallelDispatch": lc.parallel_dispatch,
+        "subAgentMaxRounds": lc.sub_agent_max_rounds,
+        "subAgentTimeoutSecs": lc.sub_agent_timeout_secs,
+        "subAgentMaxTotalTokens": lc.sub_agent_max_total_tokens,
+        "subAgentMaxFileReads": lc.sub_agent_max_file_reads,
     })))
 }
 
@@ -1587,6 +1612,10 @@ async fn get_loop_config_handler(
         "reflectOn": lc.reflect_on,
         "maxSteps": lc.max_steps,
         "parallelDispatch": lc.parallel_dispatch,
+        "subAgentMaxRounds": lc.sub_agent_max_rounds,
+        "subAgentTimeoutSecs": lc.sub_agent_timeout_secs,
+        "subAgentMaxTotalTokens": lc.sub_agent_max_total_tokens,
+        "subAgentMaxFileReads": lc.sub_agent_max_file_reads,
     })))
 }
 
@@ -2468,24 +2497,6 @@ enum CompletionDecision {
 /// The marker is matched at the START of the reply (after leading whitespace)
 /// so a model merely mentioning `TASK_COMPLETE` inside prose or a code block
 /// cannot close the turn by accident.
-/// Whether the run loop's wall-clock or token budget is spent.
-///
-/// Returns `(exhausted, time_exhausted)`.
-///
-/// Extracted so the rule is unit-testable without driving a whole loop. It is
-/// deliberately independent of `max_steps`: a step cap is user-configurable and
-/// `-1` legitimately disables it, but time and tokens are what actually cost
-/// money, so a loop that never repeats a step is still bounded by these.
-fn budget_exhausted(
-    tokens_used: u32,
-    now: tokio::time::Instant,
-    deadline: tokio::time::Instant,
-) -> (bool, bool) {
-    let time_exhausted = now >= deadline;
-    let tokens_exhausted = tokens_used >= duo_types::timeouts::RUN_LOOP_MAX_TOTAL_TOKENS;
-    (time_exhausted || tokens_exhausted, time_exhausted)
-}
-
 fn completion_decision(confirm_rounds: u32, full_text: &str) -> CompletionDecision {
     // P2-24: the marker is honoured on the FIRST text-only round too. Gating it
     // behind `confirm_rounds > 0` meant a model that declared completion up
@@ -2575,6 +2586,29 @@ async fn run_loop_handler(
       "[TRACE-rust] effective_max_steps={}, intent={:?}, default_MAX_STEPS={}",
       effective_max_steps, intent_type, agent_executor::MAX_STEPS
     );
+    // Sub-agent loop limits (LoopConfig.sub_agent_*, -1 = unlimited). Applied
+    // to `task` children via the executor and to G7 fan-out via ParallelContext.
+    let sub_agent_limits = {
+        let d = config_manager::model::LoopConfig::default();
+        agent_executor::SubAgentLimits::from_config(
+            loop_cfg
+                .as_ref()
+                .map(|l| l.sub_agent_max_rounds)
+                .unwrap_or(d.sub_agent_max_rounds),
+            loop_cfg
+                .as_ref()
+                .map(|l| l.sub_agent_timeout_secs)
+                .unwrap_or(d.sub_agent_timeout_secs),
+            loop_cfg
+                .as_ref()
+                .map(|l| l.sub_agent_max_total_tokens)
+                .unwrap_or(d.sub_agent_max_total_tokens),
+            loop_cfg
+                .as_ref()
+                .map(|l| l.sub_agent_max_file_reads)
+                .unwrap_or(d.sub_agent_max_file_reads),
+        )
+    };
     let tools_from_ts = req.tools.clone();
     let agent_name = req.agent_name.clone().unwrap_or_else(|| "code".to_string());
     let project_path = req
@@ -2822,6 +2856,7 @@ async fn run_loop_handler(
     // for the closure.
     let security_policy_spawn = security_policy.clone();
     let auto_accept_spawn = auto_accept;
+    let sub_agent_limits_spawn = sub_agent_limits;
     let agent_name_spawn = agent_name.clone();
     let project_path_spawn = project_path.clone();
     let snapshot_gitdir_spawn = snapshot_gitdir.clone();
@@ -3025,6 +3060,10 @@ async fn run_loop_handler(
             .with_permission_rules(permission_rules.clone())
             .with_interactive(true)
             .with_auto_accept(auto_accept);
+        // User-configurable sub-agent limits (LoopConfig.sub_agent_*): applied
+        // to every `task` child this loop spawns, and mirrored into the G7
+        // ParallelContext below.
+        loop_executor = loop_executor.with_sub_agent_limits(sub_agent_limits_spawn);
 
         // G16/R1: when the main loop reflects (审校 enabled), give the
         // AgenticLoopExecutor explore/sub-agent loop the same reflect mode so
@@ -3333,16 +3372,6 @@ async fn run_loop_handler(
 
         let mut steps = 0u32;
         let mut last_error: Option<String> = None;
-        // P1-15: `max_steps` is only a *step* cap and -1 legitimately disables
-        // it, so a loop that never repeats a step could still run forever.
-        // Wall-clock and token budgets are independent of the step cap and
-        // always apply — the same two backstops the sub-agent loop already has
-        // (`LOOP_TIMEOUT` / `DEFAULT_MAX_TOTAL_TOKENS`).
-        let loop_deadline =
-            tokio::time::Instant::now() + duo_types::timeouts::RUN_LOOP_WALL_CLOCK;
-        // Recorded so the post-loop feedback/outcome can tell a budget stop
-        // apart from a normal completion.
-        let mut budget_stopped = false;
         // Track the most recent assistant message ID so StepStartPart/StepFinishPart
         // can reference a valid message (FOREIGN KEY constraint requires message_id
         // to exist in the message table).
@@ -3617,8 +3646,10 @@ async fn run_loop_handler(
                 context_builder: Some(state_clone.context.clone()),
                 graph: Some(state_clone.graph.clone()),
                 code_search: state_clone.code_search.get().ok(),
-                max_rounds: None,
-                loop_timeout: None,
+                max_rounds: Some(sub_agent_limits_spawn.max_rounds),
+                loop_timeout: Some(sub_agent_limits_spawn.loop_timeout),
+                max_total_tokens: Some(sub_agent_limits_spawn.max_total_tokens),
+                max_file_reads: Some(sub_agent_limits_spawn.max_file_reads),
                 max_retries: 1,
                 max_concurrent: state_clone
                     .executor
@@ -3721,18 +3752,6 @@ async fn run_loop_handler(
             crate::routes::tool_disclosure::ToolDisclosure::new(progressive_tools_spawn);
 
         loop {
-            // ── Budget backstops (P1-15) ──
-            // Evaluated FIRST so no `continue` inside this round can skip them.
-            // See `budget_exhausted` for why these are independent of
-            // `max_steps`.
-            let (budget_exhausted, time_exhausted) = budget_exhausted(
-                live_metrics
-                    .tokens_used
-                    .load(std::sync::atomic::Ordering::Relaxed),
-                tokio::time::Instant::now(),
-                loop_deadline,
-            );
-
             // The context assembly (StructuredAssembler / ContextBuilder) is
             // heavy (full-project directory walk + embedding). Within a single
             // run_loop it only depends on the (static) on-disk project files,
@@ -3764,21 +3783,15 @@ async fn run_loop_handler(
                         until,
                     } => {
                         tracing::info!(agent_id = %agent_id, file, retry_count, until, "Agent in backoff, skipping round");
-                        // P2-19: count the skipped round. An unconditional
-                        // `continue` here left `steps` untouched, so neither
-                        // the step cap nor any budget could ever end a loop
-                        // stuck in backoff — it just spun at 1s forever.
+                        // P2-19: count the skipped round so the step cap can
+                        // end a loop stuck in backoff instead of spinning at 1s.
                         steps += 1;
                         live_metrics.rounds_completed.store(
                             steps as usize,
                             std::sync::atomic::Ordering::Relaxed,
                         );
-                        if !budget_exhausted {
-                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-                            continue;
-                        }
-                        // Budget spent: fall through so the stop block below
-                        // ends the loop with a text-only wrap-up.
+                        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                        continue;
                     }
                     blackboard_coordinator::AgentOperationalState::Faulted { fault_type } => {
                         tracing::warn!(agent_id = %agent_id, ?fault_type, "Agent faulted, stopping loop");
@@ -3919,29 +3932,11 @@ async fn run_loop_handler(
                 ));
             }
 
-            if budget_exhausted {
-                budget_stopped = true;
-                tracing::warn!(
-                    session_id = %session_id_spawn,
-                    steps,
-                    tokens_used = live_metrics
-                        .tokens_used
-                        .load(std::sync::atomic::Ordering::Relaxed),
-                    time_exhausted,
-                    "run_loop budget exhausted — forcing text-only wrap-up"
-                );
-                bus.emit(agent_executor::LoopStreamEvent::MaxStepsReached {
-                    session_id: session_id_spawn.clone(),
-                    steps,
-                });
-                messages.push(agent_executor::LlmMessage::user(
-                    agent_executor::MAX_STEPS_PROMPT,
-                ));
-            }
-
-            // Both stop conditions converge on the same text-only wrap-up round:
-            // tools are disabled and the model's summary ends the loop.
-            let force_text_only = is_max_steps || budget_exhausted;
+            // Text-only wrap-up: tools are disabled and the model's summary
+            // ends the loop. Only the user-configured step cap triggers this —
+            // `-1` means truly unlimited (the 2000-step soft fuse below is the
+            // only remaining guard, and the user can Stop at any time).
+            let force_text_only = is_max_steps;
 
             // ── Soft runaway fuse (risk 1) ──
             // With `effective_max_steps < 0` (unlimited) there is no hard step cap,
@@ -4949,57 +4944,6 @@ async fn run_loop_handler(
                     .rounds_completed
                     .store(steps as usize, std::sync::atomic::Ordering::Relaxed);
                 continue;
-            }
-
-            // ── Budget exhausted: stop before executing tools (P1-15) ──
-            // The wrap-up round asks the provider for text only (`tools: None`),
-            // but a provider that ignores that still answers with tool_calls.
-            // Relying on `tool_calls.is_empty()` to break therefore let an
-            // uncooperative provider run past both the wall-clock and token
-            // caps. Stop here instead: keep the text this round already
-            // produced and record why the loop ended.
-            if budget_exhausted {
-                tracing::warn!(
-                    session_id = %session_id_spawn,
-                    steps,
-                    time_exhausted,
-                    "run_loop budget exhausted with pending tool_calls — stopping without executing them"
-                );
-                let note_id = new_part_id();
-                let note_now = chrono::Utc::now().timestamp_millis();
-                let note = duo_types::PartData::Text(duo_types::TextPartData {
-                    base: duo_types::PartBase {
-                        id: note_id.clone(),
-                        session_id: session_id_spawn.clone(),
-                        message_id: assistant_msg_id.clone(),
-                    },
-                    text: if time_exhausted {
-                        "⚠ 系统提示：本轮运行已达时间上限，任务被结束（未执行的工具调用已丢弃）。直接发送「继续」可让智能体接着做。\n\
-                         ⚠ System note: this run hit its wall-clock limit and was stopped (pending tool calls were discarded). Send \"continue\" to resume."
-                            .to_string()
-                    } else {
-                        "⚠ 系统提示：本轮运行已达 token 预算上限，任务被结束（未执行的工具调用已丢弃）。直接发送「继续」可让智能体接着做。\n\
-                         ⚠ System note: this run hit its token budget and was stopped (pending tool calls were discarded). Send \"continue\" to resume."
-                            .to_string()
-                    },
-                    synthetic: Some(true),
-                    ignored: None,
-                    time: Some(duo_types::PartTime {
-                        start: note_now as f64,
-                        end: Some(note_now as f64),
-                    }),
-                    metadata: None,
-                });
-                if let Err(e) = msg_store.insert_part(
-                    &note_id,
-                    &assistant_msg_id,
-                    &session_id_spawn,
-                    note_now,
-                    &serde_json::to_string(&note).unwrap_or_default(),
-                ) {
-                    tracing::warn!(error = %e, "Failed to insert budget-exhausted note part");
-                }
-                break;
             }
 
             // ── Doom-loop detection ──
@@ -6575,8 +6519,8 @@ async fn run_loop_handler(
                 effective_max_steps >= 0 && (steps as i64) >= (effective_max_steps as i64);
             let auto_rating: u8 = if last_error.is_some() {
                 2 // Loop failed with error — low rating
-            } else if hit_step_cap || budget_stopped {
-                3 // Loop stopped on a cap/step/stime/token budget — moderate rating
+            } else if hit_step_cap {
+                3 // Loop stopped on the step cap — moderate rating
             } else {
                 4 // Loop completed normally — good rating
             };
@@ -6617,7 +6561,7 @@ async fn run_loop_handler(
             // `success` is objective: error-free AND not truncated by a step cap.
             // With `effective_max_steps < 0` (unlimited) the second clause is
             // vacuously true, so a clean unlimited run is correctly marked success.
-            let outcome_success = last_error.is_none() && !hit_step_cap && !budget_stopped;
+            let outcome_success = last_error.is_none() && !hit_step_cap;
             let outcome_steps = steps as i64;
             let outcome_files = files_read
                 .lock()
@@ -7076,25 +7020,6 @@ mod tests {
         vec![(name.to_string(), args.to_string())]
     }
 
-    // ── P1-15: the run loop must be bounded even with `max_steps = -1` ──
-
-    #[test]
-    fn budget_is_not_exhausted_while_time_and_tokens_remain() {
-        let now = tokio::time::Instant::now();
-        assert_eq!(budget_exhausted(0, now, now + Duration::from_secs(60)), (false, false));
-    }
-
-    #[test]
-    fn budget_stops_the_loop_when_the_wall_clock_runs_out() {
-        let now = tokio::time::Instant::now();
-        let (exhausted, time_exhausted) =
-            budget_exhausted(0, now, now - Duration::from_secs(1));
-        assert!(
-            exhausted && time_exhausted,
-            "a loop past its deadline must stop — this is the backstop that did not exist before"
-        );
-    }
-
     // ── P2-24: a first-round completion marker must be honoured ──
 
     #[test]
@@ -7121,18 +7046,6 @@ mod tests {
             completion_decision(COMPLETION_CONFIRM_LIMIT, "looks done"),
             CompletionDecision::AutoClose
         );
-    }
-
-    #[test]
-    fn budget_stops_the_loop_when_the_token_budget_runs_out() {
-        let now = tokio::time::Instant::now();
-        let (exhausted, time_exhausted) = budget_exhausted(
-            duo_types::timeouts::RUN_LOOP_MAX_TOTAL_TOKENS,
-            now,
-            now + Duration::from_secs(600),
-        );
-        assert!(exhausted, "token budget must cap the loop regardless of remaining time");
-        assert!(!time_exhausted, "the reason must be attributed to tokens, not time");
     }
 
     #[test]

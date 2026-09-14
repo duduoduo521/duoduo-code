@@ -813,9 +813,24 @@ export const dict = {
   "settings.general.row.parallelDispatch.title": "Parallel Multi-Agent Dispatch",
   "settings.general.row.parallelDispatch.description":
     "When enabled, the TS side deterministically decomposes the task into independent sub-tasks and runs them concurrently (G7), coordinating writes through the blackboard. Increases throughput but uses more tokens; off by default.",
-  "settings.general.row.agentMaxSteps.title": "Agent Max Steps",
-  "settings.general.row.agentMaxSteps.description":
-    "Safety cap on the number of tool-call rounds for the agentic loop. -1 means unlimited (no step cap) — the LLM decides task scope. A positive value is a hard cap; at the cap, tools are disabled and the agent summarizes in text.",
+  "settings.tab.loop": "Loop",
+  "settings.loop.title": "Loop Settings",
+  "settings.loop.description": "Runtime caps for the main agent loop and sub-agent loops. Changes take effect on the next run.",
+  "settings.loop.row.agentMaxSteps.title": "Main Loop Max Steps",
+  "settings.loop.row.agentMaxSteps.description":
+    "Safety cap on the number of tool-call rounds for the main agent loop. -1 means unlimited — the LLM decides task scope. A positive value is a hard cap; at the cap, tools are disabled and the agent summarizes in text.",
+  "settings.loop.row.subAgentMaxRounds.title": "Sub-agent Max Rounds",
+  "settings.loop.row.subAgentMaxRounds.description":
+    "Tool-call round cap for a single sub-agent (task children, parallel sub-tasks). -1 means unlimited. Default 100.",
+  "settings.loop.row.subAgentTimeoutSecs.title": "Sub-agent Timeout (seconds)",
+  "settings.loop.row.subAgentTimeoutSecs.description":
+    "Wall-clock budget for a single sub-agent, in seconds. -1 means unlimited. Default 1800 (30 minutes).",
+  "settings.loop.row.subAgentMaxTotalTokens.title": "Sub-agent Token Budget",
+  "settings.loop.row.subAgentMaxTotalTokens.description":
+    "Cumulative token budget for a single sub-agent. -1 means unlimited. Default 500000.",
+  "settings.loop.row.subAgentMaxFileReads.title": "Sub-agent Max File Reads",
+  "settings.loop.row.subAgentMaxFileReads.description":
+    "Max number of file reads for a single sub-agent. -1 means unlimited. Default 50.",
   "settings.general.row.temperature.title": "Sampling Temperature",
   "settings.general.row.temperature.description":
     "LLM sampling temperature: 0.0 is fully deterministic (recommended for dev tasks — correctness and reproducibility), 1.0 is more random. Default 0.0.",

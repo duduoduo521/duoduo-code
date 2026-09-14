@@ -17,7 +17,7 @@ import { usePermission } from "@/context/permission"
 import { messageAgentColor } from "@/utils/agent"
 import { sessionTitle } from "@/utils/session-title"
 import { sessionPermissionRequest } from "../session/composer/session-request-tree"
-import { childSessionOnPath, hasProjectPermissions } from "./helpers"
+import { childSessionOnPath, hasProjectPermissions, useSidebarLocked } from "./helpers"
 import { useDialog } from "@duoduo-ai/ui/context/dialog"
 import { useSDK } from "@/context/sdk"
 import { Button } from "@duoduo-ai/ui/button"
@@ -116,6 +116,7 @@ const SessionRow = (props: {
   warmFocus: () => void
 }): JSX.Element => {
   const title = () => sessionTitle(props.session.title)
+  const sidebarLocked = useSidebarLocked()
 
   return (
     <A
@@ -123,7 +124,13 @@ const SessionRow = (props: {
       class={`flex items-center gap-2 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"}`}
       onPointerDown={props.warmPress}
       onFocus={props.warmFocus}
-      onClick={() => {
+      onClick={(event) => {
+        // Inert while the current project loads/boots — switching sessions
+        // mid-boot interrupts the open flow.
+        if (sidebarLocked()) {
+          event.preventDefault()
+          return
+        }
         if (props.sidebarOpened()) return
         props.clearHoverProjectSoon()
       }}
@@ -368,6 +375,7 @@ export const NewSessionItem = (props: {
 }): JSX.Element => {
   const layout = useLayout()
   const language = useLanguage()
+  const sidebarLocked = useSidebarLocked()
   const label = language.t("command.session.new")
   const tooltip = () => props.mobile || !props.sidebarExpanded()
   const item = (
@@ -375,7 +383,11 @@ export const NewSessionItem = (props: {
       href={`/${props.slug}/session`}
       end
       class={`flex items-center gap-2 min-w-0 w-full text-left focus:outline-none ${props.dense ? "py-0.5" : "py-1"}`}
-      onClick={() => {
+      onClick={(event) => {
+        if (sidebarLocked()) {
+          event.preventDefault()
+          return
+        }
         if (layout.sidebar.opened()) return
         props.clearHoverProjectSoon()
       }}

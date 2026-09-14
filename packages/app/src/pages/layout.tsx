@@ -77,6 +77,7 @@ import {
   errorMessage,
   latestRootSession,
   sortedRootSessions,
+  useSidebarLocked,
   workspaceKey,
 } from "./layout/helpers"
 import {
@@ -1411,12 +1412,24 @@ export default function Layout(props: ParentProps) {
   }
 
   async function navigateToProject(directory: string | undefined) {
+    if (!directory) return
+    // Lock the sidebar for the whole in-flight window: without this a second
+    // click between "route changed" and "data ready" (or during the async
+    // session lookups below) would interleave two open flows.
+    layout.setProjectNavigating(true)
+    try {
+      await navigateToProjectInner(directory)
+    } finally {
+      layout.setProjectNavigating(false)
+    }
+  }
+
+  async function navigateToProjectInner(directory: string) {
     // [TRACE] 临时诊断：定位「打开项目卡死」。定位后删除。
     const __t0 = performance.now()
     const __log = (m: string) =>
       trace(`navigateToProject(${directory}) ${m} (+${(performance.now() - __t0).toFixed(1)}ms)`)
     __log("enter")
-    if (!directory) return
     const root = projectRoot(directory)
     server.projects.touch(root)
     __log(`root=${root}`)
@@ -2540,6 +2553,9 @@ export default function Layout(props: ParentProps) {
       return item.vcs === "git" || layout.sidebar.workspaces(item.worktree)()
     })
     const homedir = createMemo(() => globalSync.data.path.home)
+    // Project loading/booting: the panel content is click-guarded (session
+    // items, view-all button) and dimmed so the disabled state is visible.
+    const sidebarLocked = useSidebarLocked()
 
     return (
       <div
@@ -2551,6 +2567,7 @@ export default function Layout(props: ParentProps) {
           "bg-background-stronger": !merged() && !hover(),
           "flex-1 min-w-0": panelProps.mobile,
           "max-w-full overflow-hidden": panelProps.mobile,
+          "opacity-40": sidebarLocked(),
         }}
         style={{
           width: panelProps.mobile ? undefined : `${panel()}px`,

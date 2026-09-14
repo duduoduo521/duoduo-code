@@ -3,8 +3,10 @@
 //! Security paths:
 //! - Permission rules: Allow/Deny/Ask with findLast-wins semantics (last
 //!   matching rule wins); default Ask (fail-closed) when no rule matches.
-//! - Path sandbox (Layer 3): `check_tool_permission` must reject file tools
-//!   whose path escapes the project directory or contains `..` traversal.
+//! - Path sandbox (Layer 3): `..` traversal is a hard sandbox rejection; a
+//!   plain out-of-project path yields `PermissionAsk` so the main loop
+//!   delegates it to TS and the user gets the external-directory prompt
+//!   instead of a silent refusal.
 
 use agent_executor::permission::{
     check_permission, check_tool_permission, PermissionResult, PermissionRule, ToolExecutionError,
@@ -73,7 +75,7 @@ fn ask_rule_asks() {
 }
 
     #[test]
-    fn sandbox_blocks_out_of_project_path() {
+    fn sandbox_asks_for_out_of_project_path() {
         let policy = SecurityPolicy::with_project_path(std::path::PathBuf::from("/tmp/duoduo_proj_test"));
         // Explicit Allow so the permission layer passes and we exercise Layer 3
         // (sandbox). Default is now Ask (fail-closed), so an unmatched rule
@@ -84,8 +86,8 @@ fn ask_rule_asks() {
         }];
         let res = check_tool_permission("read", &json!({"path": "/etc/passwd"}), &rules, &policy, false);
         assert!(
-            matches!(res, Err(ToolExecutionError::SandboxViolation(_))),
-            "out-of-project path must be sandboxed, got: {res:?}"
+            matches!(res, Err(ToolExecutionError::PermissionAsk(_))),
+            "a plain out-of-project path must delegate to TS (external-directory prompt), got: {res:?}"
         );
     }
 

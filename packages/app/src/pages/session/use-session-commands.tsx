@@ -195,18 +195,23 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     }
 
     // Turning ON: require explicit risk acknowledgment before enabling.
-    dialog.show(() => (
-      <DialogAutoAcceptRisk
-        onConfirm={() => {
-          if (sessionID) permission.toggleAutoAccept(sessionID, sdk.directory)
-          else permission.toggleAutoAcceptDirectory(sdk.directory)
-          showToast({
-            title: language.t("toast.permissions.autoaccept.on.title"),
-            description: language.t("toast.permissions.autoaccept.on.description"),
-          })
-        }}
-      />
-    ))
+    // `back` keeps a parent dialog open if one exists (no parent → same as close).
+    dialog.show(
+      () => (
+        <DialogAutoAcceptRisk
+          onConfirm={() => {
+            if (sessionID) permission.toggleAutoAccept(sessionID, sdk.directory)
+            else permission.toggleAutoAcceptDirectory(sdk.directory)
+            showToast({
+              title: language.t("toast.permissions.autoaccept.on.title"),
+              description: language.t("toast.permissions.autoaccept.on.description"),
+            })
+          }}
+        />
+      ),
+      undefined,
+      "back",
+    )
   }
 
   const undo = async () => {

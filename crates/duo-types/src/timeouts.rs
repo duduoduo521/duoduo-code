@@ -40,25 +40,15 @@ pub const DEFAULT_READ_LIMIT: usize = 2000;
 /// Default max total tokens per loop iteration.
 pub const DEFAULT_MAX_TOTAL_TOKENS: u32 = 100_000;
 
-// ── Main run-loop budget backstops ────────────────────────────────────
+// ── Main run-loop budgets ─────────────────────────────────────────────
 //
-// `LoopConfig.max_steps` is a *step* cap and `-1` legitimately means "no step
-// cap". Wall-clock and token budgets are different in kind: a stuck agent that
-// never repeats a step still burns money and a concurrency slot forever. These
-// two always apply, independent of the step cap, and are the same kind of
-// backstop the sub-agent loop already enforces (`LOOP_TIMEOUT` /
-// `DEFAULT_MAX_TOTAL_TOKENS`).
-
-/// Wall-clock budget for one `POST /agent/run_loop` call (30 min).
-pub const RUN_LOOP_WALL_CLOCK: Duration = Duration::from_secs(30 * 60);
-
-/// Cumulative token budget for one `POST /agent/run_loop` call (2M).
-///
-/// Deliberately far above `DEFAULT_MAX_TOTAL_TOKENS` (the *sub*-loop's 100K):
-/// the main loop runs the user's whole task and legitimately consumes a large
-/// context every round, so a tight cap would cut off normal work. This only
-/// exists to stop a runaway.
-pub const RUN_LOOP_MAX_TOTAL_TOKENS: u32 = 2_000_000;
+// The main run loop is bounded ONLY by the user-configured `LoopConfig.max_steps`
+// (`-1` = truly unlimited). The former 30-minute wall-clock / 2M-token budget
+// backstops (`RUN_LOOP_WALL_CLOCK` / `RUN_LOOP_MAX_TOTAL_TOKENS`) were removed:
+// they silently force-stopped unlimited runs mid-task. Runaway protection is
+// the in-loop 2000-step soft fuse (user-visible checkpoint, no forced stop)
+// plus the user's Stop button. Sub-agent loops keep `LOOP_TIMEOUT` /
+// `DEFAULT_MAX_TOTAL_TOKENS`.
 
 /// Default max history messages retained per loop iteration.
 pub const DEFAULT_MAX_HISTORY_MESSAGES: usize = 10;

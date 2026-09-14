@@ -729,9 +729,24 @@ export const dict = {
   "settings.general.row.parallelDispatch.title": "并行多智能体分发",
   "settings.general.row.parallelDispatch.description":
     "开启后，TS 侧将任务确定性拆分为独立子任务并发执行（G7），经黑板协调写盘。提高吞吐，但 Token 消耗增加；默认关闭。",
-  "settings.general.row.agentMaxSteps.title": "Agent 最大步数",
-  "settings.general.row.agentMaxSteps.description":
-    "Agentic 循环的工具调用轮数上限（安全护栏）。填 -1 表示不限制（无步数上限），由 LLM 自行决定任务范围。正整数则为硬上限，到上限后禁用工具并文本总结。",
+  "settings.tab.loop": "循环设置",
+  "settings.loop.title": "循环设置",
+  "settings.loop.description": "主循环与子代理循环的运行上限。更改在下一轮对话生效。",
+  "settings.loop.row.agentMaxSteps.title": "主循环最大步数",
+  "settings.loop.row.agentMaxSteps.description":
+    "主循环的工具调用轮数上限（安全护栏）。填 -1 表示不限制，由 LLM 自行决定任务范围。正整数则为硬上限，到上限后禁用工具并文本总结。",
+  "settings.loop.row.subAgentMaxRounds.title": "子代理最大轮数",
+  "settings.loop.row.subAgentMaxRounds.description":
+    "单个子代理（task 任务、并行子任务）的工具调用轮数上限。-1 表示不限制。默认 100。",
+  "settings.loop.row.subAgentTimeoutSecs.title": "子代理超时时间（秒）",
+  "settings.loop.row.subAgentTimeoutSecs.description":
+    "单个子代理的运行时间上限（秒）。-1 表示不限制。默认 1800（30 分钟）。",
+  "settings.loop.row.subAgentMaxTotalTokens.title": "子代理 Token 上限",
+  "settings.loop.row.subAgentMaxTotalTokens.description":
+    "单个子代理的累计 Token 消耗上限。-1 表示不限制。默认 500000。",
+  "settings.loop.row.subAgentMaxFileReads.title": "子代理读文件上限",
+  "settings.loop.row.subAgentMaxFileReads.description":
+    "单个子代理可读取文件的次数上限。-1 表示不限制。默认 50。",
   "settings.general.row.temperature.title": "采样温度",
   "settings.general.row.temperature.description":
     "LLM 采样温度：0.0 完全确定性（开发任务推荐，保证生成的正确性与可复现），1.0 更具随机性。默认 0.0。",

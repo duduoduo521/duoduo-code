@@ -296,6 +296,27 @@ fn execute_rust_tool(
     }
 }
 
+/// Decide the Layer-3 sandbox error for a path that failed
+/// `SecurityPolicy::check_path_access`. Shared by `check_tool_permission` and
+/// `execute_tool_with_middleware` so both enforcement points behave identically.
+///
+/// `..` traversal stays a hard fail-closed block. A plain path outside the
+/// project becomes an Ask: the main loop (routes/agent.rs) delegates it to TS,
+/// where the external-directory permission prompt (deny / allow / always
+/// allow) is surfaced instead of a silent refusal — user-approved directories
+/// then land in `allowed_paths` and pass `check_path_access` on later turns.
+fn sandbox_violation_error(path: &str) -> ToolExecutionError {
+    let normalized = path.replace('\\', "/");
+    if normalized.contains("/..") || normalized.contains("../") {
+        ToolExecutionError::SandboxViolation(path.to_string())
+    } else {
+        ToolExecutionError::PermissionAsk(format!(
+            "path '{}' is outside the project directory — external directory access required",
+            path
+        ))
+    }
+}
+
 /// Check tool execution permission without actually executing the tool.
 ///
 /// Performs the first 3 layers of the middleware chain:
@@ -350,9 +371,10 @@ pub fn check_tool_permission(
         .or_else(|| args.get("filePath"))
         .or_else(|| args.get("projectPath"))
         .and_then(|v| v.as_str())
-        && security_policy.check_path_access(path).is_err() {
-            return Err(ToolExecutionError::SandboxViolation(path.to_string()));
-        }
+        && security_policy.check_path_access(path).is_err()
+    {
+        return Err(sandbox_violation_error(path));
+    }
 
     Ok(())
 }
@@ -405,9 +427,10 @@ pub fn execute_tool_with_middleware(
         .or_else(|| args.get("filePath"))
         .or_else(|| args.get("projectPath"))
         .and_then(|v| v.as_str())
-        && security_policy.check_path_access(path).is_err() {
-            return Err(ToolExecutionError::SandboxViolation(path.to_string()));
-        }
+        && security_policy.check_path_access(path).is_err()
+    {
+        return Err(sandbox_violation_error(path));
+    }
 
     // Layer 4: Execution — execute Rust-native tools directly.
     // High-frequency read-only tools (read, glob) are executed in Rust.

@@ -1,9 +1,41 @@
 import { getFilename } from "@duoduo-ai/shared/util/path"
+import { base64Decode } from "@duoduo-ai/shared/util/encode"
 import { type Session } from "@duoduo-ai/sdk/v2/client"
+import { useParams } from "@solidjs/router"
+import { type Accessor, createMemo } from "solid-js"
+import { useGlobalSync } from "@/context/global-sync"
+import { useLayout } from "@/context/layout"
 
 type SessionStore = {
   session?: Session[]
   path: { directory: string }
+}
+
+/**
+ * True while the sidebar must ignore clicks.
+ *
+ * Two sources, OR-ed:
+ * 1. A project switch/open navigation is in flight (`layout.projectNavigating`,
+ *    set around `navigateToProject`) — closes the window between "route
+ *    changed" and "data bootstrap started" where a second click would
+ *    interleave two open flows.
+ * 2. The current route's directory child store is still `"loading"` — covers
+ *    the whole project boot (sidecar starting + data bootstrap). This is the
+ *    same condition the session page gates its content on.
+ *
+ * The context menu is intentionally NOT blocked: blocking a right-click menu
+ * is a bigger UX loss than the interleaving risk it closes.
+ */
+export function useSidebarLocked(): Accessor<boolean> {
+  const layout = useLayout()
+  const globalSync = useGlobalSync()
+  const params = useParams()
+  return createMemo(() => {
+    if (layout.projectNavigating()) return true
+    const dir = params.dir ? base64Decode(params.dir) : undefined
+    if (!dir) return false
+    return globalSync.child(dir, { bootstrap: false })[0].status === "loading"
+  })
 }
 
 export const workspaceKey = (directory: string) => {

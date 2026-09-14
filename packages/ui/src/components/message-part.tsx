@@ -50,6 +50,7 @@ const subagentTypeKey: Record<string, UiI18nKey> = {
 import { Accordion } from "./accordion"
 import { StickyAccordionHeader } from "./sticky-accordion-header"
 import { Collapsible } from "./collapsible"
+import { reasoningHeading } from "./reasoning-heading"
 import { FileIcon } from "./file-icon"
 import { Icon } from "./icon"
 import { ToolErrorCard } from "./tool-error-card"
@@ -1530,18 +1531,63 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
 
 PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   const part = () => props.part as ReasoningPart
-  const streaming = createMemo(
-    () => props.message.role === "assistant" && typeof (props.message).time.completed !== "number",
-  )
+  const i18n = useI18n()
   const text = () => part().text.trim()
+  // `time.end` is undefined while streaming and set once the part is finalised
+  // (message.part.updated → reconcile in event-reducer). It is the reliable
+  // "thinking finished" signal — message-level time.completed can be missing
+  // after an abort.
+  const done = createMemo(() => typeof part().time?.end === "number")
+  const seconds = createMemo(() => {
+    const t = part().time
+    if (typeof t?.end !== "number") return undefined
+    return Math.max(1, Math.round((t.end - t.start) / 1000))
+  })
+  const heading = createMemo(() => reasoningHeading(text()))
+  const title = () => {
+    if (!done()) {
+      return heading()
+        ? i18n.t("ui.sessionTurn.status.thinkingWithTopic", { topic: heading()! })
+        : i18n.t("ui.sessionTurn.status.thinking")
+    }
+    return i18n.t("ui.messagePart.reasoning.thought", { seconds: seconds() ?? 0 })
+  }
+  // Streamed thinking stays expanded; finished thinking folds into the trigger
+  // bar. History parts have time.end already set on mount, so they start
+  // collapsed. A manual toggle always wins over the auto-fold.
+  const [open, setOpen] = createSignal(!done())
+  const [touched, setTouched] = createSignal(false)
+  createEffect(() => {
+    if (done() && !touched()) setOpen(false)
+  })
 
   return (
     <Show when={text()}>
-      <div data-component="reasoning-part">
-        <Show when={streaming()} fallback={<Markdown text={text()} cacheKey={part().id} streaming={false} />}>
-          <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
-        </Show>
-      </div>
+      <Collapsible
+        open={open()}
+        onOpenChange={(o) => {
+          setTouched(true)
+          setOpen(o)
+        }}
+        variant="ghost"
+        data-component="reasoning-collapsible"
+      >
+        <Collapsible.Trigger>
+          <div data-component="reasoning-trigger">
+            <span data-slot="reasoning-trigger-label">
+              <TextShimmer text={title()} active={!done()} />
+            </span>
+            <Collapsible.Arrow />
+          </div>
+        </Collapsible.Trigger>
+        <Collapsible.Content>
+          <div data-component="reasoning-part">
+            <Show when={!done()} fallback={<Markdown text={text()} cacheKey={part().id} streaming={false} />}>
+              <PacedMarkdown text={text()} cacheKey={part().id} streaming={true} />
+            </Show>
+          </div>
+        </Collapsible.Content>
+      </Collapsible>
     </Show>
   )
 }

@@ -26,6 +26,7 @@ import { createAutoScroll } from "../hooks"
 import { useI18n } from "../context/i18n"
 import { normalize } from "./session-diff"
 import { Collapsible } from "./collapsible"
+import { reasoningHeading as reasoningHeadingFromText } from "./reasoning-heading"
 import { Tooltip } from "./tooltip"
 
 // ─── Agent Progress Panel (Issue 3) ────────────────────────────────
@@ -263,42 +264,6 @@ function partState(part: PartType, showReasoning: boolean) {
   }
   if (PART_MAPPING[part.type]) return "visible" as const
   return
-}
-
-function clean(value: string) {
-  return value
-    .replace(/`([^`]+)`/g, "$1")
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-    .replace(/[*_~]+/g, "")
-    .trim()
-}
-
-function heading(text: string) {
-  const markdown = text.replace(/\r\n?/g, "\n")
-
-  const html = markdown.match(/<h[1-6][^>]*>([\s\S]*?)<\/h[1-6]>/i)
-  if (html?.[1]) {
-    const value = clean(html[1].replace(/<[^>]+>/g, " "))
-    if (value) return value
-  }
-
-  const atx = markdown.match(/^\s{0,3}#{1,6}[ \t]+(.+?)(?:[ \t]+#+[ \t]*)?$/m)
-  if (atx?.[1]) {
-    const value = clean(atx[1])
-    if (value) return value
-  }
-
-  const setext = markdown.match(/^([^\n]+)\n(?:=+|-+)\s*$/m)
-  if (setext?.[1]) {
-    const value = clean(setext[1])
-    if (value) return value
-  }
-
-  const strong = markdown.match(/^\s*(?:\*\*|__)(.+?)(?:\*\*|__)\s*$/m)
-  if (strong?.[1]) {
-    const value = clean(strong[1])
-    if (value) return value
-  }
 }
 
 export function SessionTurn(
@@ -553,7 +518,7 @@ export function SessionTurn(
           if (part.type !== "reasoning") visibleExcludingReasoning++
         }
         if (part.type === "reasoning" && part.text) {
-          const h = heading(part.text)
+          const h = reasoningHeadingFromText(part.text)
           if (h) reason = h
         }
       }

@@ -36,6 +36,12 @@ export interface Settings {
     parallelDispatch: boolean
     agentMaxSteps: number
   }
+  loop: {
+    subAgentMaxRounds: number
+    subAgentTimeoutSecs: number
+    subAgentMaxTotalTokens: number
+    subAgentMaxFileReads: number
+  }
   updates: {
     startup: boolean
   }
@@ -138,6 +144,12 @@ const defaultSettings: Settings = {
     reflect: true,
     parallelDispatch: false,
     agentMaxSteps: -1,
+  },
+  loop: {
+    subAgentMaxRounds: 100,
+    subAgentTimeoutSecs: 1800,
+    subAgentMaxTotalTokens: 500_000,
+    subAgentMaxFileReads: 50,
   },
   updates: {
     startup: true,
@@ -281,6 +293,36 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         ),
         setAgentMaxSteps(value: number) {
           setStore("general", "agentMaxSteps", value)
+        },
+      },
+      loop: {
+        subAgentMaxRounds: withFallback(
+          () => store.loop?.subAgentMaxRounds,
+          defaultSettings.loop.subAgentMaxRounds,
+        ),
+        setSubAgentMaxRounds(value: number) {
+          setStore("loop", "subAgentMaxRounds", value)
+        },
+        subAgentTimeoutSecs: withFallback(
+          () => store.loop?.subAgentTimeoutSecs,
+          defaultSettings.loop.subAgentTimeoutSecs,
+        ),
+        setSubAgentTimeoutSecs(value: number) {
+          setStore("loop", "subAgentTimeoutSecs", value)
+        },
+        subAgentMaxTotalTokens: withFallback(
+          () => store.loop?.subAgentMaxTotalTokens,
+          defaultSettings.loop.subAgentMaxTotalTokens,
+        ),
+        setSubAgentMaxTotalTokens(value: number) {
+          setStore("loop", "subAgentMaxTotalTokens", value)
+        },
+        subAgentMaxFileReads: withFallback(
+          () => store.loop?.subAgentMaxFileReads,
+          defaultSettings.loop.subAgentMaxFileReads,
+        ),
+        setSubAgentMaxFileReads(value: number) {
+          setStore("loop", "subAgentMaxFileReads", value)
         },
       },
       updates: {

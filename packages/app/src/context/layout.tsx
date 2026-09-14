@@ -574,10 +574,18 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
     // guard over the blank screen until the file tree has listed its root.
     const [openingRemote, setOpeningRemote] = createSignal(false)
 
+    // True while a project switch/open navigation is in flight (set around
+    // `navigateToProject`). Combined with the current project's child-store
+    // "loading" status this locks the sidebar (see `useSidebarLocked`) so a
+    // mid-boot click cannot interleave two open flows.
+    const [projectNavigating, setProjectNavigating] = createSignal(false)
+
     return {
       ready,
       openingRemote,
       setOpeningRemote,
+      projectNavigating,
+      setProjectNavigating,
       handoff: {
         tabs: createMemo(() => store.handoff?.tabs),
         setTabs(dir: string, id: string) {

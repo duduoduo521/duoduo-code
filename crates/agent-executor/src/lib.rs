@@ -25,7 +25,7 @@ pub mod tools;
 pub mod intel_gear;
 pub mod mcp;
 
-pub use agentic_loop::{AgenticLoopExecutor, FileWriteResult, LiveLoopMetrics};
+pub use agentic_loop::{AgenticLoopExecutor, FileWriteResult, LiveLoopMetrics, SubAgentLimits};
 pub use agentic_loop::{DEFAULT_TOOL_CONCURRENCY, MAX_TOOL_CONCURRENCY_HARD};
 pub use duo_types::{LoopRoundResult, ToolCallEntry};
 pub use event_bus::{LoopStreamEvent, RunLoopEventBus, ToolCallSummary};

@@ -281,6 +281,35 @@
   }
 }
 
+/* Reasoning (thinking) part — collapsible wrapper (see ReasoningPartDisplay).
+   The trigger bar reads as a quiet summary line; the content is one step
+   fainter than normal text (--text-weaker) so thinking never competes with
+   the formal answer visually. */
+[data-component="reasoning-collapsible"] {
+  > [data-slot="collapsible-trigger"] {
+    height: var(--control-height-xs);
+    color: var(--text-weaker);
+  }
+
+  [data-component="reasoning-trigger"] {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+  }
+
+  [data-slot="reasoning-trigger-label"] {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-weaker);
+  }
+
+  [data-component="reasoning-part"] {
+    padding-top: 4px;
+  }
+}
+
 [data-component="reasoning-part"] {
   width: 100%;
   color: var(--text-base);
@@ -290,11 +319,11 @@
     margin-top: 16px;
     font-style: normal;
     font-size: 13px;
-    color: var(--text-weak);
+    color: var(--text-weaker);
 
     strong,
     b {
-      color: var(--text-weak);
+      color: var(--text-weaker);
     }
 
     p:has(strong) {

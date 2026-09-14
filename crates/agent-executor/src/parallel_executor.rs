@@ -57,6 +57,13 @@ pub struct ParallelContext {
     pub code_search: Option<Arc<code_search::CodeSearch>>,
     pub max_rounds: Option<usize>,
     pub loop_timeout: Option<Duration>,
+    /// Cumulative token budget per sub-agent (user-configurable LoopConfig
+    /// `sub_agent_max_total_tokens`). `None` ⇒ the executor's compile-time
+    /// default (100K).
+    pub max_total_tokens: Option<u32>,
+    /// Max file reads per sub-agent (LoopConfig `sub_agent_max_file_reads`).
+    /// `None` ⇒ the executor's compile-time default (10).
+    pub max_file_reads: Option<usize>,
     /// Cap on retries per sub-task (At-Least-Once). 0 = no retry.
     pub max_retries: u32,
     /// Max number of sub-agents that may run concurrently. Bounds the fan-out
@@ -191,6 +198,12 @@ impl ParallelContext {
         }
         if let Some(lt) = self.loop_timeout {
             ex = ex.with_loop_timeout(lt);
+        }
+        if let Some(mt) = self.max_total_tokens {
+            ex = ex.with_max_total_tokens(mt);
+        }
+        if let Some(mf) = self.max_file_reads {
+            ex = ex.with_max_file_reads(mf);
         }
         // Reuse the exact same validated path as the single-agent loop. Clamp
         // ∈ [1, 16] is applied internally by `effective_tool_concurrency`, so a
@@ -659,6 +672,8 @@ mod tests {
             code_search: None,
             max_rounds: None,
             loop_timeout: Some(Duration::from_secs(1)),
+            max_total_tokens: None,
+            max_file_reads: None,
             max_retries: 0,
             max_concurrent: 3,
             tool_concurrency: None,
@@ -735,6 +750,8 @@ mod tests {
             code_search: None,
             max_rounds: None,
             loop_timeout: Some(Duration::from_secs(1)),
+            max_total_tokens: None,
+            max_file_reads: None,
             max_retries: 0,
             max_concurrent: 3,
             tool_concurrency: None,

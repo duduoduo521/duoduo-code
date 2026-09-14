@@ -12,7 +12,7 @@ import { workspaceKey } from "./helpers"
 import { useLanguage } from "@/context/language"
 import { useNotification } from "@/context/notification"
 import { ProjectIcon, SessionItem, type SessionItemProps } from "./sidebar-items"
-import { displayName, sortedRootSessions } from "./helpers"
+import { displayName, sortedRootSessions, useSidebarLocked } from "./helpers"
 
 export type ProjectSidebarContext = {
   currentDir: Accessor<string>
@@ -79,6 +79,7 @@ const ProjectTile = (props: {
 }): JSX.Element => {
   const notification = useNotification()
   const layout = useLayout()
+  const sidebarLocked = useSidebarLocked()
   const unseenCount = createMemo(() =>
     props.dirs().reduce((total, directory) => total + notification.project.unseenCount(directory), 0),
   )
@@ -110,6 +111,9 @@ const ProjectTile = (props: {
           "bg-transparent border border-transparent hover:bg-surface-base-hover hover:border-border-weak-base":
             !props.selected() && !props.active(),
           "bg-surface-base-hover border border-border-weak-base": !props.selected() && props.active(),
+          // Project is loading/booting: the whole tile is inert (clicks are
+          // ignored below) and dimmed so the disabled state is visible.
+          "opacity-40": sidebarLocked(),
         }}
         onPointerDown={(event) => {
           if (event.button === 0 && !event.ctrlKey) {
@@ -139,6 +143,10 @@ const ProjectTile = (props: {
           props.onProjectFocus(props.project.worktree)
         }}
         onClick={() => {
+          // Inert while the current project loads/boots: switching projects
+          // (or even toggling the sidebar) mid-boot lets two open flows run
+          // concurrently — the exact "打开项目卡死" race.
+          if (sidebarLocked()) return
           props.setOpen(false)
           if (props.selected()) {
             layout.sidebar.toggle()
@@ -212,7 +220,9 @@ const ProjectPreviewPanel = (props: {
   workspaceSessions: (directory: string) => ReturnType<typeof sortedRootSessions>
   ctx: ProjectSidebarContext
   language: ReturnType<typeof useLanguage>
-}): JSX.Element => (
+}): JSX.Element => {
+  const sidebarLocked = useSidebarLocked()
+  return (
   <div class="-m-3 p-2 flex flex-col w-72">
     <div class="px-4 pt-2 pb-1 flex items-center gap-2">
       <div class="text-14-medium text-text-strong truncate grow">{displayName(props.project)}</div>
@@ -272,6 +282,7 @@ const ProjectPreviewPanel = (props: {
         variant="ghost"
         class="flex w-full text-left justify-start text-text-base px-2 hover:bg-transparent active:bg-transparent"
         onClick={() => {
+          if (sidebarLocked()) return
           props.ctx.openSidebar()
           props.ctx.onHoverOpenChanged(props.project.worktree, false)
           if (props.selected()) return
@@ -282,7 +293,8 @@ const ProjectPreviewPanel = (props: {
       </Button>
     </div>
   </div>
-)
+  )
+}
 
 export const SortableProject = (props: {
   project: LocalProject

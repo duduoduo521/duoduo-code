@@ -78,6 +78,7 @@ export const dict: Record<string, string> = {
   "ui.agentProgress.statusPending": "Pending",
 
   "ui.messagePart.diagnostic.error": "Error",
+  "ui.messagePart.reasoning.thought": "Thought for {{seconds}}s",
   "ui.messagePart.title.edit": "Edit",
   "ui.messagePart.title.write": "Write",
   "ui.messagePart.option.typeOwnAnswer": "Type your own answer",

@@ -33,6 +33,7 @@ import { useGlobalSDK } from "@/context/global-sdk"
 import { useSmartLayer } from "@/addons/smart-layer/context"
 import { SettingsList } from "./settings-list"
 import { SettingsPage } from "./settings-page"
+import { SettingsRow } from "./settings-row"
 
 let demoSoundState = {
   cleanup: undefined as (() => void) | undefined,
@@ -167,14 +168,19 @@ export const SettingsGeneral: Component = () => {
     }
 
     // Turning ON: require explicit risk acknowledgment before enabling.
-    dialog.show(() => (
-      <DialogAutoAcceptRisk
-        onConfirm={() => {
-          if (!params.id) permission.toggleAutoAcceptDirectory(value)
-          else permission.enableAutoAccept(params.id, value)
-        }}
-      />
-    ))
+    // `back` keeps THIS settings dialog open when the risk dialog closes.
+    dialog.show(
+      () => (
+        <DialogAutoAcceptRisk
+          onConfirm={() => {
+            if (!params.id) permission.toggleAutoAcceptDirectory(value)
+            else permission.enableAutoAccept(params.id, value)
+          }}
+        />
+      ),
+      undefined,
+      "back",
+    )
   }
   const desktop = createMemo(() => platform.platform === "desktop")
 
@@ -517,52 +523,6 @@ export const SettingsGeneral: Component = () => {
                     syntaxCheck: settings.general.syntaxCheck(),
                     reflect: settings.general.reflect(),
                     parallelDispatch: checked,
-                  })
-                  .catch(() =>
-                    showToast({
-                      title: language.t("toast.loopConfig.failed.title"),
-                      description: language.t("toast.loopConfig.failed.description"),
-                      variant: "error",
-                    }),
-                  )
-              }}
-            />
-          </div>
-        </SettingsRow>
-
-        <SettingsRow
-          title={
-            <div class="flex items-center gap-2">
-              <span>{language.t("settings.general.row.agentMaxSteps.title")}</span>
-              <Tooltip value={language.t("settings.general.row.agentMaxSteps.description")} placement="top">
-                <span class="text-text-weak">
-                  <Icon name="help" size="small" />
-                </span>
-              </Tooltip>
-            </div>
-          }
-          description={language.t("settings.general.row.agentMaxSteps.description")}
-        >
-          <div data-action="settings-agent-max-steps" class="w-28">
-            <TextField
-              type="number"
-              min={-1}
-              value={String(settings.general.agentMaxSteps())}
-              onChange={(raw: string) => {
-                // -1 = unlimited (no step cap). 0 is preserved as "no tools at
-                // all" (immediate stop) for backward compatibility. NaN/invalid
-                // input falls back to -1 to match the backend default.
-                const rawN = Math.trunc(Number(raw))
-                const next = Number.isFinite(rawN) ? Math.max(-1, rawN) : -1
-                settings.general.setAgentMaxSteps(next)
-                // Drive Rust loop max_steps via LoopConfig (kept consistent with
-                // the other loop flags). Takes effect on the next run_loop.
-                smartLayer.api
-                  ?.post("/agent/loop_config", {
-                    syntaxCheck: settings.general.syntaxCheck(),
-                    reflect: settings.general.reflect(),
-                    parallelDispatch: settings.general.parallelDispatch(),
-                    maxSteps: next,
                   })
                   .catch(() =>
                     showToast({
@@ -1004,23 +964,5 @@ export const SettingsGeneral: Component = () => {
         </Show>
       </div>
     </SettingsPage>
-  )
-}
-
-interface SettingsRowProps {
-  title: string | JSX.Element
-  description: string | JSX.Element
-  children: JSX.Element
-}
-
-const SettingsRow: Component<SettingsRowProps> = (props) => {
-  return (
-    <div class="flex flex-wrap items-center gap-4 py-3 border-b border-border-weak-base last:border-none sm:flex-nowrap">
-      <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span class="text-14-medium text-text-strong">{props.title}</span>
-        <span class="text-12-regular text-text-weak">{props.description}</span>
-      </div>
-      <div class="flex w-full justify-end sm:w-auto sm:shrink-0">{props.children}</div>
-    </div>
   )
 }

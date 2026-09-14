@@ -84,13 +84,26 @@ const DOWNLOADERS: &[&str] = &["curl", "wget", "fetch", "aria2c", "httpie", "htt
 const OUTPUT_FLAGS: &[&str] = &["-o", "-O", "--output", "--output-document"];
 
 /// File-touching commands whose path arguments are worth checking against the
-/// sandbox. Mirrors the `FILES` set in `packages/duoduo/src/tool/bash.ts`.
+/// sandbox. Mirrors the `FILES` set in `packages/duoduo/src/tool/bash.ts` and
+/// additionally covers the PowerShell cmdlets + built-in aliases the Windows
+/// bash tool can now emit (the Windows sub-agent shell is PowerShell, so
+/// `Remove-Item D:\elsewhere` must hit the same spatial check as `rm`).
+/// All lowercase — `base_name` lowercases before lookup.
 const FILES: &[&str] = &[
     "cat", "less", "more", "head", "tail", "nl", "od", "strings", "file", "stat", "wc", "cp", "mv",
     "ln", "install", "touch", "mkdir", "rmdir", "rm", "chmod", "chown", "truncate", "tee", "dd",
     "ls", "find", "du", "df", "readlink", "realpath", "basename", "dirname", "diff", "cmp",
     "patch", "grep", "egrep", "fgrep", "rg", "ag", "sed", "awk", "sort", "uniq", "cut", "paste",
     "tar", "zip", "unzip", "gzip", "gunzip", "bzip2", "xz", "open", "code", "vim", "nano", "emacs",
+    // ── PowerShell cmdlets ──
+    "remove-item", "copy-item", "move-item", "rename-item", "new-item", "set-item", "get-item",
+    "get-content", "set-content", "add-content", "clear-content", "get-childitem",
+    "out-file", "tee-object", "select-string", "compress-archive", "expand-archive",
+    "export-csv", "import-csv", "invoke-item", "split-path", "join-path", "test-path",
+    "set-location", "push-location", "pop-location",
+    // ── PowerShell built-in aliases (not already covered above) ──
+    "del", "erase", "ri", "rd", "md", "mi", "dir", "gci", "gi", "gc", "type",
+    "cd", "chdir", "pushd", "popd", "ren",
 ];
 
 /// A shell word plus whether its runtime value is statically invisible
@@ -694,9 +707,10 @@ mod tests {
         fn sees_through_quoting_and_pipeline_stages() {
             assert_eq!(scan("cat \"/etc/passwd\""), vec!["/etc/passwd".to_string()]);
             assert_eq!(scan("echo hi | tee /etc/motd"), vec!["/etc/motd".to_string()]);
+            // `cd` is scanned too (TS FILES parity): both stages report.
             assert_eq!(
                 scan("cd /tmp && cat /root/.ssh/id_rsa"),
-                vec!["/root/.ssh/id_rsa".to_string()]
+                vec!["/tmp".to_string(), "/root/.ssh/id_rsa".to_string()]
             );
         }
 
@@ -724,9 +738,12 @@ mod tests {
             // Runtime-only value: invisible to any static scan.
             assert!(scan("cat $SECRET").is_empty());
             assert!(scan("rm -rf $TARGET").is_empty());
-            // `cd` changes the resolution base, so a relative path can leave the
-            // project even though it looks in-bounds.
-            assert!(scan("cd /etc && cat passwd").is_empty());
+            // `cd` is scanned (TS FILES parity), so `cd /etc` itself reports.
+            // The residual hole stands: the RELATIVE path after `cd` still
+            // resolves against the child's cwd (the project), so `cat passwd`
+            // is not caught — changing the resolution base per stage would
+            // need real shell emulation.
+            assert_eq!(scan("cd /etc && cat passwd"), vec!["/etc".to_string()]);
 
             // Command substitution is only caught incidentally: whitespace
             // splitting leaves `/etc/passwd)` as its own token, so a literal

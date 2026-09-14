@@ -1,13 +1,6 @@
 import path from "path"
 import { existsSync, realpathSync } from "fs"
 import { Instance } from "@/project/instance"
-import { DuoduoError } from "@/util/error"
-
-function isWithin(child: string, root: string): boolean {
-  const r = path.resolve(root)
-  const c = path.resolve(child)
-  return c === r || c.startsWith(r + path.sep)
-}
 
 /**
  * SEC-02: mitigate the symlink TOCTOU between a file tool's path-scope check
@@ -22,22 +15,20 @@ function isWithin(child: string, root: string): boolean {
  * location and returns that single, stable path so the check and the fs op
  * act on the *same* target. Operating on the resolved path also neutralizes a
  * mid-flight symlink swap: the operation no longer touches the symlink, only
- * its already-resolved target. Paths that resolve outside the project roots
- * are refused (fail-closed).
+ * its already-resolved target.
+ *
+ * Boundary enforcement deliberately does NOT happen here: a path resolving
+ * outside the project roots is a legitimate candidate for the
+ * `assertExternalDirectoryEffect` permission prompt (deny / allow / always
+ * allow), so throwing here would silently bypass that flow. Callers must run
+ * `assertExternalDirectoryEffect` on the returned path — it decides via
+ * `Instance.containsPath` (project dir, worktree, and the user-approved
+ * `allowedPaths`), the same boundary the bash scan uses.
  */
 export function resolveSafePath(input: string): string {
   const base = path.isAbsolute(input) ? input : path.join(Instance.directory, input)
   const dir = path.dirname(base)
   const resolvedDir = existsSync(dir) ? realpathSync(dir) : dir
   const resolved = existsSync(base) ? realpathSync(base) : path.join(resolvedDir, path.basename(base))
-
-  const roots = [Instance.directory, Instance.worktree].filter(Boolean) as string[]
-  if (!roots.some((root) => isWithin(resolved, root))) {
-    throw new DuoduoError({
-      message: `Path "${input}" resolves outside the project directory`,
-      messageZh: `路径 "${input}" 解析到了项目目录之外`,
-      cause: undefined,
-    })
-  }
   return resolved
 }

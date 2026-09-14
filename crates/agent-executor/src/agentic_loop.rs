@@ -414,13 +414,22 @@ pub(crate) fn grep_tool() -> ToolDefinition {
 
 /// Build the `bash` tool definition.
 pub(crate) fn bash_tool() -> ToolDefinition {
+    // State the actual shell so the model never has to guess (the TS main-loop
+    // bash runs PowerShell on Windows while this sub-agent used to run `cmd /C`
+    // — that mismatch made the model emit PowerShell-style `> $null`, which cmd
+    // created as a literal file named `$null` in the project root).
+    #[cfg(windows)]
+    let shell_note = "Shell: PowerShell on Windows (pwsh 7+ if installed, otherwise Windows PowerShell 5.1). Use PowerShell syntax: Get-ChildItem, Get-Content, Remove-Item, Test-Path, etc. Discard output with '| Out-Null' or '> $null'.";
+    #[cfg(not(windows))]
+    let shell_note = "Shell: /bin/zsh on macOS, bash or /bin/sh on Linux. Use POSIX shell syntax.";
     ToolDefinition {
         r#type: "function".to_string(),
         function: FunctionDefinition {
             name: "bash".to_string(),
-            description:
-                "Run a shell command in the project dir. For build, test, lint, code analysis ONLY."
-                    .to_string(),
+            description: format!(
+                "Run a shell command in the project dir. For build, test, lint, code analysis ONLY.\n{}",
+                shell_note
+            ),
             parameters: serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -837,6 +846,51 @@ fn proceed_to_phase_tool(name: &str, description: &str) -> ToolDefinition {
 /// Returned by [`AgenticLoopExecutor::live_metrics`]; the `Arc`s are the exact
 /// ones mutated during execution, so polling them from an HTTP handler yields
 /// real-time progress for the session. (P2-A observability.)
+/// Sub-agent loop limits resolved from the user-configurable `LoopConfig`
+/// (`sub_agent_*` fields, `-1` = unlimited → mapped to the MAX sentinel).
+/// Applied to every sub-agent loop this executor spawns (`task` children,
+/// G7 parallel fan-out); the executor's own loop keeps the values it was
+/// built with.
+#[derive(Debug, Clone, Copy)]
+pub struct SubAgentLimits {
+    pub max_rounds: usize,
+    pub loop_timeout: Duration,
+    pub max_total_tokens: u32,
+    pub max_file_reads: usize,
+}
+
+impl SubAgentLimits {
+    pub fn from_config(
+        max_rounds: i32,
+        timeout_secs: i64,
+        max_total_tokens: i64,
+        max_file_reads: i32,
+    ) -> Self {
+        Self {
+            max_rounds: if max_rounds < 0 {
+                usize::MAX
+            } else {
+                max_rounds.max(0) as usize
+            },
+            loop_timeout: if timeout_secs < 0 {
+                Duration::MAX
+            } else {
+                Duration::from_secs(timeout_secs.max(0) as u64)
+            },
+            max_total_tokens: if max_total_tokens < 0 {
+                u32::MAX
+            } else {
+                max_total_tokens.clamp(0, u32::MAX as i64) as u32
+            },
+            max_file_reads: if max_file_reads < 0 {
+                usize::MAX
+            } else {
+                max_file_reads.max(0) as usize
+            },
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct LiveLoopMetrics {
     pub tokens_used: Arc<AtomicU32>,
@@ -919,6 +973,10 @@ pub struct AgenticLoopExecutor {
     clone_dirs: Mutex<Vec<PathBuf>>,
     /// Agent ID used for blackboard coordination (defaults to "agentic-loop").
     agent_id: String,
+    /// Limits applied to sub-agent loops spawned by this executor (`task`
+    /// children, G7 fan-out). `None` = the compile-time defaults in
+    /// `timeouts` — only for executors assembled outside the desktop loop.
+    sub_agent_limits: Option<SubAgentLimits>,
     /// Wall-clock timeout for the entire agentic loop execution.
     loop_timeout: Duration,
     /// Maximum total token budget for the loop (default 100K).
@@ -1284,6 +1342,7 @@ impl AgenticLoopExecutor {
             blackboard: None,
             clone_dirs: Mutex::new(Vec::new()),
             agent_id: "agentic-loop".to_string(),
+            sub_agent_limits: None,
             loop_timeout: timeouts::LOOP_TIMEOUT,
             max_total_tokens: timeouts::DEFAULT_MAX_TOTAL_TOKENS,
             tokens_used: Arc::new(AtomicU32::new(0)),
@@ -1435,6 +1494,13 @@ impl AgenticLoopExecutor {
     /// Set the maximum number of tool-calling rounds.
     pub fn with_max_rounds(mut self, max_rounds: usize) -> Self {
         self.max_rounds = max_rounds;
+        self
+    }
+
+    /// Set the limits applied to sub-agent loops spawned by this executor
+    /// (`task` children, G7 fan-out). See [`SubAgentLimits`].
+    pub fn with_sub_agent_limits(mut self, limits: SubAgentLimits) -> Self {
+        self.sub_agent_limits = Some(limits);
         self
     }
 
@@ -3151,6 +3217,15 @@ the task normally.\n\
         child = child.with_syntax_check(self.syntax_check);
         if let Some(ref ro) = self.reflect_on {
             child = child.with_reflect_on(ro.clone());
+        }
+        // User-configurable sub-agent limits (LoopConfig.sub_agent_*). Applied
+        // last so they win over any inherited defaults.
+        if let Some(limits) = self.sub_agent_limits {
+            child = child
+                .with_max_rounds(limits.max_rounds)
+                .with_loop_timeout(limits.loop_timeout)
+                .with_max_total_tokens(limits.max_total_tokens)
+                .with_max_file_reads(limits.max_file_reads);
         }
         if let Some(ref bb) = self.blackboard {
             child = child.with_blackboard(bb.clone());
@@ -5144,6 +5219,22 @@ the task normally.\n\
         output
     }
 
+    /// Locate the PowerShell executable on Windows: prefer pwsh 7+ found on
+    /// PATH, fall back to the always-present Windows PowerShell 5.1. Resolved
+    /// to an absolute path so the sanitized child env cannot break resolution.
+    #[cfg(windows)]
+    fn find_powershell() -> std::path::PathBuf {
+        if let Ok(path_var) = std::env::var("PATH") {
+            for dir in std::env::split_paths(&path_var) {
+                let candidate = dir.join("pwsh.exe");
+                if candidate.is_file() {
+                    return candidate;
+                }
+            }
+        }
+        std::path::PathBuf::from("powershell.exe")
+    }
+
     /// Execute a shell command in the project directory with safety checks.
     pub(crate) async fn execute_bash(
         &self,
@@ -5223,9 +5314,24 @@ the task normally.\n\
         let timeout = std::time::Duration::from_secs(timeout_secs.unwrap_or(30).min(120));
 
         // 4. Spawn child process
-        let mut cmd = std::process::Command::new(if cfg!(windows) { "cmd" } else { "sh" });
-        cmd.arg(if cfg!(windows) { "/C" } else { "-c" })
-            .arg(command)
+        //
+        // Windows runs PowerShell (pwsh 7+ preferred, Windows PowerShell 5.1 as
+        // the always-present fallback), matching the TS main-loop bash tool —
+        // `cmd /C` made the model's PowerShell-style `> $null` create a literal
+        // file named `$null` in the project root. Non-Windows keeps `sh -c`.
+        #[cfg(windows)]
+        let mut cmd = {
+            let mut c = std::process::Command::new(Self::find_powershell());
+            c.args(["-NoLogo", "-NoProfile", "-NonInteractive", "-Command"]);
+            c
+        };
+        #[cfg(not(windows))]
+        let mut cmd = {
+            let mut c = std::process::Command::new("sh");
+            c.arg("-c");
+            c
+        };
+        cmd.arg(command)
             .current_dir(&self.project_path)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::piped())

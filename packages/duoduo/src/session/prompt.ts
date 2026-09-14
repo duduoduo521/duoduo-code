@@ -2303,6 +2303,19 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               `[TRACE-poll] sseDone exit-check attempt=${attempt}, lastAssistant=${lastAssistantMsg?.info.id ?? "none"}, prevLast=${prevLastAssistantId ?? "none"}, finish=${lastFinish}\n`,
             )
           }
+          // Run ended with an error (loop_error). This branch MUST run BEFORE
+          // the new-assistant early-return below: when a multi-round run dies
+          // mid-flight (e.g. LLM HTTP 429 after tool rounds), the previous
+          // round's assistant message (finish=tool-calls) is still "new"
+          // relative to the snapshot, and returning it silently swallowed the
+          // error — the UI went idle with no error card at all. runError is
+          // only set by loop_error (never by loop_done), so this is precise.
+          if (runError) {
+            process.stderr.write(
+              `[TRACE-poll] sseDone + runError → synthesizing error message (attempt=${attempt}, lastAssistant=${lastAssistantMsg?.info.id ?? "none"}, finish=${lastFinish})\n`,
+            )
+            return yield* createRunLoopErrorMessage(sessionID, runError)
+          }
           // Normal completion: a NEW assistant message was produced by the run.
           if (lastAssistantMsg && lastAssistantMsg.info.id !== prevLastAssistantId) {
             process.stderr.write(
@@ -2310,22 +2323,10 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             )
             return lastAssistantMsg
           }
-          // Run ended (loop_done/loop_error) but produced NO new assistant
+          // Run ended (loop_done) but produced NO new assistant
           // message. This happens on immediate failures — e.g. an LLM HTTP 403
           // on step 0 — where Rust emits `loop_error` WITHOUT writing an
-          // assistant row to the DB. The old code kept spinning here until the
-          // 2400-attempt budget (~17 min), which (a) hid the error from the
-          // user and (b) wedged the project task slot (max_concurrent=1),
-          // making every subsequent send fail with a silent 409. When an error
-          // was captured, synthesize a visible assistant error message so the
-          // rest of the pipeline (post-loop side effects, UI error card) and
-          // the frontend get a valid result.
-          if (runError) {
-            process.stderr.write(
-              `[TRACE-poll] sseDone + no new assistant + runError → synthesizing error message (attempt=${attempt})\n`,
-            )
-            return yield* createRunLoopErrorMessage(sessionID, runError)
-          }
+          // assistant row to the DB (runError above already handles that).
           // Defensive: sseDone without a new message AND without a captured
           // error. Should not happen, but avoid an infinite spin — fall back
           // to the last known assistant message (same fallback as budget-exhausted).

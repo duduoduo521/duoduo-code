@@ -29,6 +29,13 @@ pub enum PermissionRule {
     Ask {
         permission: String,
         pattern: String,
+        /// TS-side `Permission.Rule` only carries `{permission, pattern, action}`
+        /// on the wire (the `always` list lives on the ask *Request*, not the
+        /// rule), so this field MUST tolerate absence — a strict field made
+        /// every ruleset containing an ask rule fail deserialization as a
+        /// whole, which callers papered over with an empty-ruleset fallback,
+        /// silently flipping every tool to fail-closed Ask.
+        #[serde(default)]
         always: Vec<String>,
     },
 }
@@ -633,6 +640,54 @@ mod tests {
         let result =
             execute_tool_with_middleware("unknown_tool", &Value::Null, &[], &policy, 1024, ".");
         assert!(matches!(result, Err(ToolExecutionError::PermissionAsk(_))));
+    }
+
+    // ── Regression: TS wire rules must deserialize without an `always` field ──
+    //
+    // TS `Permission.Rule` only sends `{permission, pattern, action}` (see
+    // packages/duoduo/src/permission/index.ts). A strict `always` on the Ask
+    // variant made EVERY ruleset containing an ask rule fail serde as a whole,
+    // which the run_loop handler papered over with an empty-ruleset fallback —
+    // silently flipping all tools (even `*: allow` reads) to fail-closed Ask
+    // and delegating them to the TS slow path.
+
+    #[test]
+    fn test_deserialize_ts_wire_rules_without_always() {
+        let json = r#"[
+            {"permission":"*","action":"allow","pattern":"*"},
+            {"permission":"doom_loop","action":"ask","pattern":"*"},
+            {"permission":"external_directory","action":"ask","pattern":"*"},
+            {"permission":"question","action":"deny","pattern":"*"},
+            {"permission":"read","action":"allow","pattern":"*"},
+            {"permission":"read","action":"ask","pattern":"*.env"}
+        ]"#;
+        let rules: Vec<PermissionRule> =
+            serde_json::from_str(json).expect("TS-shaped rules must parse without `always`");
+        assert_eq!(rules.len(), 6);
+    }
+
+    #[test]
+    fn test_ts_wire_rules_allow_read_only_tools() {
+        // The exact production failure: with the rules parsed, `read`/`glob`/
+        // `bash` under `*: allow` must be Allow (not fail-closed Ask).
+        let json = r#"[
+            {"permission":"*","action":"allow","pattern":"*"},
+            {"permission":"doom_loop","action":"ask","pattern":"*"},
+            {"permission":"external_directory","action":"ask","pattern":"*"},
+            {"permission":"read","action":"allow","pattern":"*"},
+            {"permission":"read","action":"ask","pattern":"*.env"},
+            {"permission":"question","action":"allow","pattern":"*"}
+        ]"#;
+        let rules: Vec<PermissionRule> = serde_json::from_str(json).expect("parse");
+        let policy = security_design::SecurityPolicy::default();
+        for tool in ["read", "glob", "bash"] {
+            let res = check_tool_permission(tool, &Value::Null, &rules, &policy, false);
+            assert!(
+                res.is_ok(),
+                "tool '{tool}' must be Allow under '*: allow' rules, got {:?}",
+                res.err()
+            );
+        }
     }
 
     // ── P2-23: `check_tool_permission` must honour the auto-accept switch ──

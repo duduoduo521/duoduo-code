@@ -2593,7 +2593,14 @@ async fn run_loop_handler(
     let permission_rules: Vec<agent_executor::PermissionRule> = req
         .permission_rules
         .as_ref()
-        .and_then(|rules| serde_json::from_value(serde_json::Value::Array(rules.clone())).ok())
+        .map(|rules| {
+            serde_json::from_value(serde_json::Value::Array(rules.clone())).unwrap_or_else(|e| {
+                // A silent empty fallback here flips EVERY tool to fail-closed
+                // Ask (delegating them all to TS). Surface the parse failure.
+                tracing::warn!(error = %e, count = rules.len(), "Failed to parse permission_rules — falling back to empty ruleset (all tools will fail-closed to Ask)");
+                Vec::new()
+            })
+        })
         .unwrap_or_default();
     // Honor the user's "auto-accept permissions" switch (option B): when on,
     // sub-agents treat `Ask` as `Allow` so autonomous work isn't blocked.

@@ -505,7 +505,7 @@ This project is a fork of and based on [opencode](https://github.com/anomalyco/o
 - opencode — Copyright (c) 2025 opencode — MIT License
 - DuoDuo AI IDE — Copyright (c) 2026 DuoDuo — [MIT](./LICENSE)
 
-The full license notices for bundled third-party components are listed in [ThirdPartyLicenses.txt](./ThirdPartyLicenses.txt) and [NOTICE](./NOTICE).
+The full license notices for bundled third-party components are generated at build time by `scripts/generate-third-party-licenses.ts` and shipped inside each release package as `ThirdPartyLicenses.txt`; see also [NOTICE](./NOTICE).
 
 ## Disclaimer
 

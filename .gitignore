@@ -34,6 +34,11 @@ keys/duoduo.key
 update-upload/
 dist-artifacts/
 
+# Generated license manifests (scripts/generate-third-party-licenses.ts; regenerated
+# with a new timestamp on every build and shipped inside release packages — never committed)
+/ThirdPartyLicenses.txt
+/packages/app/public/THIRD-PARTY-LICENSES.html
+
 # Generated pdf.js runtime assets (copied from pdfjs-dist by copy-pdfjs-assets.ts)
 packages/app/public/pdfjs/
 

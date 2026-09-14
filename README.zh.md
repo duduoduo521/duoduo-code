@@ -502,7 +502,7 @@ bun run --cwd packages/desktop tauri build
 - opencode — Copyright (c) 2025 opencode — MIT License
 - DuoDuo AI IDE — Copyright (c) 2026 DuoDuo — [MIT](./LICENSE)
 
-第三方开源组件的完整许可证声明见 [ThirdPartyLicenses.txt](./ThirdPartyLicenses.txt) 与 [NOTICE](./NOTICE)。
+第三方开源组件的完整许可证声明在构建时由 `scripts/generate-third-party-licenses.ts` 自动生成，随每个发行包以 `ThirdPartyLicenses.txt` 提供；另见 [NOTICE](./NOTICE)。
 
 ## 免责声明
 

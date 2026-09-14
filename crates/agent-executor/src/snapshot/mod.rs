@@ -3,6 +3,9 @@ pub(crate) mod lock;
 pub mod patch;
 pub mod track;
 
+#[cfg(test)]
+mod fs_edge_tests;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};

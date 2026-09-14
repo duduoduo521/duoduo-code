@@ -43,20 +43,33 @@ function probeCaseInsensitive(dir: string): boolean {
   const flipped = name.replace(/[a-zA-Z]/g, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()))
   // No ASCII letter to flip (e.g. "123", "我的项目"): nothing to compare.
   if (flipped === name) return caseInsensitiveByPlatform()
-  const canonical = (p: string) => {
-    try {
-      return fs.realpathSync(p)
-    } catch {
-      return undefined
-    }
+  // Identity comparison via device + inode — NOT `fs.realpathSync`. Bun's
+  // realpath (the production sidecar runtime) is LEXICAL: it neither expands
+  // 8.3 short names (`KK-DUS~1`) nor normalizes to on-disk casing, so a
+  // realpath-string comparison mis-verdicts NTFS/APFS as case-SENSITIVE and
+  // the TS side then skips lowercasing while the Rust side (std::fs::
+  // canonicalize, a true final-path resolution) lowercases — the two sidecars
+  // would compute different project ids for the SAME directory and split the
+  // per-project data. statSync resolves both spellings to the same volume
+  // serial + file index on every platform, which is the same verdict
+  // std::fs::canonicalize equality produces on the Rust side.
+  let self: fs.Stats
+  try {
+    self = fs.statSync(dir)
+  } catch {
+    // `dir` itself cannot be resolved (missing, no permission): unknown.
+    return caseInsensitiveByPlatform()
   }
-  const a = canonical(dir)
-  const b = canonical(path.join(parent, flipped))
-  // `dir` resolves but the flipped spelling does not ⇒ case-sensitive.
-  if (a !== undefined && b === undefined) return false
-  // `dir` itself cannot be resolved (missing, no permission): unknown.
-  if (a === undefined || b === undefined) return caseInsensitiveByPlatform()
-  return a === b
+  try {
+    const twin = fs.statSync(path.join(parent, flipped))
+    // Both resolve: same device + inode ⇒ the same directory under two
+    // spellings (case-insensitive FS). Different ⇒ two real directories on a
+    // case-sensitive FS.
+    return self.dev === twin.dev && self.ino === twin.ino
+  } catch {
+    // `dir` resolves but the flipped spelling does not ⇒ case-sensitive.
+    return false
+  }
 }
 
 /**

@@ -7480,4 +7480,87 @@ macro_rules! say_hello {
         );
         assert!(indexer.release_lock("proj-lock-owner", 2));
     }
+
+    /// Directory symlink, platform-appropriate (unix `symlink` covers dirs;
+    /// Windows needs the dedicated `symlink_dir`, which requires the
+    /// `SeCreateSymbolicLinkPrivilege`).
+    #[allow(unused_variables)]
+    fn make_dir_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(target, link)
+        }
+        #[cfg(windows)]
+        {
+            std::os::windows::fs::symlink_dir(target, link)
+        }
+    }
+
+    /// P4-05 (机制缺陷.md §1.5): symlink cycles must not hang the file
+    /// collection walk, and escaping symlinks must not pull files in from
+    /// outside the project root. The visited-set guard (P2-30) bounds the
+    /// walk; here we prove it against a REAL filesystem (NTFS/APFS/ext4 —
+    /// this is what the p4-fs.yml three-platform matrix exercises).
+    ///
+    /// Layout:
+    ///   <root>/src/main.py        — real source file
+    ///   <root>/loop -> <root>     — symlink cycle back to the root
+    ///   <root>/escape -> <sib>/   — symlink escaping the root
+    ///   <sib>/escape.py           — must NEVER be collected
+    #[test]
+    fn p4_05_symlink_cycle_and_escape_walk_is_bounded() {
+        let root = make_project_dir("p405-root");
+        let sibling = make_project_dir("p405-sibling");
+
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(root.join("src/main.py"), "def main():\n    pass\n").unwrap();
+        fs::write(sibling.join("escape.py"), "x = 1\n").unwrap();
+
+        // Symlink creation needs privileges on Windows (SeCreateSymbolicLink-
+        // Privilege). Skip loudly on hosts that deny it — CI runners are admin.
+        if make_dir_symlink(&root, &root.join("loop")).is_err()
+            || make_dir_symlink(&sibling, &root.join("escape")).is_err()
+        {
+            fs::remove_dir_all(&root).ok();
+            fs::remove_dir_all(&sibling).ok();
+            eprintln!("skipping P4-05: symlink creation not permitted on this host");
+            return;
+        }
+
+        // A regression here is an INFINITE walk — the test run hanging (and
+        // being killed by the CI timeout) IS the failure signal.
+        let files = collect_source_files(&root).expect("walk must succeed");
+
+        let canon_root = fs::canonicalize(&root).unwrap_or_else(|_| root.clone());
+        let canon_main = fs::canonicalize(root.join("src/main.py")).unwrap();
+
+        // The real source file must be collected.
+        assert!(
+            files
+                .iter()
+                .any(|p| fs::canonicalize(p).map(|c| c == canon_main).unwrap_or(false)),
+            "real source file must be collected, got {files:?}"
+        );
+
+        // Nothing may escape the root: the `escape` symlink target is forbidden.
+        for path in &files {
+            let resolved = fs::canonicalize(path).unwrap_or_else(|_| path.clone());
+            assert!(
+                resolved.starts_with(&canon_root),
+                "walk followed an escaping symlink: {path:?} -> {resolved:?}"
+            );
+        }
+
+        // Bounded: at most the real path plus one spelling seen through the
+        // `loop` symlink. An unbounded walk would never return at all; a count
+        // explosion means the visited-set regressed.
+        assert!(
+            files.len() <= 2,
+            "cycle guard failed: walk produced {} entries for one real file: {files:?}",
+            files.len()
+        );
+
+        fs::remove_dir_all(&root).ok();
+        fs::remove_dir_all(&sibling).ok();
+    }
 }

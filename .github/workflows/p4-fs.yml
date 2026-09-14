@@ -1,0 +1,144 @@
+# P4 Filesystem Verification — 真机测试.md §4
+#
+# Exercises the P4-01~05 filesystem edge cases on REAL filesystems
+# (NTFS / APFS / ext4): non-ASCII snapshot round-trips, read-only and
+# exclusively-locked files, >260-char paths, reserved device names, and
+# symlink cycles. Deliberately a SEPARATE workflow from build.yml:
+#
+#   - Manual-trigger-first (workflow_dispatch): P4 is a one-shot verification
+#     batch, not a per-push gate.
+#   - Targeted `-p` cargo tests only — building the workspace would pull in
+#     Tauri/WebKit system deps on every leg.
+#   - Runs on the public mirror (duoduo-code) where Actions minutes are free
+#     and unmetered (private repos bill Windows 2x / macOS 10x). The workflow
+#     file lives under duoduo-ai-ide/.github/workflows/ and reaches the public
+#     repo through script/sync-opensource.ts.
+#
+# P4-06 (double-click install smoke) and P4-07 (corporate proxy) stay
+# manual — see 真机测试.md §6.
+name: P4 Filesystem Verification
+
+on:
+  workflow_dispatch:
+    inputs:
+      include_macos:
+        description: "Include the macOS (APFS) leg"
+        type: boolean
+        default: true
+  pull_request:
+    paths:
+      - "crates/duo-utils/**"
+      - "crates/agent-executor/src/snapshot/**"
+      - "crates/knowledge-graph-store/**"
+      - "packages/duoduo/src/storage/project-dir.ts"
+      - "packages/duoduo/test/storage/**"
+      - ".github/workflows/p4-fs.yml"
+
+env:
+  BUN_VERSION: "1.3.14"
+  RUST_VERSION: "1.94.0"
+
+jobs:
+  p4:
+    name: P4 (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      # Long paths are a PREREQUISITE for P4-04, not a mitigation: the runner
+      # image ships the flag on, and the assertion documents that dependency.
+      - name: Windows prerequisites (long paths)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          reg query "HKLM\SYSTEM\CurrentControlSet\Control\FileSystem" /v LongPathsEnabled
+          reg add "HKLM\SYSTEM\CurrentControlSet\Control\FileSystem" /v LongPathsEnabled /t REG_DWORD /d 1 /f
+          git config --global core.longpaths true
+
+      # reqwest (native-tls) needs OpenSSL headers on Linux. Unlike build.yml's
+      # rust-check we do NOT need the WebKit stack — no Tauri crate is built.
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      # P4-02 Rust probe (also warms the target dir for the example binary the
+      # cross-language step runs below).
+      - name: P4-02 Rust probe (duo-utils)
+        run: cargo test -p duo-utils
+
+      # P4-01 (all platforms) + P4-03/04 (#[cfg(windows)] legs).
+      - name: P4-01/03/04 snapshot edge cases (agent-executor)
+        run: cargo test -p agent-executor
+
+      # P4-05 symlink cycle / escape walk.
+      - name: P4-05 symlink walk (knowledge-graph-store)
+        run: cargo test -p knowledge-graph-store
+
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+
+      # P4-02 TS mirror + cross-language consistency (shells out to the
+      # duo-utils example binary — target dir already warm from the steps above).
+      - name: P4-02 TS mirror + cross-language project_id
+        working-directory: packages/duoduo
+        run: bun test test/storage
+
+  # macOS (APFS) is the expensive leg — gate it behind the manual input so
+  # PR-triggered runs stay on the two cheap legs. Platform-relevant suites only.
+  p4-macos:
+    name: P4 (macos-latest)
+    if: github.event_name == 'workflow_dispatch' && inputs.include_macos
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            . -> target
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: P4-02 Rust probe (duo-utils)
+        run: cargo test -p duo-utils
+
+      # P4-01 non-ASCII round-trip on APFS; the Windows-only P4-03/04 legs
+      # no-op here via #[cfg(windows)].
+      - name: P4-01/03/04 snapshot edge cases (agent-executor)
+        run: cargo test -p agent-executor
+
+      # P4-05 symlink walk on APFS.
+      - name: P4-05 symlink walk (knowledge-graph-store)
+        run: cargo test -p knowledge-graph-store
+
+      - name: Install JS dependencies
+        run: bun install --frozen-lockfile
+
+      - name: P4-02 TS mirror + cross-language project_id
+        working-directory: packages/duoduo
+        run: bun test test/storage

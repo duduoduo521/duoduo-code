@@ -2,6 +2,7 @@ import { Hono } from "hono"
 import { describeRoute, validator, resolver } from "hono-openapi"
 import z from "zod"
 import { Config } from "@/config"
+import { Log } from "@/util"
 import { Provider } from "@/provider"
 import { ProviderAuth } from "@/provider"
 import { ProviderID } from "@/provider/schema"
@@ -9,6 +10,8 @@ import { errors } from "../../error"
 import { lazy } from "@/util/lazy"
 import { Effect } from "effect"
 import { jsonRequest } from "./trace"
+
+const log = Log.create({ service: "provider-routes" })
 
 export const ProviderRoutes = lazy(() =>
   new Hono()
@@ -86,6 +89,68 @@ export const ProviderRoutes = lazy(() =>
         jsonRequest("ProviderRoutes.scanLan", c, function* () {
           const svc = yield* Provider.Service
           return yield* svc.scanLan()
+        }),
+    )
+    .post(
+      "/verify",
+      describeRoute({
+        summary: "Verify a provider API key",
+        description:
+          "Verify an API key against the provider's official API BEFORE saving it. For the built-in deepseek provider this calls the official OpenAI-compatible GET /models endpoint with the key — one request both validates the key (401 on a bad key) and returns the current model ids, so the caller can show the freshest model list immediately after connecting.",
+        operationId: "provider.verify",
+        responses: {
+          200: {
+            description: "Verification result (ok:false carries a machine-readable error reason)",
+            content: {
+              "application/json": {
+                schema: resolver(
+                  z.object({
+                    ok: z.boolean(),
+                    models: z.array(z.string()).optional(),
+                    error: z.string().optional(),
+                  }),
+                ),
+              },
+            },
+          },
+        },
+      }),
+      validator(
+        "json",
+        z.object({
+          providerID: ProviderID.zod.meta({ description: "Provider ID" }),
+          apiKey: z.string().min(1).meta({ description: "API key to verify (NOT saved by this endpoint)" }),
+        }),
+      ),
+      async (c) =>
+        jsonRequest("ProviderRoutes.verify", c, function* () {
+          const { providerID, apiKey } = c.req.valid("json")
+          if (providerID !== "deepseek") {
+            return { ok: false, error: "unsupported_provider" }
+          }
+          return yield* Effect.promise(async () => {
+            try {
+              const resp = await fetch("https://api.deepseek.com/models", {
+                headers: { Authorization: `Bearer ${apiKey}` },
+                signal: AbortSignal.timeout(8000),
+              })
+              if (resp.status === 401 || resp.status === 403) {
+                return { ok: false, error: "invalid_api_key" }
+              }
+              if (!resp.ok) {
+                log.warn("provider.verify failed", { providerID, status: resp.status })
+                return { ok: false, error: `http_${resp.status}` }
+              }
+              const data = (await resp.json()) as { data?: Array<{ id?: string }> }
+              const models = (data.data ?? [])
+                .map((m) => m.id)
+                .filter((v): v is string => Boolean(v))
+              return { ok: true, models }
+            } catch (e) {
+              log.warn("provider.verify network error", { providerID, error: e })
+              return { ok: false, error: "network_error" }
+            }
+          })
         }),
     )
     .get(

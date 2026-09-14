@@ -4841,6 +4841,38 @@ export type ProviderScanLanResponses = {
 
 export type ProviderScanLanResponse = ProviderScanLanResponses[keyof ProviderScanLanResponses]
 
+export type ProviderVerifyData = {
+  body?: {
+    /**
+     * Provider ID
+     */
+    providerID: string
+    /**
+     * API key to verify (NOT saved by this endpoint)
+     */
+    apiKey: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/provider/verify"
+}
+
+export type ProviderVerifyResponses = {
+  /**
+   * Verification result (ok:false carries a machine-readable error reason)
+   */
+  200: {
+    ok: boolean
+    models?: Array<string>
+    error?: string
+  }
+}
+
+export type ProviderVerifyResponse = ProviderVerifyResponses[keyof ProviderVerifyResponses]
+
 export type ProviderAuthData = {
   body?: never
   path?: never

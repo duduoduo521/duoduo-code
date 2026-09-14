@@ -125,6 +125,7 @@ import type {
   ProviderOauthCallbackErrors,
   ProviderOauthCallbackResponses,
   ProviderScanLanResponses,
+  ProviderVerifyResponses,
   PtyConnectErrors,
   PtyConnectResponses,
   PtyCreateErrors,
@@ -3476,6 +3477,45 @@ export class Provider extends HeyApiClient {
       url: "/provider/scan-lan",
       ...options,
       ...params,
+    })
+  }
+
+  /**
+   * Verify a provider API key
+   *
+   * Verify an API key against the provider's official API BEFORE saving it. For the built-in deepseek provider this calls the official OpenAI-compatible GET /models endpoint with the key — one request both validates the key (401 on a bad key) and returns the current model ids, so the caller can show the freshest model list immediately after connecting.
+   */
+  public verify<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      providerID?: string
+      apiKey?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "providerID" },
+            { in: "body", key: "apiKey" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<ProviderVerifyResponses, unknown, ThrowOnError>({
+      url: "/provider/verify",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 

@@ -133,6 +133,99 @@ type CustomDep = {
   get: (key: string) => Effect.Effect<string | undefined>
 }
 
+// ─── DeepSeek remote model discovery ──────────────────────────────────
+// The built-in registry hardcodes today's model ids as an offline fallback,
+// but DeepSeek renames/rotates ids over time (e.g. deepseek-v4-flash ->
+// deepseek-flash). When an API key is configured we query the official
+// OpenAI-compatible `GET /models` endpoint so new ids appear in the picker
+// without shipping a new app version, and built-in ids that vanished
+// upstream are demoted to `deprecated` (the frontend's
+// normalizeProviderList already filters those out of the model picker).
+
+const DEEPSEEK_DISCOVERY_TTL = 5 * 60 * 1000
+let deepseekDiscovery: { at: number; models: Record<string, Model> } | undefined
+
+function makeDiscoveredDeepSeekModel(id: string, baseURL: string): Model {
+  const reasoning = /pro|reasoner|think|r\d/i.test(id)
+  return {
+    id: ModelID.make(id),
+    providerID: ProviderID.make("deepseek"),
+    name: id,
+    family: "",
+    api: { id, url: baseURL, npm: "@ai-sdk/openai-compatible" },
+    status: "active",
+    headers: {},
+    options: {},
+    // Unknown future model — conservative limits; real context is still
+    // discovered from overflow errors (see session/overflow.ts).
+    limit: { context: 128_000, output: 8_192 },
+    capabilities: {
+      temperature: true,
+      reasoning,
+      attachment: false,
+      toolcall: true,
+      promptCaching: true,
+      input: { text: true, audio: false, image: false, video: false, pdf: false },
+      output: { text: true, audio: false, image: false, video: false, pdf: false },
+      interleaved: false,
+    },
+    release_date: "",
+    variants: {},
+  }
+}
+
+async function discoverDeepSeekModels(
+  key: string,
+  baseURL: string,
+  builtin: Record<string, Model>,
+): Promise<Record<string, Model>> {
+  const now = Date.now()
+  if (deepseekDiscovery && now - deepseekDiscovery.at < DEEPSEEK_DISCOVERY_TTL) {
+    return deepseekDiscovery.models
+  }
+
+  const base = baseURL.replace(/\/+$/, "")
+  // Official endpoint is https://api.deepseek.com/models; also try the
+  // OpenAI-SDK shape (baseURL + /models) first since the configured
+  // baseURL historically carries a /v1 suffix.
+  const urls = [`${base}/models`]
+  if (base.endsWith("/v1")) urls.push(`${base.slice(0, -3)}/models`)
+
+  for (const url of urls) {
+    try {
+      const resp = await fetch(url, {
+        headers: { Authorization: `Bearer ${key}` },
+        signal: AbortSignal.timeout(5000),
+      })
+      if (resp.status === 404) continue
+      if (!resp.ok) {
+        log.warn("deepseek model discovery failed", { url, status: resp.status })
+        return {}
+      }
+      const data = (await resp.json()) as { data?: Array<{ id?: string }> }
+      const official = new Set((data.data ?? []).map((m) => m.id).filter((v): v is string => Boolean(v)))
+      const models: Record<string, Model> = {}
+      for (const id of official) {
+        if (builtin[id]) continue // built-in metadata (limits/capabilities) wins
+        models[id] = makeDiscoveredDeepSeekModel(id, base)
+      }
+      // Built-in ids no longer listed upstream keep working (DeepSeek routes
+      // legacy ids) but are demoted so the picker stops offering them.
+      for (const [id, model] of Object.entries(builtin)) {
+        if (!official.has(id)) models[id] = { ...model, status: "deprecated" }
+      }
+      // Cache successful results only — failures stay uncached so the next
+      // refresh retries.
+      deepseekDiscovery = { at: now, models }
+      log.info("deepseek model discovery", { official: official.size, added: Object.keys(models).length })
+      return models
+    } catch (e) {
+      log.warn("deepseek model discovery failed", { url, error: e })
+    }
+  }
+  return {}
+}
+
 function custom(dep: CustomDep): Record<string, CustomLoader> {
   return {
     ollama: Effect.fnUntraced(function* (input: Info) {
@@ -211,6 +304,23 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
     lmdeploy: makeOpenAICompatibleLocalLoader("lmdeploy"),
     sglang: makeOpenAICompatibleLocalLoader("sglang"),
     mlx: makeOpenAICompatibleLocalLoader("mlx"),
+    deepseek: Effect.fnUntraced(function* (input: Info) {
+      // Resolve the API key from env or saved auth. Without a key the
+      // provider is not connected — register nothing and issue no network
+      // request; the hardcoded registry fallback covers the picker.
+      const envKey = yield* dep.get("DEEPSEEK_API_KEY")
+      const saved = yield* Effect.orElseSucceed(dep.auth("deepseek"), () => undefined)
+      const apiKey = envKey ?? (saved?.type === "api" ? saved.key : undefined)
+      if (!apiKey) return { autoload: false }
+
+      const baseURL = (input.options?.baseURL as string) ?? "https://api.deepseek.com/v1"
+      return {
+        autoload: false,
+        async discoverModels(): Promise<Record<string, Model>> {
+          return discoverDeepSeekModels(apiKey, baseURL, input.models)
+        },
+      }
+    }),
   }
 }
 
@@ -628,6 +738,36 @@ export const layer: Layer.Layer<Service, never, Config.Service | Auth.Service | 
               env: ["DEEPSEEK_API_KEY"],
               options: { baseURL: "https://api.deepseek.com/v1" },
               models: {
+                "deepseek-flash": {
+                  id: ModelID.make("deepseek-flash"),
+                  providerID: ProviderID.make("deepseek"),
+                  api: {
+                    id: "deepseek-flash",
+                    url: "https://api.deepseek.com/v1",
+                    npm: "@ai-sdk/openai-compatible",
+                  },
+                  name: "DeepSeek Flash",
+                  family: "",
+                  capabilities: {
+                    temperature: true,
+                    reasoning: false,
+                    attachment: false,
+                    toolcall: true,
+                    promptCaching: true,
+                    input: { text: true, audio: false, image: false, video: false, pdf: false },
+                    output: { text: true, audio: false, image: false, video: false, pdf: false },
+                    interleaved: false,
+                  },
+                  limit: { context: 1_000_000, output: 320_000 },
+                  status: "active",
+                  options: {},
+                  headers: {},
+                  release_date: "",
+                  variants: {},
+                },
+                // Legacy id: DeepSeek still routes it (served by the current
+                // Flash model) but it is no longer listed — kept only as a
+                // fallback so saved default-model references keep working.
                 "deepseek-v4-flash": {
                   id: ModelID.make("deepseek-v4-flash"),
                   providerID: ProviderID.make("deepseek"),
@@ -649,7 +789,7 @@ export const layer: Layer.Layer<Service, never, Config.Service | Auth.Service | 
                     interleaved: false,
                   },
                   limit: { context: 1_000_000, output: 320_000 },
-                  status: "active",
+                  status: "deprecated",
                   options: {},
                   headers: {},
                   release_date: "",
@@ -747,7 +887,8 @@ export const layer: Layer.Layer<Service, never, Config.Service | Auth.Service | 
           }
 
           // Providers that are built into the registry (e.g. deepseek with its
-          // model IDs deepseek-v4-flash / deepseek-v4-pro). Legacy config
+          // model ids deepseek-flash / deepseek-v4-pro, refreshed at runtime
+          // via the official /models discovery loader). Legacy config
           // entries for these IDs (added before the built-in existed) must NOT
           // shadow the registry definition — otherwise stale model IDs/baseURL
           // from the config file win and the built-in models disappear. API keys
@@ -930,8 +1071,14 @@ export const layer: Layer.Layer<Service, never, Config.Service | Auth.Service | 
               try {
                 const discovered = await discoverFn()
                 for (const [modelID, model] of Object.entries(discovered)) {
-                  if (!providers[providerID]!.models[modelID]) {
+                  const existing = providers[providerID]!.models[modelID]
+                  if (!existing) {
                     providers[providerID]!.models[modelID] = model
+                  } else if (model.status === "deprecated" && existing.status !== "deprecated") {
+                    // Discovery reports the model is gone upstream. Keep the
+                    // existing metadata but demote it so the frontend picker
+                    // (which filters `deprecated`) stops offering it.
+                    providers[providerID]!.models[modelID] = { ...existing, status: "deprecated" }
                   }
                 }
               } catch (e) {

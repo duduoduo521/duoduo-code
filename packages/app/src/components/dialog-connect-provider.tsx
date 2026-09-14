@@ -411,6 +411,10 @@ export function DialogConnectProvider(props: { provider: string }) {
     const [formStore, setFormStore] = createStore({
       value: "",
       error: undefined as string | undefined,
+      // Covers the WHOLE submit (verification + save + provider refresh), not
+      // just verification — otherwise the button re-enables between verify
+      // success and dialog close and can be double-clicked.
+      busy: false,
     })
     // SmartLayer context may be unavailable when this dialog is mounted outside
     // the SmartLayerProvider tree (e.g. via a portal/owner-less dialog). The
@@ -431,6 +435,7 @@ export function DialogConnectProvider(props: { provider: string }) {
 
     async function handleSubmit(e: SubmitEvent) {
       e.preventDefault()
+      if (formStore.busy) return
 
       const form = e.currentTarget as HTMLFormElement
       const formData = new FormData(form)
@@ -442,28 +447,61 @@ export function DialogConnectProvider(props: { provider: string }) {
       }
 
       setFormStore("error", undefined)
-      await globalSDK.client.auth.set({
-        providerID: props.provider,
-        auth: {
-          type: "api",
-          key: apiKey,
-        },
-      })
-      // Also persist to OS keyring for secure storage across restarts.
-      // This is fire-and-forget — auth.set already succeeded so the credential is
-      // usable. But a keyring failure is surfaced to the user instead of being
-      // silently swallowed, so they know the key is only stored in plaintext config.
-      if (sl?.status === "connected" && sl.api) {
-        sl.api.keyringStore(props.provider, apiKey).catch((err) => {
-          console.warn("Failed to store API key in OS keyring:", err)
-          showToast({
-            variant: "default",
-            title: language.t("provider.connect.keyring.failedTitle"),
-            description: language.t("provider.connect.keyring.failedHint"),
-          })
+      setFormStore("busy", true)
+
+      try {
+        // Order matters: verify via the official model list FIRST — one request
+        // both validates the key (401 on a bad key) and returns the latest
+        // model ids. Only after it succeeds do we save the key; the post-save
+        // provider.list refresh then merges that list into the picker.
+        if (props.provider === "deepseek") {
+          try {
+            const res = await globalSDK.client.provider.verify({
+              providerID: "deepseek",
+              apiKey,
+            })
+            const data = res.data
+            if (!data?.ok) {
+              setFormStore(
+                "error",
+                data?.error === "invalid_api_key"
+                  ? language.t("provider.connect.apiKey.invalid")
+                  : language.t("provider.connect.apiKey.verificationFailed"),
+              )
+              return
+            }
+          } catch {
+            // Sidecar unreachable — don't block connecting on a failed check.
+          }
+        }
+
+        await globalSDK.client.auth.set({
+          providerID: props.provider,
+          auth: {
+            type: "api",
+            key: apiKey,
+          },
         })
+        // Also persist to OS keyring for secure storage across restarts.
+        // This is fire-and-forget — auth.set already succeeded so the credential is
+        // usable. But a keyring failure is surfaced to the user instead of being
+        // silently swallowed, so they know the key is only stored in plaintext config.
+        if (sl?.status === "connected" && sl.api) {
+          sl.api.keyringStore(props.provider, apiKey).catch((err) => {
+            console.warn("Failed to store API key in OS keyring:", err)
+            showToast({
+              variant: "default",
+              title: language.t("provider.connect.keyring.failedTitle"),
+              description: language.t("provider.connect.keyring.failedHint"),
+            })
+          })
+        }
+        await complete()
+      } finally {
+        // Reset on every failure path so the button recovers; on the success
+        // path the dialog is already closing (busy reset is harmless there).
+        setFormStore("busy", false)
       }
-      await complete()
     }
 
     return (
@@ -484,8 +522,10 @@ export function DialogConnectProvider(props: { provider: string }) {
             validationState={formStore.error ? "invalid" : undefined}
             error={formStore.error}
           />
-          <Button class="w-auto self-end" type="submit" size="large" variant="primary">
-            {language.t("common.continue")}
+          <Button class="w-auto self-end" type="submit" size="large" variant="primary" disabled={formStore.busy}>
+            {formStore.busy
+              ? language.t("provider.connect.apiKey.connecting")
+              : language.t("common.continue")}
           </Button>
         </form>
       </div>

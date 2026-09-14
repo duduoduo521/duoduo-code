@@ -117,6 +117,9 @@ export const dict = {
   "provider.connect.apiKey.label": "{{provider}} API key",
   "provider.connect.apiKey.placeholder": "API key",
   "provider.connect.apiKey.required": "API key is required",
+  "provider.connect.apiKey.connecting": "Connecting...",
+  "provider.connect.apiKey.verificationFailed": "API key verification failed, please check and try again",
+  "provider.connect.apiKey.invalid": "The API key is invalid. Please check it on the DeepSeek platform and try again",
   "provider.connect.keyring.failedTitle": "Failed to store key in OS keyring",
   "provider.connect.keyring.failedHint": "Credentials were saved to the config file but not to the OS keyring. You may need to re-enter them after restart; check your OS keyring permissions.",
 

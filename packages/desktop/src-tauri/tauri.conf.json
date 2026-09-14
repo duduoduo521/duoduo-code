@@ -19,10 +19,9 @@
     ],
     "withGlobalTauri": true,
     "security": {
-      "//dangerousDisableAssetCspModification": "Keep Tauri from rewriting style-src with a nonce: with a nonce present, browsers ignore 'unsafe-inline', which silently kills every inline style in production (splash layout, runtime-injected theme <style>, string style props, innerHTML styles) while dev keeps working. scoping to style-src keeps script-src nonce/hash protection intact.",
       "dangerousDisableAssetCspModification": ["style-src"],
       "csp": {
-        "//": "MUST stay in sync with CSP_POLICY in ../../scripts/inject-csp.ts. Multiple CSPs (this one plus the <meta> tag) are enforced together and the strictest wins, so a divergence silently blocks resources. wasm-unsafe-eval is required: the frontend loads WebAssembly (Shiki onig.wasm, ghostty-vt.wasm, pdfjs wasm).",
+        "//": "MUST stay in sync with CSP_POLICY in ../../scripts/inject-csp.ts. Multiple CSPs (this one plus the <meta> tag) are enforced together and the strictest wins, so a divergence silently blocks resources. wasm-unsafe-eval is required: the frontend loads WebAssembly (Shiki onig.wasm, ghostty-vt.wasm, pdfjs wasm). Also: dangerousDisableAssetCspModification above is scoped to style-src so Tauri does not add a nonce there - a nonce would make browsers ignore 'unsafe-inline' and silently break all inline styles in prod (splash layout, runtime theme/diff <style> injection, string style props).",
         "default-src": "'self'",
         "script-src": "'self' 'wasm-unsafe-eval'",
         "worker-src": "'self' blob:",

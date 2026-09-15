@@ -779,9 +779,95 @@ render(() => {
   // data is loaded (status="complete"). But data-ready ≠ DOM-rendered, so we then
   // poll for key UI elements (session-prompt-dock = AI composer) to actually appear
   // in the DOM before removing the splash overlay.
+  // Wait until the entry stylesheet is actually applied before handing off the
+  // screen from the inline splash to the editor UI. This eliminates the
+  // first-paint flash where the editor (incl. the home logo) renders unstyled
+  // because the asynchronously-injected CSS file hasn't finished loading yet.
+  //
+  //  - dev:  styles.css is injected synchronously as a <style> by the Vite dev
+  //          server, so it's always ready by the time the editor mounts -> no wait.
+  //  - prod: the build inlines the entry CSS into dist/index.html
+  //          (scripts/inline-entry-css.ts), so styles are present at parse
+  //          time; Vite's preload helper still injects an async <link> for
+  //          the same file, and this wait covers the unlikely case where that
+  //          link stalls while the inline copy somehow isn't applied.
+  // Hand the screen over only once the entry styles are demonstrably applied.
+  //
+  // Tailwind's preflight sets `margin: 0` on every element while the UA
+  // default for <body> is 8px, so the computed body margin is a reliable,
+  // framework-free indicator that the stylesheet is live. Deliberately NOT
+  // polling <link> elements any more: the build inlines the CSS into
+  // dist/index.html (scripts/inline-entry-css.ts), so when Vite's async
+  // <link> stalls (WebView2 cache quirks on rapid relaunch), styles are
+  // already applied and holding the splash hostage is pure harm — that
+  // state was observed in the field as an unstyled corner splash.
+  const waitForEntryCss = (): Promise<void> =>
+    new Promise((resolve) => {
+      if (import.meta.env.DEV) return resolve()
+      const start = Date.now()
+      const tick = () => {
+        const stylesApplied = getComputedStyle(document.body).marginLeft === '0px'
+        // 10s hard cap, well under the 30s failsafe below.
+        if (stylesApplied || Date.now() - start > 10_000) {
+          resolve()
+          return
+        }
+        requestAnimationFrame(tick)
+      }
+      requestAnimationFrame(tick)
+    })
+
+  // Field diagnostics: snapshot the style-related state at splash-handoff
+  // time into a rolling localStorage history (persists across launches).
+  // If the splash ever misrenders again, open devtools (F12 — the `devtools`
+  // feature is enabled in release) and run:
+  //   JSON.parse(localStorage.getItem("__duoduo_splash_hist__"))
+  // The record tells exactly which layer failed:
+  //   - splashPosition "static" instead of "fixed" -> the splash CSS did not
+  //     apply; combined with headSplashCss/bodySplashCss presence this
+  //     separates "element removed" from "inline styles blocked".
+  //   - bodyMarginLeft "8px" -> the entry stylesheet was not applied at all.
+  //   - cssLinks[].ready false -> Vite's async <link> stalled.
+  const recordSplashDiagnostics = () => {
+    try {
+      const links = Array.from(document.querySelectorAll('link')).filter(
+        (l) => l.rel === 'stylesheet' && (l.href || '').endsWith('.css'),
+      )
+      const splash = document.getElementById('__duoduo_splash__')
+      const sheetReady = (l: HTMLLinkElement) => {
+        try {
+          return !!l.sheet
+        } catch {
+          return false
+        }
+      }
+      const record = {
+        at: new Date().toISOString(),
+        splashPosition: splash ? getComputedStyle(splash).position : 'removed',
+        bodyMarginLeft: getComputedStyle(document.body).marginLeft,
+        headSplashCss: !!document.querySelector('style[data-splash-redundant]'),
+        bodySplashCss: !!document.querySelector('#__duoduo_splash__ > style'),
+        styleCount: document.querySelectorAll('style').length,
+        cssLinks: links.map((l) => ({
+          file: (l.href || '').split('/').pop(),
+          ready: sheetReady(l),
+        })),
+      }
+      const key = '__duoduo_splash_hist__'
+      const history = JSON.parse(localStorage.getItem(key) || '[]')
+      history.push(record)
+      localStorage.setItem(key, JSON.stringify(history.slice(-20)))
+    } catch {
+      // Diagnostics must never break the handoff.
+    }
+  }
+
   const removeInlineSplash = () => {
     const splash = document.getElementById("__duoduo_splash__")
-    if (splash) splash.remove()
+    if (splash) {
+      recordSplashDiagnostics()
+      splash.remove()
+    }
   }
 
   const pollForEditorUI = () => {
@@ -793,7 +879,10 @@ render(() => {
     const filetree = document.querySelector('[data-scope="filetree"]')
     const logo = document.querySelector('[data-component="logo"], [data-component="logo-splash"]')
     if (composer || filetree || logo) {
-      requestAnimationFrame(removeInlineSplash)
+      // Editor DOM is present, but don't hand off the screen until the entry CSS
+      // is actually applied — otherwise the unstyled editor flashes (logo
+      // full-screen) on first paint. dev needs no wait (CSS is already inline).
+      void waitForEntryCss().then(removeInlineSplash)
     } else {
       requestAnimationFrame(pollForEditorUI)
     }

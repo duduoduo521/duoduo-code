@@ -14,6 +14,106 @@
     <meta property="og:image" content="/social-share.png" />
     <meta property="twitter:image" content="/social-share.png" />
     <script id="theme-preload-script" src="/theme-preload.js"></script>
+    <!-- Redundant copy of the splash styles (the authoritative copy lives
+         inside #__duoduo_splash__ in the body). A field report captured the
+         body copy not applying on some launches (splash collapsed into an
+         unstyled top-left widget) while head styles kept working, so the
+         exact same rules are duplicated here. Identical selectors and values
+         in both copies — whichever survives, the splash renders correctly. -->
+    <style data-splash-redundant>
+          #__duoduo_splash__ {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 99999;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+          }
+          html {
+            /* Fallback before theme-preload.js runs; will be overridden */
+            background-color: #0a0d12;
+          }
+          @media (prefers-color-scheme: light) {
+            html {
+              background-color: #f6f8fb;
+            }
+          }
+          #__duoduo_splash__ {
+            background-color: #0a0d12;
+          }
+          #__duoduo_splash__ .splash-status {
+            color: rgba(255, 255, 255, 0.45);
+          }
+          #__duoduo_splash__ .ring {
+            border: 2.5px solid rgba(91, 147, 245, 0.4) transparent rgba(91, 147, 245, 0.4)
+              transparent;
+          }
+          @media (prefers-color-scheme: light) {
+            #__duoduo_splash__ {
+              background-color: #f6f8fb;
+            }
+            #__duoduo_splash__ .splash-status {
+              color: rgba(15, 18, 25, 0.45);
+            }
+            #__duoduo_splash__ .ring {
+              border-color: rgba(46, 107, 230, 0.35) transparent rgba(46, 107, 230, 0.35) transparent;
+            }
+          }
+          html[data-color-scheme="dark"] #__duoduo_splash__ {
+            background-color: #0a0d12;
+          }
+          html[data-color-scheme="dark"] #__duoduo_splash__ .splash-status {
+            color: rgba(255, 255, 255, 0.45);
+          }
+          html[data-color-scheme="dark"] #__duoduo_splash__ .ring {
+            border: 2.5px solid rgba(91, 147, 245, 0.4) transparent rgba(91, 147, 245, 0.4)
+              transparent;
+          }
+          html[data-color-scheme="light"] #__duoduo_splash__ {
+            background-color: #f8f8f8;
+          }
+          html[data-color-scheme="light"] #__duoduo_splash__ .splash-status {
+            color: rgba(15, 18, 25, 0.45);
+          }
+          html[data-color-scheme="light"] #__duoduo_splash__ .ring {
+            border-color: rgba(46, 107, 230, 0.35) transparent rgba(46, 107, 230, 0.35) transparent;
+          }
+          #__duoduo_splash__ .splash-logo {
+            width: 40%;
+            max-width: 240px;
+            height: auto;
+            margin-bottom: 28px;
+            object-fit: contain;
+          }
+          #__duoduo_splash__ .splash-status {
+            font-family:
+              -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui,
+              "PingFang SC", "Microsoft YaHei", sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+            line-height: 1;
+            margin-bottom: 0;
+          }
+          #__duoduo_splash__ .ring {
+            width: 26px;
+            height: 26px;
+            margin-top: 22px;
+            border-radius: 50%;
+            animation: __duoduo_spin 0.8s linear infinite;
+          }
+          @keyframes __duoduo_spin {
+            to {
+              transform: rotate(360deg);
+            }
+          }
+    </style>
   </head>
   <body class="antialiased overscroll-none text-12-regular overflow-hidden">
     <noscript>You need to enable JavaScript to run this app.</noscript>
@@ -128,7 +228,12 @@
             }
           }
         </style>
-        <img class="splash-logo" src="/logo-2000.png" alt="DuoDuo" />
+        <!-- width attr (not style="") is immune to CSP stripping and applies
+             at parse time with zero CSS dependency — guarantees the logo can
+             never render at its natural 2000px size even if the <style> block
+             above somehow fails. Normal path: the .splash-logo CSS rules take
+             precedence over this presentational hint. -->
+        <img class="splash-logo" src="/logo-2000.png" alt="DuoDuo" width="240" />
         <span class="splash-status">稍等片刻...</span>
         <div class="ring"></div>
       </div>

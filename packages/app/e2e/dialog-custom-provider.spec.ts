@@ -21,11 +21,9 @@ test.describe("Dialog Custom Provider", () => {
     const dialog = page.locator("[role='dialog']").first()
     await expect(dialog).toBeVisible({ timeout: 5_000 })
 
-    // Switch to providers tab
-    const providersTab = dialog
-      .locator("[role='tab']")
-      .filter({ hasText: /provider/i })
-      .first()
+    // Switch to providers tab. Tab 文案随语言变化（en="Models"、zh="模型"），
+    // 必须用 Kobalte Trigger 的稳定 data-value 定位，不能按文本匹配。
+    const providersTab = dialog.locator("[role='tab'][data-value='providers']").first()
     await expect(providersTab).toBeVisible({ timeout: 5_000 })
     await providersTab.click({ force: true })
 

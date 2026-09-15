@@ -233,6 +233,14 @@ Prefer reuse over reimplementation. Duplicated logic across files is a defect, n
 // message instead of round-by-round serial reads.
 const PARALLEL_READ_GUIDANCE = `When the user asks you to review, read, or compare multiple independent files or documents, you MUST issue all the relevant read_file calls within a SINGLE message so they execute in parallel — do not read them one per round in sequence. Only batch files the user explicitly referenced in the current request that are genuinely independent; do not blindly read every file in a project.`
 
+// ─── File-tool preference directive ─────────────────────────────────────
+// Injected through the universal `environment()` hook so every session —
+// including the Rust run-loop path — consistently prefers the dedicated
+// file tools over shell commands. Without this, models fall back to shell
+// redirection (cat/echo/>) for file work, which is slower, harder to
+// review, and trips the command classifier and sandbox more often.
+const FILE_TOOL_GUIDANCE = `When working with files, you MUST prefer the dedicated file tools over the bash tool: use the read tool to read files, the edit/write tools to create or modify files, glob to locate files by name pattern, and grep to search file contents. Use bash only for commands that have no dedicated tool (running builds, tests, git, package managers, process management). Never use shell redirection (>, >>) or shell utilities as a substitute for the file tools.`
+
 // ─── structuredContext cache ────────────────────────────────────────────
 // Avoids re-querying memory/architecture/KG on every LLM call within the
 // same user turn (runLoop may call `run` multiple times for tool-use loops).
@@ -423,7 +431,7 @@ export const layer = Layer.effect(
       environment(model, opts) {
         const localeLine = formatLocaleDirective(opts?.locale)
         return [
-          [...buildEnvironmentLines(model), localeLine, PROJECT_CONTEXT_GUIDANCE, CONCISE_GUIDANCE, SEARCH_STRATEGY_GUIDANCE, PARALLEL_READ_GUIDANCE, REUSE_GUIDANCE]
+          [...buildEnvironmentLines(model), localeLine, PROJECT_CONTEXT_GUIDANCE, CONCISE_GUIDANCE, SEARCH_STRATEGY_GUIDANCE, PARALLEL_READ_GUIDANCE, FILE_TOOL_GUIDANCE, REUSE_GUIDANCE]
             .filter((x): x is string => !!x)
             .join("\n"),
         ]

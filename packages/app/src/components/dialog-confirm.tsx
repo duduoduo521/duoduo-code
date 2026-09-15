@@ -45,7 +45,8 @@ export function DialogConfirm(props: {
           <div class="flex min-w-0 flex-col gap-1">
             <p class="text-14-medium text-text-strong">{props.message}</p>
             <Show when={props.detail}>
-              <p class="text-13-regular text-text-weak break-words">{props.detail}</p>
+              {/* div, not p: callers may pass block-level JSX (lists) as detail */}
+              <div class="text-13-regular text-text-weak break-words">{props.detail}</div>
             </Show>
           </div>
         </div>

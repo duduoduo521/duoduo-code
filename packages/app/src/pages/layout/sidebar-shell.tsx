@@ -15,6 +15,8 @@ import { type LocalProject } from "@/context/layout"
 export const SidebarContent = (props: {
   mobile?: boolean
   opened: Accessor<boolean>
+  /** While true the whole panel is inert: project is booting / navigating. */
+  locked?: Accessor<boolean>
   aimMove: (event: MouseEvent) => void
   projects: Accessor<LocalProject[]>
   renderProject: (project: LocalProject) => JSX.Element
@@ -35,6 +37,7 @@ export const SidebarContent = (props: {
   renderPanel: () => JSX.Element
 }): JSX.Element => {
   const expanded = createMemo(() => !!props.mobile || props.opened())
+  const locked = createMemo(() => !!props.locked?.())
   const placement = () => (props.mobile ? "bottom" : "right")
   let panel: HTMLDivElement | undefined
 
@@ -53,10 +56,13 @@ export const SidebarContent = (props: {
   createEffect(() => {
     const el = panel
     if (!el) return
-    if (expanded()) {
+    if (expanded() && !locked()) {
       el.removeAttribute("inert")
       return
     }
+    // inert (not just pointer-events) so every interactive path inside the
+    // panel — dropdown menus, inline editors, buttons, load-more, focus — is
+    // blocked in one place while the project boots or the sidebar is collapsed.
     el.setAttribute("inert", "")
   })
 

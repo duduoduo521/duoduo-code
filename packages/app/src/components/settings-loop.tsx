@@ -1,4 +1,4 @@
-import { Component } from "solid-js"
+import { Component, createEffect } from "solid-js"
 import { Icon } from "@duoduo-ai/ui/icon"
 import { TextField } from "@duoduo-ai/ui/text-field"
 import { Tooltip } from "@duoduo-ai/ui/tooltip"
@@ -24,8 +24,19 @@ export const SettingsLoop: Component = () => {
   const smartLayer = useSmartLayer()
 
   const postLoopConfig = () => {
-    smartLayer.api
-      ?.post("/agent/loop_config", {
+    const api = smartLayer.api
+    if (!api) {
+      // Never silently drop the push: the Rust side is what the run loop
+      // actually enforces, so a dropped push means the UI and the cap diverge.
+      showToast({
+        title: language.t("toast.loopConfig.failed.title"),
+        description: language.t("toast.loopConfig.failed.description"),
+        variant: "error",
+      })
+      return
+    }
+    api
+      .post("/agent/loop_config", {
         maxSteps: settings.general.agentMaxSteps(),
         subAgentMaxRounds: settings.loop.subAgentMaxRounds(),
         subAgentTimeoutSecs: settings.loop.subAgentTimeoutSecs(),
@@ -40,6 +51,35 @@ export const SettingsLoop: Component = () => {
         }),
       )
   }
+
+  // Read back the Rust-side effective loop config once the smart-layer client
+  // is available. The UI only PUSHES values on user change; the Rust side is
+  // the single source of truth for what the run loop enforces. Without this
+  // readback, a stale config.toml value (or a push that never landed) leaves
+  // the UI showing "-1 unlimited" while the loop still caps steps.
+  createEffect(() => {
+    const api = smartLayer.api
+    if (!api) return
+    api
+      .get<{
+        maxSteps: number
+        subAgentMaxRounds: number
+        subAgentTimeoutSecs: number
+        subAgentMaxTotalTokens: number
+        subAgentMaxFileReads: number
+      }>("/agent/loop_config")
+      .then((cfg) => {
+        settings.general.setAgentMaxSteps(cfg.maxSteps)
+        settings.loop.setSubAgentMaxRounds(cfg.subAgentMaxRounds)
+        settings.loop.setSubAgentTimeoutSecs(cfg.subAgentTimeoutSecs)
+        settings.loop.setSubAgentMaxTotalTokens(cfg.subAgentMaxTotalTokens)
+        settings.loop.setSubAgentMaxFileReads(cfg.subAgentMaxFileReads)
+      })
+      .catch(() => {
+        // Smart layer unreachable (e.g. still booting): keep local values;
+        // the next user change re-attempts the push.
+      })
+  })
 
   const key = (row: string) => `settings.loop.row.${row}` as Parameters<typeof language.t>[0]
 

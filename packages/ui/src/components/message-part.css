@@ -312,11 +312,17 @@
 
 [data-component="reasoning-part"] {
   width: 100%;
+  margin: 2px 0 4px;
+  /* Left accent rule — mirrors the "thinking block" affordance in Cursor/
+     Codex so thinking is unmistakable next to the formal answer, which has
+     no such rule. */
+  padding: 2px 0 2px 12px;
+  border-left: 2px solid var(--border-weaker-base);
   color: var(--text-base);
   line-height: var(--line-height-normal);
 
   [data-component="markdown"] {
-    margin-top: 16px;
+    margin-top: 8px;
     font-style: normal;
     font-size: 13px;
     color: var(--text-weaker);

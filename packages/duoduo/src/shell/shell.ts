@@ -82,6 +82,14 @@ function fallback() {
   if (process.platform === "win32") {
     const file = gitbash()
     if (file) return file
+    // Prefer PowerShell over cmd.exe: the model is told the shell name but
+    // still writes PowerShell-isms like `> $null`, which cmd turns into a
+    // literal file named `$null`. `pick()` uses `which`, which fails on a
+    // stripped PATH — so try the always-present System32 copy before cmd.
+    const ps = pick()
+    if (ps) return ps
+    const systemPowerShell = "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe"
+    if (Filesystem.stat(systemPowerShell)?.size) return systemPowerShell
     return process.env.COMSPEC || "cmd.exe"
   }
   if (process.platform === "darwin") return "/bin/zsh"

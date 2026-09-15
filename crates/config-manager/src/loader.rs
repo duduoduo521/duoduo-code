@@ -416,6 +416,10 @@ pub fn save_loop_config(loop_cfg: &LoopConfig) -> Result<()> {
         // are written to disk. The literal -1 must stay in sync with `default_max_steps`.
         if loop_cfg.max_steps == -1
             && let Some(table) = loop_value.as_table_mut() {
+                // The serialized key is camelCase (`maxSteps`); also strip the
+                // legacy snake_case key so a stale positive value from either
+                // spelling can never survive a `-1` save and re-enable the cap.
+                table.remove("maxSteps");
                 table.remove("max_steps");
             }
         root.insert("loop".to_string(), loop_value);

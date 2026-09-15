@@ -37,7 +37,7 @@ export type GraphIndexInfo =
   | { type: "failed"; error?: string }
 
 export type State = {
-  status: "loading" | "partial" | "complete"
+  status: "loading" | "partial" | "complete" | "failed"
   agent: Agent[]
   command: Command[]
   project: string

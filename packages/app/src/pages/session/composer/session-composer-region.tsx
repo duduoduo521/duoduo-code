@@ -46,6 +46,11 @@ export function SessionComposerRegion(props: {
   const parentID = createMemo(() => info()?.parentID)
   const child = createMemo(() => !!parentID())
   const showComposer = createMemo(() => !props.state.blocked() || child())
+  // Project boot gate: the child store reaches "complete" only after the
+  // critical bootstrap settles. Before that, submitting a prompt would race
+  // the sidecar/provider bootstrap — render the loading placeholder instead
+  // of the live input (reuses the !prompt.ready() fallback below).
+  const projectReady = createMemo(() => sync.status === "complete")
 
   // ── Prompt queue auto-dequeue (Plan A) ──
   // When the session turns idle and prompts are queued (enqueued by submit.ts
@@ -191,7 +196,7 @@ export function SessionComposerRegion(props: {
 
         <Show when={showComposer()}>
           <Show
-            when={prompt.ready()}
+            when={prompt.ready() && projectReady()}
             fallback={
               <>
                 <Show when={rolled()} keyed>

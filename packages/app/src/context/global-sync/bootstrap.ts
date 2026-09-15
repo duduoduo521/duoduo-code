@@ -440,6 +440,10 @@ export async function bootstrapDirectory(input: {
     }
     if (critErrs.length > 0) {
       console.error("Failed to finish critical bootstrap", critErrs[0])
+      // Terminal "failed" state: without it the store would sit on "partial"
+      // forever, and anything gating on "not fully booted" (e.g. the sidebar
+      // lock) would never release after an errored bootstrap.
+      input.setStore("status", "failed")
       // Suppress toast during sidecar shutdown (e.g. update-and-restart)
       if ((window as any).__DUODUO_SIDECAR_SHUTTING_DOWN__) return
       const project = getFilename(input.directory)

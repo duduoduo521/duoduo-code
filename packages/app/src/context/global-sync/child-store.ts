@@ -231,7 +231,7 @@ export function createChildStoreManager(input: {
     const childStore = ensureChild(directory)
     pinForOwner(directory)
     const shouldBootstrap = options.bootstrap ?? true
-    if (shouldBootstrap && childStore[0].status === "loading") {
+    if (shouldBootstrap && (childStore[0].status === "loading" || childStore[0].status === "failed")) {
       input.onBootstrap(directory)
     }
     return childStore
@@ -240,7 +240,7 @@ export function createChildStoreManager(input: {
   function peek(directory: string, options: ChildOptions = {}) {
     const childStore = ensureChild(directory)
     const shouldBootstrap = options.bootstrap ?? true
-    if (shouldBootstrap && childStore[0].status === "loading") {
+    if (shouldBootstrap && (childStore[0].status === "loading" || childStore[0].status === "failed")) {
       input.onBootstrap(directory)
     }
     return childStore

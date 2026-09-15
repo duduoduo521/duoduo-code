@@ -2792,10 +2792,12 @@ export default function Layout(props: ParentProps) {
 
   const projects = () => layout.projects.list()
   const projectOverlay = () => <ProjectDragOverlay projects={projects} activeProject={() => store.activeProject} />
+  const sidebarLocked = useSidebarLocked()
   const sidebarContent = (mobile?: boolean) => (
     <SidebarContent
       mobile={mobile}
       opened={() => layout.sidebar.opened()}
+      locked={sidebarLocked}
       aimMove={aim.move}
       projects={projects}
       renderProject={(project) => (

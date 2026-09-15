@@ -19,9 +19,11 @@ type SessionStore = {
  *    set around `navigateToProject`) — closes the window between "route
  *    changed" and "data bootstrap started" where a second click would
  *    interleave two open flows.
- * 2. The current route's directory child store is still `"loading"` — covers
- *    the whole project boot (sidecar starting + data bootstrap). This is the
- *    same condition the session page gates its content on.
+ * 2. The current route's directory child store is not fully booted — covers
+ *    the whole project boot (sidecar starting + data bootstrap). Bootstrap
+ *    moves the store loading → partial → complete; only "complete" counts as
+ *    ready. "failed" (critical bootstrap errored) must NOT lock: the user has
+ *    to be able to leave a project that failed to load.
  *
  * The context menu is intentionally NOT blocked: blocking a right-click menu
  * is a bigger UX loss than the interleaving risk it closes.
@@ -34,7 +36,8 @@ export function useSidebarLocked(): Accessor<boolean> {
     if (layout.projectNavigating()) return true
     const dir = params.dir ? base64Decode(params.dir) : undefined
     if (!dir) return false
-    return globalSync.child(dir, { bootstrap: false })[0].status === "loading"
+    const status = globalSync.child(dir, { bootstrap: false })[0].status
+    return status === "loading" || status === "partial"
   })
 }
 

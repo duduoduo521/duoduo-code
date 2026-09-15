@@ -1137,7 +1137,23 @@ async function main() {
 
   // Check for risky licenses (GPL/AGPL/LGPL/MPL/SSPL/BUSL). MPL is weak copyleft and
   // does not infect the binary, but its license text must ship with the distribution.
+  //
+  // SPDX 双许可处理：表达式含 " OR " 时，被许可方（我们）可任选其一分支。
+  // 只要任一分支为宽松许可（MIT/Apache/BSD/ISC 等），即按该分支分发，无 copyleft 传染。
+  // 例：jszip 的 "(MIT OR GPL-3.0-or-later)" 按 MIT 分发，不告警。
+  // 注意：仅按顶层 OR 拆分（本仓依赖无 "MIT OR GPL AND X" 式嵌套组合）；
+  // 纯 AND 表达式不受影响（AND 是义务叠加，无分支可选，照旧告警）。
+  const PERMISSIVE_BRANCH = /\b(MIT|ISC|APACHE[-\s.]?2(\.0)?|BSD|0BSD|UNLICENSE|WTFPL|CC0[-\s.]?1(\.0)?|ZLIB|MS-PL)\b/
+  const hasPermissiveAlternative = (license: string): boolean => {
+    const upper = license.toUpperCase()
+    if (!upper.includes(" OR ")) return false
+    return upper
+      .replace(/[()]/g, " ")
+      .split(/\s+OR\s+/)
+      .some((branch) => PERMISSIVE_BRANCH.test(branch))
+  }
   const risky = [...pkgs.values()].filter((p) => {
+    if (hasPermissiveAlternative(p.license)) return false
     const l = p.license.toUpperCase()
     return (
       l.includes("GPL") || l.includes("AGPL") || l.includes("LGPL") || l.includes("MPL") || l.includes("SSPL") || l.includes("BUSL")

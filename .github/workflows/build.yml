@@ -130,7 +130,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            crates -> target
+            . -> target
 
       - name: Install system dependencies
         run: |
@@ -138,15 +138,12 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev pkg-config
 
       - name: Cargo check workspace
-        working-directory: crates
         run: cargo check --workspace
 
       - name: Cargo clippy
-        working-directory: crates
         run: cargo clippy --workspace -- -D warnings
 
       - name: Cargo test
-        working-directory: crates
         run: cargo test --workspace
 
   # ─── Build duo-smart-layer ───
@@ -182,7 +179,7 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
-            crates -> target
+            . -> target
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -194,14 +191,13 @@ jobs:
           fi
 
       - name: Build duo-smart-layer
-        working-directory: crates
         run: cargo build --release -p duo-smart-layer --target ${{ matrix.target }}
 
       - name: Copy sidecar binary (Unix)
         if: runner.os != 'Windows'
         run: |
           mkdir -p packages/desktop/src-tauri/sidecars
-          cp crates/target/${{ matrix.target }}/release/duo-smart-layer \
+          cp target/${{ matrix.target }}/release/duo-smart-layer \
              packages/desktop/src-tauri/sidecars/duo-smart-layer-${{ matrix.target }}
           chmod +x packages/desktop/src-tauri/sidecars/duo-smart-layer-${{ matrix.target }}
 
@@ -209,7 +205,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           mkdir -p packages/desktop/src-tauri/sidecars
-          cp crates/target/${{ matrix.target }}/release/duo-smart-layer.exe `
+          cp target/${{ matrix.target }}/release/duo-smart-layer.exe `
              packages/desktop/src-tauri/sidecars/duo-smart-layer-${{ matrix.target }}.exe
 
       - name: Upload smart layer artifact

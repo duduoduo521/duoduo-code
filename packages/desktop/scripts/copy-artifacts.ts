@@ -4,7 +4,7 @@ import { join, relative } from "path"
 
 // 本脚本在 packages/desktop 目录下运行（release-windows.ps1 已 Set-Location 至此），
 // 故相对路径以 packages/desktop 为基准：
-// - workspace 模式下 Cargo 把 target 输出到 duoduo-ai-ide/target（两层 ../ 到 workspace 根）
+// - workspace 模式下 Cargo 把 target 输出到仓库根/target（两层 ../ 到 workspace 根）
 // - tauri 默认（非 workspace）输出到 src-tauri/target
 // DST 同样落到 workspace 根的 dist-artifacts，与 release-windows.ps1 的 $DistArtifacts 对齐。
 const SRC_CANDIDATES = [

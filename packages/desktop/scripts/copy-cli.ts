@@ -17,7 +17,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 
 const SIDEARS_DIR = join(__dirname, "..", "src-tauri", "sidecars")
 // UPDATE_UPLOAD 优先取环境变量（由 release 脚本传入已验证的绝对路径），
-// 否则回退到基于本脚本位置的推算（scripts → desktop → duoduo-ai-ide → workspace根）。
+// 否则回退到基于本脚本位置的推算（scripts → desktop → 仓库根 → workspace根）。
 const UPDATE_UPLOAD = process.env.UPDATE_UPLOAD ?? join(__dirname, "..", "..", "..", "update-upload")
 
 // 匹配所有 duoduocode-cli-<target>[.exe]，从文件名解析平台 triple

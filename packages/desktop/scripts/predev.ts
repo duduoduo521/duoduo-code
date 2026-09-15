@@ -66,20 +66,5 @@ if (DEBUG_BUILD) {
 
 await copySmartLayerToSidecarFolder(smartLayerTargetDir)
 
-// ── Copy LICENSE and ThirdPartyLicenses.txt to src-tauri for Tauri resources ──
-const licenseSrc = path.resolve(MONOREPO_ROOT, "LICENSE")
-const licenseDst = path.resolve(DESKTOP_DIR, "src-tauri", "LICENSE")
-const thirdPartySrc = path.resolve(MONOREPO_ROOT, "ThirdPartyLicenses.txt")
-const thirdPartyDst = path.resolve(DESKTOP_DIR, "src-tauri", "ThirdPartyLicenses.txt")
-try {
-  fs.copyFileSync(licenseSrc, licenseDst)
-  console.log("Copied LICENSE to src-tauri/")
-} catch {
-  console.warn("LICENSE not found at", licenseSrc)
-}
-try {
-  fs.copyFileSync(thirdPartySrc, thirdPartyDst)
-  console.log("Copied ThirdPartyLicenses.txt to src-tauri/")
-} catch {
-  console.warn("ThirdPartyLicenses.txt not found at", thirdPartySrc)
-}
+// ── Ensure Tauri bundle license resources (LICENSE / ThirdPartyLicenses.txt) ──
+await import("./ensure-license-resources")

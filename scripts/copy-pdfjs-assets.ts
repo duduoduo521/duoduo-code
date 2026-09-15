@@ -11,7 +11,7 @@
  * `--force` is passed. Missing source (e.g. pdfjs-dist not installed yet) is a
  * warning, not a hard failure, so `bun install` / `prepare` never breaks.
  *
- * Run from the `duoduo-ai-ide` package root (the monorepo workspace root).
+ * Run from the repository root (the monorepo workspace root).
  */
 import { cpSync, existsSync, mkdirSync, readdirSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"

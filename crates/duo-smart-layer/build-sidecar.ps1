@@ -9,8 +9,8 @@
 # Artifacts: packages/desktop/src-tauri/sidecars/duo-smart-layer-<target-triple>[.exe]
 # Tauri requires sidecar filenames to include the target triple suffix.
 #
-# Note: Rust workspace root is duoduo-ai-ide/ (monorepo root),
-# not duoduo-ai-ide/. All crate sources have been moved to duoduo-ai-ide/crates/.
+# Note: The Rust workspace root is this monorepo root.
+# All crate sources live under crates/.
 
 param(
     [string]$Target = "",
@@ -20,7 +20,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 # ─── Path configuration ───
-# Cargo workspace root is duoduo-ai-ide/ (monorepo root), target/ is at duoduo-ai-ide/target/
+# Cargo workspace root is the monorepo root, target/ is at <repo root>/target/
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $WorkspaceRoot = Resolve-Path (Join-Path $ScriptDir "..\..")
@@ -82,7 +82,7 @@ function Build-Target($target) {
         if ($LASTEXITCODE -ne 0) { Write-Err "Failed to install target $target" }
     }
 
-    # Build from Cargo workspace root (duoduo-ai-ide/)
+    # Build from the Cargo workspace root (repo root)
     Push-Location $WorkspaceRoot
     try {
         cargo build --release -p duo-smart-layer --target $target 2>&1
@@ -92,7 +92,7 @@ function Build-Target($target) {
         Pop-Location
     }
 
-    # Determine source binary path (Cargo workspace root = duoduo-ai-ide/, target/ under that)
+    # Determine source binary path (Cargo workspace root = repo root, target/ under that)
     $src = Join-Path $WorkspaceRoot "target\$target\release\duo-smart-layer$ext"
     if (-not (Test-Path $src)) {
         Write-Err "Built binary not found at $src"

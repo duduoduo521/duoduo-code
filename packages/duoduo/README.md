@@ -1,15 +1,20 @@
-# js
+# @duoduo-ai/duoduo
 
-To install dependencies:
+The core package of DuoDuoCode — a provider-agnostic AI coding agent that runs
+in the terminal. It hosts the agent loop, the tool system, session management,
+and the LSP / memory / snapshot integrations.
+
+> See the [repository README](../../README.md) for the project overview,
+> installation and configuration docs.
+
+## Development
 
 ```bash
-bun install
+bun install          # from the repository root
+bun run dev          # run the CLI from the repository root
+bun run typecheck    # typecheck this package
+bun run test:ci      # offline unit test suite
 ```
 
-To run:
-
-```bash
-bun run index.ts
-```
-
-This project was created using `bun init` in bun v1.2.12. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
+The CLI binary is compiled with `bun run script/build.ts --single`
+(see [CONTRIBUTING.md](../../CONTRIBUTING.md) for the full guide).

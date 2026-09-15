@@ -6,7 +6,7 @@ import { describe, expect, test } from "bun:test"
 import { projectId } from "../../src/storage/project-dir"
 
 /**
- * P4-02 cross-language consistency gate (真机测试.md §3 遗留缺口).
+ * P4-02 cross-language consistency gate.
  *
  * The Rust sidecar and the TS sidecar both derive per-project data dirs from
  * the SAME algorithm (`duo_utils::path::project_id` vs `projectId()`). If the

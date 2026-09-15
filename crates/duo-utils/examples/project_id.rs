@@ -3,8 +3,8 @@
 //!
 //! Dev/CI-only helper (not used by any production binary). Exists so the TS
 //! sidecar can assert cross-language consistency of the project_id algorithm —
-//! see `packages/duoduo/test/storage/project-id-cross-language.test.ts` and
-//! the P4-02 item in 真机测试.md. The algorithm MUST stay byte-identical with
+//! see `packages/duoduo/test/storage/project-id-cross-language.test.ts`. The
+//! algorithm MUST stay byte-identical with
 //! TS `projectId()` (`packages/duoduo/src/storage/project-dir.ts`).
 
 use std::path::PathBuf;

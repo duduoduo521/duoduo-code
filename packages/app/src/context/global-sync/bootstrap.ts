@@ -152,8 +152,8 @@ function projectID(directory: string, projects: Project[]) {
   if (exact) return exact.id
 
   // 子目录匹配：IDE 打开的目录可能是某 project.worktree 的子目录。
-  // 例如 git 仓库根在 D:/duoduo-ide-zed，而 IDE 实际打开的是其内部的
-  // D:/duoduo-ide-zed/duoduo-ai-ide 子目录。后端 discoverProject 会把
+  // 例如 git 仓库根在 /home/me/parent，而 IDE 实际打开的是其内部的
+  // /home/me/parent/checkout 子目录。后端 discoverProject 会把
   // worktree 提升到仓库根，导致前端的精确匹配失败、sync.project 解析为
   // undefined，进而审查面板激活失败、内容空白。这里允许目录为 worktree
   // 的后代时同样匹配到该 project。

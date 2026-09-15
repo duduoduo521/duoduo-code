@@ -1,0 +1,23 @@
+# Normalize line endings: store LF in the repo, check out native on Windows.
+* text=auto
+
+# Shell scripts must always be LF.
+*.sh text eol=lf
+
+# PowerShell scripts must always be CRLF.
+*.ps1 text eol=crlf
+
+# Windows batch files must always be CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets — never normalize.
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.wav binary
+*.woff2 binary
+*.tgz binary
+*.zip binary
+*.dmg binary

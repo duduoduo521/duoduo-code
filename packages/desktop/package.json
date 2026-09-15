@@ -8,7 +8,7 @@
     "typecheck": "tsc -b",
     "predev": "bun ./scripts/predev.ts",
     "dev": "vite",
-    "build": "bun run typecheck && vite build && bun ./scripts/inline-entry-css.ts && bun ./scripts/inject-csp.ts",
+    "build": "bun run typecheck && vite build && bun ./scripts/inline-entry-css.ts && bun ./scripts/inject-csp.ts && bun ./scripts/ensure-license-resources.ts --strict",
     "preview": "vite preview",
     "tauri": "tauri"
   },

@@ -1,6 +1,6 @@
 #!/usr/bin/env -S bun run
 /**
- * clean-build-cache.ts — 跨平台清理 duoduo-ai-ide 构建缓存
+ * clean-build-cache.ts — 跨平台清理本 monorepo 构建缓存
  *
  * 仅清理 .gitignore 覆盖的派生产物，绝不触碰源码与 git 历史。
  * 兼容 Windows / macOS / Linux（依赖 Node/Bun 内置 API，无第三方依赖）。
@@ -151,7 +151,7 @@ async function main() {
   const platformName = platform()
 
   console.log("==================================================")
-  console.log(" duoduo-ai-ide 构建缓存清理")
+  console.log(" 本 monorepo 构建缓存清理")
   console.log(` 平台: ${platformName}`)
   console.log(` 模式: ${opt.deep ? "deep（含 target/release）" : "安全（保留 release 安装包）"}`)
   console.log(` 执行: ${opt.dry ? "dry-run（仅统计，不删除）" : "实际删除"}`)

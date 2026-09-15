@@ -1,6 +1,6 @@
-# 根 Cargo.toml（位于 duoduo-ai-ide/ 根目录）
+# 根 Cargo.toml（位于仓库根目录）
 # members 路径使用 "crates/xxx" 因为 Cargo.toml 在项目根目录
-# Rust 智能层源码统一在 duoduo-ai-ide monorepo 内
+# Rust 智能层源码统一在本 monorepo 内
 [workspace]
 resolver = "2"
 members = [

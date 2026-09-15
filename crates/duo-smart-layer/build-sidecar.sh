@@ -10,13 +10,13 @@
 # 产物存放于: packages/desktop/src-tauri/sidecars/duo-smart-layer-<target-triple>[.exe]
 # Tauri 要求 sidecar 文件名必须包含 target triple 后缀
 #
-# 注意：Rust workspace root 现在是 duoduo-ai-ide/（monorepo 根目录），
-# 所有 crate 源码已迁入 duoduo-ai-ide/crates/。
+# 注意：Rust workspace root 就是本 monorepo 根目录，
+# 所有 crate 源码位于 crates/。
 
 set -euo pipefail
 
 # ─── 路径配置 ───
-# Cargo workspace root is duoduo-ai-ide/ (monorepo root), target/ is at duoduo-ai-ide/target/
+# Cargo workspace root is the monorepo root, target/ is at <repo root>/target/
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -63,13 +63,13 @@ build_target() {
         rustup target add "$target" || error "Failed to install target $target"
     fi
 
-    # 执行构建（从 Cargo workspace root = duoduo-ai-ide/）
+    # 执行构建（从 Cargo workspace root = 仓库根）
     (
         cd "$WORKSPACE_ROOT"
         cargo build --release -p duo-smart-layer --target "$target" 2>&1 || error "Build failed for $target"
     )
 
-    # 确定源文件路径（Cargo workspace root = duoduo-ai-ide/, target/ under that）
+    # 确定源文件路径（Cargo workspace root = 仓库根, target/ under that）
     local src="$WORKSPACE_ROOT/target/$target/release/duo-smart-layer$ext"
     if [[ ! -f "$src" ]]; then
         error "Built binary not found at $src"

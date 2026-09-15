@@ -6,7 +6,7 @@
 <p align="center">开源的、不绑定供应商的 AI 编程 Agent。</p>
 <p align="center">
   <a href="https://www.npmjs.com/package/duoduo-ai"><img alt="npm" src="https://img.shields.io/npm/v/duoduo-ai?style=flat-square" /></a>
-  <a href="https://github.com/duduoduo521/duoduo-code/actions/workflows/build.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/duduoduo521/duoduo-code/build.yml?style=flat-square&branch=dev" /></a>
+  <a href="https://github.com/duduoduo521/duoduo-code/actions/workflows/build.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/duduoduo521/duoduo-code/build.yml?style=flat-square&branch=main" /></a>
 </p>
 
 <p align="center">
@@ -75,6 +75,14 @@
 | `lsp` | 基于 LSP 的诊断和操作 |
 | `question` | 向用户请求澄清 |
 | `skill` | 调用 Agent 技能 |
+| `todowrite` | 创建并跟踪结构化任务清单 |
+| `plan_exit` | 退出规划模式并开始执行 |
+| `graph_query` | 查询项目知识图谱 |
+| `symbol_search` | 代码符号语义搜索 |
+| `recall_memory` | 回忆已沉淀的项目记忆 |
+| `search_modifications` | 在代码快照历史中检索过往修改 |
+| `proceed_to_<phase>` | 推进流水线阶段（`investigate` / `plan` / `execute` / `verify`） |
+| `blackboard_*` | 多 Agent 共享黑板（读 / 写 / 检索 / 提交 / 批注） |
 | MCP 工具 | 已连接的 MCP 服务器暴露的任何工具 |
 
 ### 代码编辑

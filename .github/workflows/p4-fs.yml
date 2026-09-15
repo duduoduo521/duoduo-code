@@ -1,4 +1,4 @@
-# P4 Filesystem Verification — 真机测试.md §4
+# P4 Filesystem Verification
 #
 # Exercises the P4-01~05 filesystem edge cases on REAL filesystems
 # (NTFS / APFS / ext4): non-ASCII snapshot round-trips, read-only and
@@ -9,13 +9,8 @@
 #     batch, not a per-push gate.
 #   - Targeted `-p` cargo tests only — building the workspace would pull in
 #     Tauri/WebKit system deps on every leg.
-#   - Runs on the public mirror (duoduo-code) where Actions minutes are free
-#     and unmetered (private repos bill Windows 2x / macOS 10x). The workflow
-#     file lives under duoduo-ai-ide/.github/workflows/ and reaches the public
-#     repo through script/sync-opensource.ts.
 #
-# P4-06 (double-click install smoke) and P4-07 (corporate proxy) stay
-# manual — see 真机测试.md §6.
+# P4-06 (double-click install smoke) and P4-07 (corporate proxy) stay manual.
 name: P4 Filesystem Verification
 
 on:

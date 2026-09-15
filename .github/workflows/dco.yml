@@ -1,0 +1,43 @@
+# DCO (Developer Certificate of Origin)
+#
+# CONTRIBUTING.md requires every commit to carry a `Signed-off-by` trailer:
+# "Commits without a Signed-off-by line cannot be merged". This workflow is
+# the enforcement for that rule — implemented natively (no third-party
+# action) so the check cannot rot with an unmaintained dependency.
+name: DCO
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  dco:
+    name: Verify Signed-off-by
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check DCO sign-off on all PR commits
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha }}"
+          missing=0
+          for sha in $(git rev-list --no-merges "${base}..HEAD"); do
+            if ! git log -1 --format='%(trailers:key=Signed-off-by,valueonly)' "$sha" | grep -q .; then
+              echo "::error title=DCO::commit $sha is missing 'Signed-off-by'"
+              git log -1 --format='  %h %s' "$sha"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            echo ""
+            echo "Fix: git rebase --signoff ${base}   (or amend each commit with -s)"
+            echo "See CONTRIBUTING.md, section 'Contributor License (DCO)'."
+            exit 1
+          fi
+          echo "All commits carry a Signed-off-by trailer."

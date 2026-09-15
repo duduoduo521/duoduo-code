@@ -6,7 +6,7 @@
 <p align="center">The open-source, provider-agnostic AI coding agent.</p>
 <p align="center">
   <a href="https://www.npmjs.com/package/duoduo-ai"><img alt="npm" src="https://img.shields.io/npm/v/duoduo-ai?style=flat-square" /></a>
-  <a href="https://github.com/duduoduo521/duoduo-code/actions/workflows/build.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/duduoduo521/duoduo-code/build.yml?style=flat-square&branch=dev" /></a>
+  <a href="https://github.com/duduoduo521/duoduo-code/actions/workflows/build.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/duduoduo521/duoduo-code/build.yml?style=flat-square&branch=main" /></a>
 
 <p align="center">
   <a href="README.md">English</a> |
@@ -74,6 +74,14 @@ Switch between primary agents with `Tab`. Define custom agents in configuration.
 | `lsp` | LSP-powered diagnostics and operations |
 | `question` | Ask the user for clarification |
 | `skill` | Invoke agent skills |
+| `todowrite` | Create and track structured task lists |
+| `plan_exit` | Leave plan mode and begin execution |
+| `graph_query` | Query the project knowledge graph |
+| `symbol_search` | Semantic search for code symbols |
+| `recall_memory` | Recall persisted project memory |
+| `search_modifications` | Search code snapshot history for past edits |
+| `proceed_to_<phase>` | Advance the pipeline phase (`investigate` / `plan` / `execute` / `verify`) |
+| `blackboard_*` | Multi-agent shared blackboard (read / write / find / submit / annotate) |
 | MCP tools | Any tool exposed by connected MCP servers |
 
 ### Code Editing
@@ -230,7 +238,7 @@ Download from the [releases page](https://github.com/duduoduo521/duoduo-code/rel
 | Windows               | `DuoDuoCode-<version>-x64-setup.exe`    |
 | Linux                 | `.deb`, `.rpm`, or AppImage             |
 
-安装包见上表，安装后内置自动更新；也可从[发布页](https://github.com/duduoduo521/duoduo-code/releases)或下载页获取。
+Installers are listed in the table above. The desktop app ships with built-in auto-update; you can also grab them from the [releases page](https://github.com/duduoduo521/duoduo-code/releases).
 
 ### Install Directory
 

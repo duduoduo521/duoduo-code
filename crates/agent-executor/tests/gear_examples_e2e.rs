@@ -7,7 +7,7 @@
 //!
 //! This test used to point `DUODUO_GEARS_DIR` at an external `duoduocode-gears`
 //! checkout resolved as `CARGO_MANIFEST_DIR/../../../..` (a path that dates back
-//! to a `d:/duoduo-ide-zed` layout). That repository is not part of this one, so
+//! to an older sibling-checkout layout). That repository is not part of this one, so
 //! the loader found zero gears and the very first assertion failed. A test that
 //! can only pass on a machine holding an unavailable sibling checkout verifies
 //! nothing on every other machine.

@@ -7,7 +7,7 @@ import { fileURLToPath } from "url"
  */
 export default [
   {
-    name: "duoduo-ai-ide:config",
+    name: "duoduocode:config",
     config() {
       return {
         resolve: {

@@ -46,7 +46,7 @@ By default, `bun dev` runs DuoDuoCode in the `packages/duoduo` directory. To run
 bun dev <directory>
 ```
 
-To run DuoDuoCode in the root of the duoduo-ai-ide repo itself:
+To run DuoDuoCode in the root of this repository itself:
 
 ```bash
 bun dev .
@@ -118,7 +118,7 @@ To test UI changes during development:
 bun run --cwd packages/app dev
 ```
 
-This starts a local dev server at http://localhost:5173 (or similar port shown in output). Most UI changes can be tested here, but the server must be running for full functionality.
+This starts a local dev server at http://localhost:3000 (or similar port shown in output). Most UI changes can be tested here, but the server must be running for full functionality.
 
 ### Running the Desktop App
 

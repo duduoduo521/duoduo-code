@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "duoduo-ai-ide",
+  "name": "duoduo-code",
   "description": "DuoDuo AI IDE - AI-powered development tool with memory and pipeline",
   "private": true,
   "type": "module",
@@ -82,12 +82,10 @@
     "@tsconfig/bun": "catalog:",
     "@types/mime-types": "3.0.1",
     "glob": "13.0.5",
-    "husky": "9.1.7",
     "oxlint": "1.60.0",
     "oxlint-tsgolint": "0.21.0",
     "prettier": "3.6.2",
     "semver": "^7.6.0",
-    "sst": "3.18.10",
     "turbo": "2.8.13"
   },
   "dependencies": {

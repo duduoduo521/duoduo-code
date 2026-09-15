@@ -65,6 +65,9 @@ async function main() {
       ...process.env,
       VITE_DUODUO_SERVER_HOST: "127.0.0.1",
       VITE_DUODUO_SERVER_PORT: String(backend.port),
+      // vite.config.ts 的 /gears /agent 等代理路由读的是这个变量，
+      // 缺它会全部打到写死的 53267 导致 ECONNREFUSED。
+      DUO_SMART_LAYER_PORT: String(backend.port),
     },
     stdio: "inherit",
   })

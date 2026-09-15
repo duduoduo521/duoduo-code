@@ -7,7 +7,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const port = Number(process.env.PLAYWRIGHT_PORT ?? 3000)
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${port}`
 const reuse = process.env.PLAYWRIGHT_REUSE_SERVER === "1"
-const workers = Number(process.env.PLAYWRIGHT_WORKERS ?? (process.env.CI ? 5 : 3)) || undefined
+const ci = !!process.env.CI
+// CI runner 只有 2 vCPU，5 workers + vite + 后端会互相饿死（单测 boot 30~70s、
+// 主线程 BLOCKED 长达 17s），导致大面积 30s 超时。CI 降到 2 workers 并放宽超时。
+const workers = Number(process.env.PLAYWRIGHT_WORKERS ?? (ci ? 2 : 3)) || undefined
 const reporter: NonNullable<Parameters<typeof defineConfig>[0]["reporter"]> = [
   ["html", { outputFolder: "e2e/playwright-report", open: "never" }],
   ["line"],
@@ -20,9 +23,9 @@ if (process.env.PLAYWRIGHT_JUNIT_OUTPUT) {
 export default defineConfig({
   testDir: "./e2e",
   outputDir: "./e2e/test-results",
-  timeout: 30_000,
+  timeout: ci ? 90_000 : 30_000,
   expect: {
-    timeout: 5_000,
+    timeout: ci ? 10_000 : 5_000,
   },
   fullyParallel: false,
   forbidOnly: !!process.env.CI,

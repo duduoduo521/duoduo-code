@@ -13,6 +13,7 @@ import {
   untrack,
   type Accessor,
 } from "solid-js"
+import { Portal } from "solid-js/web"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { useLayout, LocalProject } from "@/context/layout"
@@ -70,7 +71,7 @@ import { Titlebar } from "@/components/titlebar"
 import { useServer } from "@/context/server"
 import { useLanguage, type Locale } from "@/context/language"
 import { themeName } from "@/utils/theme-name"
-import { Splash } from "@duoduo-ai/ui/logo"
+import { SplashRing } from "@duoduo-ai/ui/logo"
 import {
   displayName,
   effectiveWorkspaceOrder,
@@ -2827,10 +2828,28 @@ export default function Layout(props: ParentProps) {
     <div class="relative bg-background-base flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text">
       {autoselecting() ?? ""}
       <Show when={layout.openingRemote()}>
-        <div class="absolute inset-0 z-50 bg-background-base flex flex-col items-center justify-center">
-          <Splash />
-          <div class="text-13-regular text-text-weakest mt-5">{language.t("project.remote.opening")}</div>
-        </div>
+        <Portal>
+          <div class="fixed inset-0 z-[9998] bg-background-base flex flex-col items-center justify-center overflow-hidden">
+            {/* Mirror packages/desktop/index.html splash exactly so the logo
+                lands on the same spot as the boot splash with no jump. */}
+            <img
+              src="/logo-2000.png"
+              alt="DuoDuo"
+              width="240"
+              style={{
+                width: "40%",
+                "max-width": "240px",
+                height: "auto",
+                "margin-bottom": "28px",
+                "object-fit": "contain",
+              }}
+            />
+            <span class="text-13-regular text-text-weakest" style={{ "line-height": 1, "margin-bottom": 0 }}>
+              {language.t("project.remote.opening")}
+            </span>
+            <SplashRing class="mt-[22px]" />
+          </div>
+        </Portal>
       </Show>
       <Titlebar />
       <div class="flex-1 min-h-0 min-w-0 flex">

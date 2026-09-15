@@ -7,7 +7,7 @@ import { MarkedProvider } from "@duoduo-ai/ui/context/marked"
 import { File } from "@duoduo-ai/ui/file"
 import { Font } from "@duoduo-ai/ui/font"
 import { logFrontendError } from "@/utils/frontend-logger"
-import { Splash } from "@duoduo-ai/ui/logo"
+import { Splash, SplashRing } from "@duoduo-ai/ui/logo"
 import { ThemeProvider } from "@duoduo-ai/ui/theme/context"
 import { MetaProvider } from "@solidjs/meta"
 import { type BaseRouterProps, Navigate, Route, Router, useNavigate, useParams } from "@solidjs/router"
@@ -24,11 +24,12 @@ import {
   type JSX,
   lazy,
   onCleanup,
+  onMount,
   type ParentProps,
   Show,
   Suspense,
 } from "solid-js"
-import { Dynamic } from "solid-js/web"
+import { Dynamic, Portal } from "solid-js/web"
 import { CommandProvider } from "@/context/command"
 import { CommentsProvider } from "@/context/comments"
 import { FileProvider } from "@/context/file"
@@ -62,10 +63,29 @@ const Session = lazy(loadSession)
 const Loading = () => {
   const language = useLanguage()
   return (
-    <div class="size-full bg-background-base flex flex-col items-center justify-center overflow-hidden">
-      <Splash />
-      <div class="text-13-regular text-text-weakest mt-5">{language.t("ui.app.loading")}</div>
-    </div>
+    <Portal>
+      <div class="fixed inset-0 z-[9998] bg-background-base flex flex-col items-center justify-center overflow-hidden">
+        {/* Mirror packages/desktop/index.html splash exactly (logo margins,
+            status line-height:1, image width attr for stable layout) so the
+            logo lands on the same spot as the boot splash with no jump. */}
+        <img
+          src="/logo-2000.png"
+          alt="DuoDuo"
+          width="240"
+          style={{
+            width: "40%",
+            "max-width": "240px",
+            height: "auto",
+            "margin-bottom": "28px",
+            "object-fit": "contain",
+          }}
+        />
+        <span class="text-13-regular text-text-weakest" style={{ "line-height": 1, "margin-bottom": 0 }}>
+          {language.t("ui.app.loading")}
+        </span>
+        <SplashRing class="mt-[22px]" />
+      </div>
+    </Portal>
   )
 }
 
@@ -182,13 +202,30 @@ function SessionFocusNavigator() {
 }
 
 function RouterRoot(props: ParentProps<{ appChildren?: JSX.Element }>) {
+  // On F5 the cached session chunk resolves within a frame, so the Suspense
+  // fallback never paints. Keep a boot-stage loading screen visible for a
+  // minimum time after mount so the "project loading" page always shows
+  // between the boot splash and the editor. Opening projects later is still
+  // handled by the Suspense fallback below.
+  const [booting, setBooting] = createSignal(true)
+  onMount(() => {
+    const t = setTimeout(() => setBooting(false), 600)
+    onCleanup(() => clearTimeout(t))
+  })
   return (
     <AppShellProviders>
       <SessionFocusNavigator />
+      {/* The Portal-based Loading covers the full viewport (centered on the
+          window, matching the boot splash). The Suspense fallback tracks both
+          the lazy session chunk and route-level resources, so it shows while
+          opening a project and during initial startup. */}
       <Suspense fallback={<Loading />}>
         {props.appChildren}
         {props.children}
       </Suspense>
+      <Show when={booting()}>
+        <Loading />
+      </Show>
     </AppShellProviders>
   )
 }

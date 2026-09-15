@@ -17,6 +17,7 @@
  * All other `#` lines (comments) are stripped from the response.
  */
 import { existsSync, readFileSync } from "node:fs"
+import { createServer, type Server } from "node:http"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -181,45 +182,90 @@ function countToolCalls(body: { messages?: Array<Record<string, unknown>> }): { 
 
 export async function startMockLLM(port = 4097): Promise<MockLLMServer> {
   const calls: MockLLMCall[] = []
-  const server = Bun.serve({
-    port,
-    hostname: "127.0.0.1",
-    async fetch(req) {
-      const url = new URL(req.url)
 
-      // Health check
-      if (url.pathname === "/health") {
-        return new Response("ok", { status: 200 })
-      }
+  // fetch-style handler (Request/Response), shared by the node:http bridge below.
+  // Must run under BOTH Bun (dev-server wrapper) and Node (Playwright test runner
+  // imports this file directly in run-loop specs — Bun is not defined under Node).
+  async function handle(req: Request): Promise<Response> {
+    const url = new URL(req.url)
 
-      // Models list (some clients probe this)
-      if (url.pathname === "/v1/models") {
-        const ids = ["success-text-short", "success-text-multi-chunk", "success-text-markdown"]
-        return Response.json({
-          object: "list",
-          data: ids.map((id) => ({ id, object: "model", created: 1700000000, owned_by: "mock" })),
+    // Health check
+    if (url.pathname === "/health") {
+      return new Response("ok", { status: 200 })
+    }
+
+    // Models list (some clients probe this)
+    if (url.pathname === "/v1/models") {
+      const ids = ["success-text-short", "success-text-multi-chunk", "success-text-markdown"]
+      return Response.json({
+        object: "list",
+        data: ids.map((id) => ({ id, object: "model", created: 1700000000, owned_by: "mock" })),
+      })
+    }
+
+    // Chat completions
+    if (url.pathname.startsWith("/v1/chat/completions")) {
+      const scenario = await extractScenario(req)
+      const body = await req.clone().json().catch(() => ({})) as { model?: string; messages?: Array<Record<string, unknown>> }
+      const { count, tools } = countToolCalls(body)
+      calls.push({ scenario, model: body.model ?? null, toolCallCount: count, tools, at: Date.now() })
+      return buildResponse(scenario)
+    }
+
+    return new Response("not found", { status: 404 })
+  }
+
+  const server: Server = createServer((nodeReq, nodeRes) => {
+    const chunks: Buffer[] = []
+    nodeReq.on("data", (c: Buffer) => chunks.push(c))
+    nodeReq.on("error", () => {})
+    nodeReq.on("end", async () => {
+      try {
+        const host = nodeReq.headers.host ?? "127.0.0.1"
+        const req = new Request(`http://${host}${nodeReq.url ?? "/"}`, {
+          method: nodeReq.method,
+          headers: nodeReq.headers as Record<string, string>,
+          body: nodeReq.method === "GET" || nodeReq.method === "HEAD" ? undefined : Buffer.concat(chunks),
         })
+        const res = await handle(req)
+        const headers: Record<string, string> = {}
+        res.headers.forEach((v, k) => {
+          headers[k] = v
+        })
+        nodeRes.writeHead(res.status, headers)
+        if (res.body) {
+          const reader = res.body.getReader()
+          for (;;) {
+            const { done, value } = await reader.next()
+            if (done) break
+            nodeRes.write(value)
+          }
+        }
+        nodeRes.end()
+      } catch (err) {
+        try {
+          nodeRes.writeHead(500, { "content-type": "text/plain" })
+          nodeRes.end(String(err))
+        } catch {
+          // socket already gone
+        }
       }
+    })
+  })
 
-      // Chat completions
-      if (url.pathname.startsWith("/v1/chat/completions")) {
-        const scenario = await extractScenario(req)
-        const body = await req.clone().json().catch(() => ({})) as { model?: string; messages?: Array<Record<string, unknown>> }
-        const { count, tools } = countToolCalls(body)
-        calls.push({ scenario, model: body.model ?? null, toolCallCount: count, tools, at: Date.now() })
-        return buildResponse(scenario)
-      }
-
-      return new Response("not found", { status: 404 })
-    },
+  const listenPort = await new Promise<number>((resolvePort, reject) => {
+    server.once("error", reject)
+    server.listen(port, "127.0.0.1", () => {
+      resolvePort((server.address() as { port: number }).port)
+    })
   })
 
   return {
-    port: server.port,
-    url: `http://127.0.0.1:${server.port}`,
+    port: listenPort,
+    url: `http://127.0.0.1:${listenPort}`,
     calls,
     async stop() {
-      await server.stop(true)
+      await new Promise<void>((resolveStop) => server.close(() => resolveStop()))
     },
   }
 }

@@ -25,10 +25,12 @@ test.describe("Session Management", () => {
     await expect(page.locator('[data-slot="session-turn-list"]')).toBeAttached()
   })
 
-  test("session route redirects to default session", { tag: ["@core"] }, async ({ page }) => {
+  test("project root loads app shell without forced redirect", { tag: ["@core"] }, async ({ page }) => {
     await gotoProject(page)
 
-    expect(page.url()).toContain("/session")
+    // 产品行为：项目根路径停留在项目页，不再强制重定向到 /session
+    expect(page.url()).not.toContain("/session")
+    await expect(page.locator('[data-component="sidebar-rail"]').first()).toBeVisible()
   })
 
   test("session page renders prompt input", { tag: ["@core"] }, async ({ page }) => {

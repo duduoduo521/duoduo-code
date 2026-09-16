@@ -274,10 +274,20 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # bun compile 下载目标平台运行时偶发 "download may be incomplete"（网络瞬断），重试 3 次
       - name: Build duoduocode-cli
         working-directory: packages/duoduo
+        shell: bash
         run: |
-          bun run script/build.ts --single --baseline
+          for attempt in 1 2 3; do
+            echo "=== build attempt ${attempt} ==="
+            if bun run script/build.ts --single --baseline; then
+              exit 0
+            fi
+            echo "attempt ${attempt} failed, retrying in 20s..."
+            sleep 20
+          done
+          exit 1
         env:
           BUN_DEFAULT_TARGET: ${{ matrix.bunTarget }}
 

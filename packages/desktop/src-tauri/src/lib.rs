@@ -1030,11 +1030,12 @@ fn open_path(_app: AppHandle, path: String, app_name: Option<String>) -> Result<
         #[cfg(target_os = "linux")]
         {
             // Try common terminal emulators
+            let xterm_cmd = format!("cd '{}' && bash", path);
             let terminals: [(&str, Vec<&str>); 4] = [
                 ("gnome-terminal", vec!["--working-directory", &path]),
                 ("konsole", vec!["--workdir", &path]),
                 ("xfce4-terminal", vec!["--working-directory", &path]),
-                ("xterm", vec!["-e", "bash", "-c", &format!("cd '{}' && bash", path)]),
+                ("xterm", vec!["-e", "bash", "-c", xterm_cmd.as_str()]),
             ];
             for (term, args) in &terminals {
                 if std::path::Path::new(&format!("/usr/bin/{}", term)).exists() {

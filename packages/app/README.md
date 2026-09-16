@@ -1,6 +1,6 @@
 ## Usage
 
-This is the web frontend of DuoDuo IDE, built with SolidJS and Vite. The project root is managed with [Bun](https://bun.sh); dependencies are installed with `bun install` from the repository root.
+This is the web frontend of DuoDuo Code, built with SolidJS and Vite. The project root is managed with [Bun](https://bun.sh); dependencies are installed with `bun install` from the repository root.
 
 Questions or feedback? Reach us at **duoduo@dd322.cn** or visit [www.dd322.cn/code](https://www.dd322.cn/code).
 

@@ -1,10 +1,10 @@
 # Security Policy
 
-This document describes the security model of DuoDuo IDE, what protections are
+This document describes the security model of DuoDuo Code, what protections are
 enforced, and — just as importantly — what is **not** guaranteed. Read it before
 running the agent against code you do not fully trust.
 
-DuoDuo IDE is an AI coding agent. By design it can read files, execute shell
+DuoDuo Code is an AI coding agent. By design it can read files, execute shell
 commands, install extensions, and call external services **using the privileges
 of the account that runs it**. There is no built-in OS-level sandbox. Treat the
 agent as having the same access as your own terminal in the project directory.
@@ -112,7 +112,7 @@ cloud credentials) and no network egress to internal systems.
 
 ## 3. Prompt Injection & Untrusted Content
 
-DuoDuo IDE injects content from several external sources into the LLM context:
+DuoDuo Code injects content from several external sources into the LLM context:
 installed gear/skill instructions, tool results (web pages, files, API responses),
 and strategy additions. Any of these could contain text attempting to manipulate
 the agent ("ignore previous instructions", "send the API key to …").

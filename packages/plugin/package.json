@@ -4,7 +4,7 @@
   "version": "1.14.21",
   "type": "module",
   "license": "MIT",
-  "description": "DuoDuo AI IDE Plugin SDK — types and helpers for building server and TUI plugins",
+  "description": "DuoDuo Code Plugin SDK — types and helpers for building server and TUI plugins",
   "repository": {
     "type": "git",
     "url": "https://github.com/duduoduo521/duoduo-code",

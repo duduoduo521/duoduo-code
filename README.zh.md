@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://www.dd322.cn/code">
-    <img src="packages/app/public/logo-2000.png" alt="DuoDuo IDE logo" width="200">
+    <img src="packages/app/public/logo-2000.png" alt="DuoDuo Code logo" width="200">
   </a>
 </p>
 <p align="center">开源的、不绑定供应商的 AI 编程 Agent。</p>
@@ -16,7 +16,7 @@
 
 ---
 
-## 为什么选择 DuoDuo IDE？
+## 为什么选择 DuoDuo Code？
 
 - **不绑定供应商** — 不依赖任何单一 LLM 供应商。可使用 OpenAI、Anthropic、Google、本地模型等 20+ 供应商。
 - **开源（MIT）** — 完全透明，社区驱动开发。
@@ -135,7 +135,7 @@
 
 ### 插件系统
 
-通过自定义功能扩展 DuoDuo IDE：
+通过自定义功能扩展 DuoDuo Code：
 
 - **自定义工具** — 通过 `@duoduo-ai/plugin` SDK 注册新工具
 - **自定义 Agent** — 定义具有自定义提示和权限的 Agent
@@ -186,7 +186,7 @@ export default tool({
 
 ### 安全
 
-DuoDuo IDE 以启动它的账户权限运行，**没有被 OS 级沙箱包裹**。Agent 可以读取文件、执行 shell 命令、安装扩展、调用外部服务。在用于不可信代码之前，请先阅读 [SECURITY.md](./SECURITY.md) 了解完整安全模型与已知边界。
+DuoDuo Code 以启动它的账户权限运行，**没有被 OS 级沙箱包裹**。Agent 可以读取文件、执行 shell 命令、安装扩展、调用外部服务。在用于不可信代码之前，请先阅读 [SECURITY.md](./SECURITY.md) 了解完整安全模型与已知边界。
 
 已实施的防护：
 
@@ -248,7 +248,7 @@ DUODUO_BIN_DIR=$HOME/.local/bin curl -fsSL https://www.dd322.cn/update/code/cli/
 
 ## 配置
 
-DuoDuo IDE 使用 `duoduo.jsonc` 配置文件。可在项目根目录或全局配置目录中创建。
+DuoDuo Code 使用 `duoduo.jsonc` 配置文件。可在项目根目录或全局配置目录中创建。
 
 ### 模型配置
 
@@ -374,7 +374,7 @@ DuoDuo IDE 使用 `duoduo.jsonc` 配置文件。可在项目根目录或全局�
 
 ## 支持的模型
 
-DuoDuo IDE 支持所有已连接供应商的模型。模型从各供应商自身的模型目录自动发现，可按供应商过滤：
+DuoDuo Code 支持所有已连接供应商的模型。模型从各供应商自身的模型目录自动发现，可按供应商过滤：
 
 | 供应商 | 示例模型 |
 |--------|----------|
@@ -508,13 +508,13 @@ bun run --cwd packages/desktop tauri build
 本项目基于 [opencode](https://github.com/anomalyco/opencode) 二次开发。
 
 - opencode — Copyright (c) 2025 opencode — MIT License
-- DuoDuo AI IDE — Copyright (c) 2026 DuoDuo — [MIT](./LICENSE)
+- DuoDuo Code — Copyright (c) 2026 DuoDuo — [MIT](./LICENSE)
 
 第三方开源组件的完整许可证声明在构建时由 `scripts/generate-third-party-licenses.ts` 自动生成，随每个发行包以 `ThirdPartyLicenses.txt` 提供；另见 [NOTICE](./NOTICE)。
 
 ## 免责声明
 
-DuoDuo IDE 是 AI 辅助编程工具，能够代您读取、写入并执行代码。其输出由机器学习模型生成，可能存在错误、不完整、安全隐患或与项目许可证冲突的情况。**请在应用任何改动前自行审查。** 您需对运行的所有命令、被修改的文件、产生的费用以及由此带来的任何后果独自负责。本软件按"现状"提供，不附带任何担保（详见 [LICENSE](./LICENSE) 与 [SECURITY.md](./SECURITY.md)）。
+DuoDuo Code 是 AI 辅助编程工具，能够代您读取、写入并执行代码。其输出由机器学习模型生成，可能存在错误、不完整、安全隐患或与项目许可证冲突的情况。**请在应用任何改动前自行审查。** 您需对运行的所有命令、被修改的文件、产生的费用以及由此带来的任何后果独自负责。本软件按"现状"提供，不附带任何担保（详见 [LICENSE](./LICENSE) 与 [SECURITY.md](./SECURITY.md)）。
 
 ## Logo 版权声明
 

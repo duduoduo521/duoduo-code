@@ -1,7 +1,7 @@
 {
   "name": "@duoduo-ai/app",
   "version": "1.14.21",
-  "description": "DuoDuo AI IDE application",
+  "description": "DuoDuo Code application",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",

@@ -743,7 +743,7 @@ async function writeTxt(
     groups.get(k)!.push(p)
   }
 
-  let out = `${"=".repeat(80)}\nDuoDuo AI IDE - Third Party Licenses\n${"=".repeat(80)}\n\n`
+  let out = `${"=".repeat(80)}\nDuoDuo Code - Third Party Licenses\n${"=".repeat(80)}\n\n`
   out += `Based on opencode (MIT License).\n`
   out += `Copyright (c) 2025 opencode\nCopyright (c) 2026 DuoDuo\n\n`
   out += `Auto-generated: ${ts}\n\n`
@@ -987,7 +987,7 @@ ${htmlTable(ps, "Cargo")
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>开源许可证声明 / Open Source Licenses - DuoDuo AI IDE</title>
+    <title>开源许可证声明 / Open Source Licenses - DuoDuo Code</title>
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
       body {
@@ -1041,7 +1041,7 @@ ${htmlTable(ps, "Cargo")
     <div class="container">
       <header>
         <h1>Open Source Licenses / 开源许可证声明</h1>
-        <p class="subtitle">DuoDuo AI IDE 使用的第三方开源组件</p>
+        <p class="subtitle">DuoDuo Code 使用的第三方开源组件</p>
         <p class="based-on">基于 opencode 二次开发 — Copyright (c) 2025 opencode, Copyright (c) 2026 DuoDuo — MIT License</p>
         <div class="stats">
           <div class="stat"><div class="stat-num">${npmCount + cargoCount}</div><div class="stat-label">总依赖</div></div>
@@ -1096,7 +1096,7 @@ System Fonts (UI fallback)
       <footer>
         <p>此页面由 <code>scripts/generate-third-party-licenses.ts</code> 自动生成</p>
         <p>生成时间: ${ts}</p>
-        <p style="margin-top:8px"><a href="https://github.com/duduoduo521/duoduo-code">DuoDuo AI IDE</a> — MIT License</p>
+        <p style="margin-top:8px"><a href="https://github.com/duduoduo521/duoduo-code">DuoDuo Code</a> — MIT License</p>
       </footer>
     </div>
   </body>

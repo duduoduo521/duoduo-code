@@ -959,10 +959,10 @@ fn open_path(_app: AppHandle, path: String, app_name: Option<String>) -> Result<
                     "string:",
                 ])
                 .status();
-            if let Ok(status) = dbus_result {
-                if status.success() {
-                    return Ok(());
-                }
+            if let Ok(status) = dbus_result
+                && status.success()
+            {
+                return Ok(());
             }
             // Fallback: just open the parent directory with xdg-open
             let path_obj = std::path::Path::new(&path);
@@ -1094,11 +1094,11 @@ fn get_display_backend() -> Option<LinuxDisplayBackend> {
     #[cfg(target_os = "linux")]
     {
         let prefer = linux_display::read_wayland().unwrap_or(false);
-        return Some(if prefer {
+        Some(if prefer {
             LinuxDisplayBackend::Wayland
         } else {
             LinuxDisplayBackend::Auto
-        });
+        })
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -1111,7 +1111,7 @@ fn set_display_backend(_app: AppHandle, _backend: LinuxDisplayBackend) -> Result
     #[cfg(target_os = "linux")]
     {
         let prefer = matches!(_backend, LinuxDisplayBackend::Wayland);
-        return linux_display::write_wayland(&_app, prefer);
+        linux_display::write_wayland(&_app, prefer)
     }
 
     #[cfg(not(target_os = "linux"))]

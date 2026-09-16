@@ -275,7 +275,42 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # bun compile 下载目标平台运行时偶发 "download may be incomplete"（网络瞬断），重试 3 次
+      # bun compile 需要目标平台运行时；其内置下载器在 CI 上偶发
+      # "download may be incomplete" 且重试无效。改为从 GitHub release
+      # 显式预取（curl --retry）并按 bun 缓存布局落位，构建即免下载。
+      - name: Pre-warm bun compile runtime
+        shell: bash
+        run: |
+          set -e
+          cache="$HOME/.bun/install/cache"
+          mkdir -p "$cache"
+          # bunTarget 形如 bun-darwin-arm64 / bun-windows-x64-baseline；
+          # release 资产与 bun 缓存命名用 aarch64，先归一化
+          norm=$(echo "${{ matrix.bunTarget }}" | sed 's/arm64/aarch64/')
+          entry="$cache/$norm-v${{ env.BUN_VERSION }}"
+          if [ -f "$entry" ]; then echo "runtime already cached: $entry"; exit 0; fi
+          case "$norm" in
+            bun-darwin-aarch64*)  zip="bun-darwin-aarch64.zip" ;;
+            bun-darwin-x64*)      zip="bun-darwin-x64-baseline.zip" ;;
+            bun-windows-aarch64*) zip="bun-windows-aarch64.zip" ;;
+            bun-windows-x64*)     zip="bun-windows-x64-baseline.zip" ;;
+            bun-linux-aarch64*)   zip="bun-linux-aarch64.zip" ;;
+            bun-linux-x64*)       zip="bun-linux-x64-baseline.zip" ;;
+            *) echo "unknown target: $norm"; exit 1 ;;
+          esac
+          curl -fsSL --retry 5 --retry-delay 10 -o /tmp/runtime.zip \
+            "https://github.com/oven-sh/bun/releases/download/bun-v${{ env.BUN_VERSION }}/$zip"
+          rm -rf /tmp/bun-runtime && mkdir -p /tmp/bun-runtime
+          if command -v unzip >/dev/null 2>&1; then
+            unzip -q /tmp/runtime.zip -d /tmp/bun-runtime
+          else
+            tar -xf /tmp/runtime.zip -C /tmp/bun-runtime
+          fi
+          bin=$(find /tmp/bun-runtime -type f \( -name bun -o -name bun.exe \) | head -1)
+          cp "$bin" "$entry"
+          echo "pre-warmed $entry ($zip)"
+
+      # 保险重试：预取失败或其它瞬时问题时最多再试 3 次
       - name: Build duoduocode-cli
         working-directory: packages/duoduo
         shell: bash

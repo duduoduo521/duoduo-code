@@ -133,12 +133,14 @@ jobs:
             . -> target
 
       # tauri build script 在 cargo check 阶段就会校验 externalBin/resources 存在性，
-      # 但 sidecar 二进制与 ThirdPartyLicenses.txt 是后续 job 的产物，此处先占位。
-      - name: Create placeholder sidecars & generated resources
+      # 但 sidecar 二进制与打包资源（LICENSE / ThirdPartyLicenses.txt，均由
+      # predev/ensure-license-resources 生成）是后续 job 的产物，此处先占位。
+      - name: Create placeholder sidecars & bundle resources
         run: |
           mkdir -p packages/desktop/src-tauri/sidecars
           touch packages/desktop/src-tauri/sidecars/duoduocode-cli-x86_64-unknown-linux-gnu
           touch packages/desktop/src-tauri/sidecars/duo-smart-layer-x86_64-unknown-linux-gnu
+          cp LICENSE packages/desktop/src-tauri/LICENSE
           touch packages/desktop/src-tauri/ThirdPartyLicenses.txt
 
       - name: Install system dependencies

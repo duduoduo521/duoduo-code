@@ -31,7 +31,9 @@ export async function gotoProject(page: Page) {
   const info = getRuntimeInfo()
   await page.goto(`/${info.projectPathEncoded}`)
   await page.waitForLoadState("domcontentloaded")
-  await expect(page.locator('[data-component="sidebar-rail"]').first()).toBeVisible({ timeout: 10_000 })
+  await expect(page.locator('[data-component="sidebar-rail"]').first()).toBeVisible({
+    timeout: process.env.CI ? 30_000 : 10_000,
+  })
 }
 
 /**
@@ -43,7 +45,10 @@ export async function gotoSession(page: Page, sessionId?: string) {
   const base = `/${info.projectPathEncoded}/session`
   await page.goto(sessionId ? `${base}/${sessionId}` : base)
   await page.waitForLoadState("domcontentloaded")
-  await expect(page.locator('[data-component="session-prompt-dock"]').first()).toBeVisible({ timeout: 10_000 })
+  // CI 2 vCPU runner 上引导可达 20s+，10s 会造成大批 flaky（实测 windows 30 flaky）
+  await expect(page.locator('[data-component="session-prompt-dock"]').first()).toBeVisible({
+    timeout: process.env.CI ? 30_000 : 10_000,
+  })
 }
 
 /**
@@ -52,7 +57,9 @@ export async function gotoSession(page: Page, sessionId?: string) {
 export async function gotoHome(page: Page) {
   await page.goto("/")
   await page.waitForLoadState("domcontentloaded")
-  await expect(page.locator('[data-component="sidebar-rail"]').first()).toBeVisible({ timeout: 10_000 })
+  await expect(page.locator('[data-component="sidebar-rail"]').first()).toBeVisible({
+    timeout: process.env.CI ? 30_000 : 10_000,
+  })
 }
 
 /**

@@ -11,6 +11,19 @@ import { createSharedSession, navigateToSharedSession, cleanupSharedSession } fr
 test.describe("Status Popover", () => {
   let sessionId: string
 
+  /** 点击 status 按钮并确保 popover 打开（Kobalte portal 渲染，偶发首击不响应则重试） */
+  async function openPopover(page: import("@playwright/test").Page) {
+    const statusButton = page.locator("button[aria-label*='status' i]")
+    await expect(statusButton.first()).toBeVisible({ timeout: 5_000 })
+    const popover = page.locator('[data-component="popover-content"]')
+    for (let i = 0; i < 3 && !(await popover.isVisible().catch(() => false)); i++) {
+      await statusButton.first().click({ force: true }).catch(() => {})
+      await page.waitForTimeout(400)
+    }
+    await expect(popover.first()).toBeVisible({ timeout: 5_000 })
+    return popover
+  }
+
   test.beforeAll(async () => {
     sessionId = await createSharedSession("Status Popover")
   })
@@ -28,23 +41,11 @@ test.describe("Status Popover", () => {
   })
 
   test("clicking opens status popover", { tag: ["@core"] }, async ({ page }) => {
-    const statusButton = page.locator("button[aria-label*='status' i]")
-    await expect(statusButton.first()).toBeVisible({ timeout: 5_000 })
-    await statusButton.first().click({ force: true })
-
-    // A Kobalte Popover should appear — it may render in a portal
-    const popover = page.locator('[data-component="popover-content"]')
-    await expect(popover.first()).toBeVisible({ timeout: 5_000 })
+    await openPopover(page)
   })
 
   test("popover shows content", { tag: ["@core"] }, async ({ page }) => {
-    const statusButton = page.locator("button[aria-label*='status' i]")
-    await expect(statusButton.first()).toBeVisible({ timeout: 5_000 })
-    await statusButton.first().click({ force: true })
-
-    // The popover should show content
-    const popover = page.locator('[data-component="popover-content"]')
-    await expect(popover.first()).toBeVisible({ timeout: 5_000 })
+    const popover = await openPopover(page)
 
     // Wait for popover content to render — it may load asynchronously
     await page.waitForTimeout(500)
@@ -72,12 +73,7 @@ test.describe("Status Popover", () => {
   })
 
   test("clicking outside closes popover", { tag: ["@core"] }, async ({ page }) => {
-    const statusButton = page.locator("button[aria-label*='status' i]")
-    await expect(statusButton.first()).toBeVisible({ timeout: 5_000 })
-    await statusButton.first().click({ force: true })
-
-    const popover = page.locator('[data-component="popover-content"]')
-    await expect(popover.first()).toBeVisible({ timeout: 3_000 })
+    const popover = await openPopover(page)
 
     // Click outside to dismiss — click on the main content area
     const mainArea = page.locator("main, [data-slot='session-turn-list']")

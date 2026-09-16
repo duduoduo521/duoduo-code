@@ -170,7 +170,7 @@ jobs:
           - target: aarch64-apple-darwin
             runner: macos-latest
           - target: x86_64-apple-darwin
-            runner: macos-13
+            runner: macos-latest
           - target: x86_64-pc-windows-msvc
             runner: windows-latest
           - target: aarch64-pc-windows-msvc
@@ -237,27 +237,29 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - ocBinary: duoduocode-darwin-arm64
+          # ocBinary 必须与 build.ts 的 dist 目录名一致：
+          # duoduo-<os>-<arch>[-baseline]（os: win32 写作 windows）
+          - ocBinary: duoduo-darwin-arm64
             bunTarget: bun-darwin-arm64
             rustTarget: aarch64-apple-darwin
             runner: macos-latest
-          - ocBinary: duoduocode-darwin-x64-baseline
+          - ocBinary: duoduo-darwin-x64-baseline
             bunTarget: bun-darwin-x64-baseline
             rustTarget: x86_64-apple-darwin
-            runner: macos-13
-          - ocBinary: duoduocode-windows-arm64
+            runner: macos-latest
+          - ocBinary: duoduo-windows-arm64
             bunTarget: bun-windows-arm64
             rustTarget: aarch64-pc-windows-msvc
             runner: windows-latest
-          - ocBinary: duoduocode-windows-x64-baseline
+          - ocBinary: duoduo-windows-x64-baseline
             bunTarget: bun-windows-x64-baseline
             rustTarget: x86_64-pc-windows-msvc
             runner: windows-latest
-          - ocBinary: duoduocode-linux-x64-baseline
+          - ocBinary: duoduo-linux-x64-baseline
             bunTarget: bun-linux-x64-baseline
             rustTarget: x86_64-unknown-linux-gnu
             runner: ubuntu-latest
-          - ocBinary: duoduocode-linux-arm64
+          - ocBinary: duoduo-linux-arm64
             bunTarget: bun-linux-arm64
             rustTarget: aarch64-unknown-linux-gnu
             runner: ubuntu-latest
@@ -317,15 +319,13 @@ jobs:
         run: |
           for attempt in 1 2 3; do
             echo "=== build attempt ${attempt} ==="
-            if bun run script/build.ts --single --baseline; then
+            if bun run script/build.ts --target ${{ matrix.bunTarget }}; then
               exit 0
             fi
             echo "attempt ${attempt} failed, retrying in 20s..."
             sleep 20
           done
           exit 1
-        env:
-          BUN_DEFAULT_TARGET: ${{ matrix.bunTarget }}
 
       - name: Rename and stage sidecar (Unix)
         if: runner.os != 'Windows'

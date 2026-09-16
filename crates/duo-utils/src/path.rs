@@ -96,10 +96,10 @@ const fn case_insensitive_by_platform() -> bool {
 /// write access to the project, and left a stray `duoduo_fs_probe_*` file in
 /// the repository if the process died between create and delete.
 fn volume_is_case_insensitive(dir: &Path) -> bool {
-    if let Ok(cache) = probe_cache().lock() {
-        if let Some(hit) = cache.get(dir) {
-            return *hit;
-        }
+    if let Ok(cache) = probe_cache().lock()
+        && let Some(hit) = cache.get(dir)
+    {
+        return *hit;
     }
     let result = probe_case_insensitive(dir);
     if let Ok(mut cache) = probe_cache().lock() {

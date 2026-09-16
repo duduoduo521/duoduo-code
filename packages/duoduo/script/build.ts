@@ -50,6 +50,11 @@ console.log(`Loaded ${migrations.length} migrations`)
 const singleFlag = process.argv.includes("--single")
 const baselineFlag = process.argv.includes("--baseline")
 const skipInstall = process.argv.includes("--skip-install")
+/** 只构建与 --target <bunTarget> 匹配的单个目标（CI 矩阵交叉编译用）。 */
+const targetFlag = (() => {
+  const i = process.argv.indexOf("--target")
+  return i > 0 && process.argv[i + 1] ? process.argv[i + 1] : undefined
+})()
 const plugin = createSolidTransformPlugin()
 const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui")
 
@@ -141,26 +146,38 @@ const allTargets: {
   },
 ]
 
-const targets = singleFlag
-  ? allTargets.filter((item) => {
-      if (item.os !== process.platform || item.arch !== process.arch) {
-        return false
-      }
+const bunTargetOf = (item: (typeof allTargets)[number]) =>
+  `bun-${[item.os === "win32" ? "windows" : item.os, item.arch, item.avx2 === false ? "baseline" : undefined, item.abi]
+    .filter(Boolean)
+    .join("-")}`
 
-      // When building for the current platform, prefer a single native binary by default.
-      // Baseline binaries require additional Bun artifacts and can be flaky to download.
-      if (item.avx2 === false) {
-        return baselineFlag
-      }
+const targets = targetFlag
+  ? allTargets.filter((item) => bunTargetOf(item) === targetFlag)
+  : singleFlag
+    ? allTargets.filter((item) => {
+        if (item.os !== process.platform || item.arch !== process.arch) {
+          return false
+        }
 
-      // also skip abi-specific builds for the same reason
-      if (item.abi !== undefined) {
-        return false
-      }
+        // When building for the current platform, prefer a single native binary by default.
+        // Baseline binaries require additional Bun artifacts and can be flaky to download.
+        if (item.avx2 === false) {
+          return baselineFlag
+        }
 
-      return true
-    })
-  : allTargets
+        // also skip abi-specific builds for the same reason
+        if (item.abi !== undefined) {
+          return false
+        }
+
+        return true
+      })
+    : allTargets
+
+if (targetFlag && targets.length === 0) {
+  // 用 throw 而非 console.error + exit：bun 对后者的 stderr 有丢缓冲问题
+  throw new Error(`no target matches --target ${targetFlag}`)
+}
 
 await $`rm -rf dist`
 

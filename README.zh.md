@@ -3,7 +3,7 @@
     <img src="packages/app/public/logo-2000.png" alt="DuoDuo Code logo" width="200">
   </a>
 </p>
-<p align="center">开源的、不绑定供应商的 AI 编程 Agent。</p>
+<p align="center">会规划、会动手、会自查的开源 AI 编程 Agent — 桌面端 / TUI / Web。</p>
 <p align="center">
   <a href="https://www.npmjs.com/package/duoduo-ai"><img alt="npm" src="https://img.shields.io/npm/v/duoduo-ai?style=flat-square" /></a>
   <a href="https://github.com/duduoduo521/duoduo-code/actions/workflows/build.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/duduoduo521/duoduo-code/build.yml?style=flat-square&branch=main" /></a>
@@ -16,349 +16,176 @@
 
 ---
 
-## 为什么选择 DuoDuo Code？
+DuoDuo Code 是一个以 Agent 为中心的编程工具：你描述目标，它拆解任务、动手改代码、跑命令、验证结果，再向你汇报。围绕这条主线，它内置了一整套自研机制 — Rust 编写的智能层、代码库知识图谱、跨会话的项目记忆、多 Agent 并行调度，以及可一键安装技能与 MCP 服务器的智械市场。
 
-- **不绑定供应商** — 不依赖任何单一 LLM 供应商。可使用 OpenAI、Anthropic、Google、本地模型等 20+ 供应商。
-- **开源（MIT）** — 完全透明，社区驱动开发。
-- **客户端/服务器架构** — 服务器可运行于任何位置，通过 TUI、Web、桌面或移动端驱动。
-- **内置 LSP 支持** — 开箱即用的诊断、补全和跳转定义。
-- **终端优先** — 由 Neovim 用户打造，持续探索终端的极限。
+## 核心机制
 
----
+### 四阶段任务流水线
 
-## 功能特性
+每个任务由 **调查 → 规划 → 执行 → 验证** 四个阶段驱动。主 Agent 通过 `proceed_to_*` 工具在阶段间显式推进，每个阶段有独立的上下文装配策略与产出物，而不是把所有事情塞进一整段对话。
 
-### 多模型支持
+### 多 Agent 并行与共享黑板
 
-连接任意 LLM 供应商，自由切换，无供应商锁定。
+任务可拆时，主 Agent 会把子任务分派给多个子 Agent 并行处理（设置面板可开启「并行多智能体分发」）。并行结果按冲突分组收敛：互不冲突的并行执行，存在冲突的串行合并。子 Agent 之间通过**共享黑板**（`blackboard_*` 工具族：读 / 写 / 检索 / 提交草稿 / 提交定稿 / 批注）交换中间结论，而不是各自猜测对方做了什么。
 
-| 供应商 | 供应商 | 供应商 |
-|--------|--------|--------|
-| OpenAI | Anthropic | Google |
-| xAI | Groq | Mistral |
-| Cohere | Amazon Bedrock | Azure |
-| DeepInfra | Together | Perplexity |
-| Vercel | 阿里云通义千问 (Qwen) | OpenRouter |
-| GitLab | Venice | Cloudflare AI Gateway |
-| 讯飞星火 | GitHub Copilot | SAP AI Core |
+### 代码库知识图谱
 
-### Agent 系统
+项目会被增量索引成一张**变量级粒度的知识图谱**（谁定义、谁读写、归属哪个函数），文件变更时按需增量重建，不做全量重扫。Agent 在对话中通过 `graph_query` 和 `symbol_search` 直接查询图谱与符号，找代码不再只靠全文搜索。桌面端提供**图谱看板**，可可视化浏览项目结构并一键重建索引。
 
-| Agent | 模式 | 说明 |
-|-------|------|------|
-| **build** | 主 Agent | 默认全权限 Agent，用于开发工作 |
-| **plan** | 主 Agent | 只读 Agent，用于代码分析与探索 |
-| **general** | 子 Agent | 复杂搜索和多步任务（`@general`） |
-| **explore** | 子 Agent | 快速代码库探索和搜索（`@explore`） |
-| **review** | 子 Agent | 代码审查，生成行内评论和建议 |
-| **compaction** | 内部 | 会话压缩，管理上下文窗口 |
-| **title** | 内部 | 自动生成会话标题 |
-| **summary** | 内部 | 进度摘要生成 |
-| 自定义 | 用户定义 | 通过配置创建自定义 Agent |
+### 项目记忆
 
-使用 `Tab` 键在主 Agent 之间切换。可在配置中定义自定义 Agent。
+重要结论会被沉淀为项目记忆，跨会话持久保存。新会话里 Agent 通过 `recall_memory` 取回此前的决策与上下文，不必每次从头认识你的项目。
 
-### 工具系统
+### 编辑质量
 
-| 工具 | 说明 |
+- **Cascade QA** — 多阶段质量管线，以真实 LSP 诊断为依据验证每次编辑，不合格的改动会被打回重做
+- **Super-RAG** — 结构化上下文检索，结合 AST 与图谱信号精准定位相关代码
+- **Blueprint 预算** — 复杂任务的 Token 预算管理，避免大改动中途失控
+
+### 快照与回滚
+
+每次修改前自动留存快照，出问题可整体回滚；`snapshot_query` 工具还能在快照历史中检索过往编辑，方便追溯「这行代码是谁改的、为什么改」。
+
+### 智械市场
+
+内置的扩展市场聚合两个来源：**ModelScope 技能社区**与 **MCP 服务器注册表**。
+
+- 搜索、筛选、一键安装技能（SKILL.md 驱动），安装后由 Agent 通过 `skill` 工具在对话中调用
+- 一键安装 MCP 服务器并自动写入配置，支持重新核验连接配置
+- 已安装的智械集中在设置页管理
+
+### 模型
+
+- **内置 DeepSeek** — 开箱即用，自动发现官方模型目录中的新模型，连接时即校验 API Key
+- **自定义模型** — 在设置或 `duoduo.jsonc` 中添加任意 OpenAI 兼容的自定义供应商 / 模型
+
+### 安全机制
+
+| 防护 | 说明 |
 |------|------|
-| `read` | 读取文件内容 |
-| `write` | 创建或覆盖文件 |
-| `edit` | 对现有文件进行精确编辑 |
-| `bash` | 执行 Shell 命令 |
-| `grep` | 使用正则搜索文件内容 |
-| `glob` | 按模式匹配查找文件 |
-| `webfetch` | 获取并提取网页内容 |
-| `task` | 将工作委派给子 Agent |
-| `apply_patch` | 通过统一差异格式批量应用补丁 |
-| `code_comment` | 插入行内代码审查评论 |
-| `lsp` | 基于 LSP 的诊断和操作 |
-| `question` | 向用户请求澄清 |
-| `skill` | 调用 Agent 技能 |
-| `todowrite` | 创建并跟踪结构化任务清单 |
-| `plan_exit` | 退出规划模式并开始执行 |
-| `graph_query` | 查询项目知识图谱 |
-| `symbol_search` | 代码符号语义搜索 |
-| `recall_memory` | 回忆已沉淀的项目记忆 |
-| `search_modifications` | 在代码快照历史中检索过往修改 |
-| `proceed_to_<phase>` | 推进流水线阶段（`investigate` / `plan` / `execute` / `verify`） |
-| `blackboard_*` | 多 Agent 共享黑板（读 / 写 / 检索 / 提交 / 批注） |
-| MCP 工具 | 已连接的 MCP 服务器暴露的任何工具 |
+| 权限门控 | 按工具与路径的细粒度 allow / deny / ask 审批 |
+| 危险命令检测 | Rust 静态分类器：黑名单 + 语义覆盖 + 动态命令名 fail-closed |
+| 密钥脱敏 | 工具输出中的密钥在送抵模型前被掩码 |
+| SSRF 防护 | 网页抓取 / 仓库克隆拒绝私有与回环地址，校验重定向 |
+| 路径防护 | 目录边界强制 + 敏感文件黑名单 |
+| Prompt 注入围栏 | 外部指令与工具结果包裹 XML 围栏并转义元字符 |
 
-### 代码编辑
+完整安全模型见 [SECURITY.md](./SECURITY.md)。
 
-- **智能补全** — 上下文感知的代码建议
-- **行内编辑** — 无需离开对话即可进行精确编辑
-- **多文件编辑** — 跨多个文件协调修改
-- **apply_patch** — 批量应用统一差异补丁，适用于大型变更集
-- **Cascade QA** — 多阶段质量保证流水线，根据 LSP 诊断验证编辑
+### 桌面端
 
-### 会话管理
+- 知识图谱看板：可视化浏览 + 一键重建索引
+- 多会话标签页、可拖拽面板、深浅主题、中英双语
+- 内置终端、文件树、网页预览面板
+- SSH 远程项目：SFTP 双向自动同步，状态实时可见
+- Git worktree 支持、桌面通知（按类别可配置）
 
-- **多会话并行** — 同时处理多个任务
-- **会话分叉** — 分支对话以探索不同方案
-- **会话压缩 (Compaction)** — 接近 Token 限制时自动压缩上下文
-- **上下文溢出处理** — 优雅管理上下文窗口溢出，支持自动发现限制
-- **进度摘要** — 自动生成会话进度摘要
+## Agent 与工具
 
-### 知识系统
+主 Agent 可用 `Tab` 切换，自定义 Agent 在配置中声明：
 
-由 Rust Crate 驱动，性能卓越：
+| Agent | 角色 |
+|-------|------|
+| `build` | 主 Agent，全权限开发 |
+| `plan` | 主 Agent，只读分析 |
+| `general` / `explore` / `scout` | 子 Agent，承担搜索、探索等分工 |
+| `title` / `summary` / `compaction` | 内部 Agent（标题、摘要、压缩） |
+| 自定义 | 在配置中定义提示词、权限与可用工具 |
 
-| 组件 | 说明 |
+内置工具一览（均为真实注册项）：
+
+| 类别 | 工具 |
 |------|------|
-| 知识图谱 (Knowledge Graph) | 结构化关系存储，用于代码库理解 |
-| 向量存储 (Vector Store) | 基于嵌入的语义搜索 |
-| 智能层 (Smart Layer) | 意图检测、质量评估和流水线编排 |
-| 记忆系统 (Memory) | 跨会话的持久化记忆 |
-
-### 文件树
-
-- 浏览项目文件和目录
-- 创建、删除和重命名文件/文件夹
-- 多选操作
-- 搜索和过滤
-- 拖拽排序
-
-### 集成终端
-
-- 基于 **ghostty-web** 的全功能终端体验
-- Bash 工具集成，执行命令
-- PTY 支持（Bun 和 Node.js 运行时）
-
-### MCP (Model Context Protocol)
-
-- 完整的 MCP 客户端实现，连接外部工具服务器
-- Agent Client Protocol (ACP) 支持，实现 Agent 间通信
-- 远程 MCP 服务器的 OAuth 认证流程
-- 可配置超时和环境变量
-
-### 插件系统
-
-通过自定义功能扩展 DuoDuo Code：
-
-- **自定义工具** — 通过 `@duoduo-ai/plugin` SDK 注册新工具
-- **自定义 Agent** — 定义具有自定义提示和权限的 Agent
-- **生命周期钩子** — 转换系统提示、拦截事件等
-
-```typescript
-import { tool } from "@duoduo-ai/plugin"
-
-export default tool({
-  name: "my-tool",
-  description: "A custom tool",
-  // ... implementation
-})
-```
-
-### 代码质量
-
-- **LSP 集成** — 实时诊断、悬停信息、跳转定义
-- **Cascade QA** — 多阶段验证流水线
-- **Super-RAG** — 结构化上下文检索，精准生成代码
-- **Blueprint 预算** — 复杂任务的 Token 预算管理
-
-### 通知
-
-桌面通知，按类别可配置：
-
-- 任务完成
-- 任务失败
-- 权限请求
-
-### 设置
-
-通过 `duoduo.jsonc` 进行全面配置：
-
-- **模型配置** — 默认模型、小模型、按 Agent 覆盖模型
-- **Agent 配置** — 自定义 Agent、提示、权限、工具访问
-- **MCP 服务器** — 本地 (stdio) 和远程 (SSE) MCP 服务器连接
-- **权限管理** — 按工具和路径的细粒度 allow/deny/ask 规则
-- **通知开关** — 按类别启用/禁用通知
-- **界面语言** — 中英文界面
-
-### 界面
-
-- 🌐 **双语** — 中英文界面
-- 🌙 **主题** — 暗色/亮色主题
-- 📑 **标签页** — 多标签会话管理
-- 🔀 **可拖拽面板** — 灵活布局，面板可调整大小
-
-### 安全
-
-DuoDuo Code 以启动它的账户权限运行，**没有被 OS 级沙箱包裹**。Agent 可以读取文件、执行 shell 命令、安装扩展、调用外部服务。在用于不可信代码之前，请先阅读 [SECURITY.md](./SECURITY.md) 了解完整安全模型与已知边界。
-
-已实施的防护：
-
-| 特性 | 实现方式 |
-|------|----------|
-| 权限审批系统 | 按工具和路径的细粒度 `allow` / `deny` / `ask`（`gate_permission`） |
-| 危险命令检测 | Rust 静态分类器（`bash_safety`）：正则黑名单 + 语义覆盖 + 动态命令名 fail-closed |
-| Prompt 注入围栏 | gear/skill 指令、工具结果、策略附加均包裹 XML 围栏并转义元字符；系统 prompt 声明 `<structural_contract>` |
-| 密钥脱敏 | 工具结果中的密钥在送抵模型前被掩码（`sanitize_tool_output`） |
-| SSRF 防护 | `webfetch` / `clone_repo` 的私有/回环主机拒绝与重定向检查 |
-| 路径穿越防护 | 目录边界强制执行；敏感文件黑名单（`is_sensitive_path`） |
-| CORS/CSRF 防护 | 服务端 CORS 配置和 CSRF 令牌 |
-
-**不保证**：命令执行的 OS 级沙箱，以及对 prompt 注入的绝对免疫（模型对声明的遵守是概率性的——真正的兜底仍是权限门 + OS 隔离）。详见 [SECURITY.md](./SECURITY.md)。
-
----
+| 文件 | `read` / `glob` / `grep` / `edit` / `write` / `apply_patch` / `code_comment` |
+| 执行 | `bash` / `webfetch` / `task`（派发子 Agent） |
+| 记忆与图谱 | `graph_query` / `symbol_search` / `recall_memory` / `snapshot_query` |
+| 流水线 | `proceed_to_investigate` / `proceed_to_plan` / `proceed_to_execute` / `proceed_to_verify` |
+| 协作 | `blackboard_read` / `blackboard_write` / `blackboard_find` / `blackboard_submit_draft` / `blackboard_submit_stable` / `blackboard_annotate` |
+| 其他 | `skill` / `todo` / `question` / `lsp`（实验）/ `plan`（实验） |
+| 扩展 | 已连接 MCP 服务器提供的工具；项目 `.duoduo/tool/` 下的自定义 `.ts` 工具 |
 
 ## 安装
 
-### 命令行
+### CLI
 
 ```bash
-# 快速安装（macOS / Linux）
+# macOS / Linux
 curl -fsSL https://www.dd322.cn/update/code/cli/cli | bash
 
-# 快速安装（Windows，PowerShell）
+# Windows (PowerShell)
 irm https://www.dd322.cn/update/code/cli/cli.ps1 | iex
 
-# Homebrew Tap（macOS / Linux，推荐）
+# Homebrew (macOS / Linux)
 brew install duoduo-ai/tap/duoduocode
 ```
 
-> [!TIP]
-> 如果安装过早期 alpha 版本，请先移除再安装。
+默认安装到 `$HOME/.duoduo/bin`，设置 `$DUODUO_BIN_DIR` 可自定义。
 
 ### 桌面应用
 
-从 [发布页](https://github.com/duduoduo521/duoduo-code/releases) 或 [www.dd322.cn/code/download](https://www.dd322.cn/code/download) 下载。
+从 [www.dd322.cn/code/download](https://www.dd322.cn/code/download) 下载，安装后内置自动更新。
 
-| 平台                  | 下载文件                                |
-| --------------------- | --------------------------------------- |
-| macOS (Apple Silicon) | `DuoDuoCode-<version>-aarch64.dmg` |
-| macOS (Intel)         | `DuoDuoCode-<version>-x64.dmg`     |
-| Windows               | `DuoDuoCode-<version>-x64-setup.exe`    |
-| Linux                 | `.deb`、`.rpm` 或 AppImage              |
-
-安装包见上表，安装后内置自动更新；也可从[发布页](https://github.com/duduoduo521/duoduo-code/releases)或下载页获取。
-
-### 安装目录
-
-安装脚本默认安装到 `$HOME/.duoduo/bin`。设置 `$DUODUO_BIN_DIR` 可自定义安装目录。
-
-```bash
-DUODUO_BIN_DIR=/usr/local/bin curl -fsSL https://www.dd322.cn/update/code/cli/cli | bash
-DUODUO_BIN_DIR=$HOME/.local/bin curl -fsSL https://www.dd322.cn/update/code/cli/cli | bash
-```
-
----
+| 平台 | 安装包 |
+|------|--------|
+| macOS (Apple Silicon / Intel) | `.dmg` |
+| Windows | `.exe` 安装程序 |
+| Linux | `.deb` / `.rpm` / AppImage |
 
 ## 配置
 
-DuoDuo Code 使用 `duoduo.jsonc` 配置文件。可在项目根目录或全局配置目录中创建。
-
-### 模型配置
+在项目根目录或全局配置目录创建 `duoduo.jsonc`。完整字段见 [schema/config.json](schema/config.json)。
 
 ```jsonc
 {
-  // 所有 Agent 的默认模型
-  "model": "anthropic/claude-sonnet-4-20250514",
+  // 默认模型与小模型（子 Agent、标题、压缩用）
+  "model": "deepseek/deepseek-chat",
+  "small_model": "deepseek/deepseek-chat",
 
-  // 子 Agent 和压缩使用的小模型
-  "small_model": "anthropic/claude-haiku-4-20250506",
-
-  // 默认 Agent
+  // 默认主 Agent
   "default_agent": "build",
 
-  // 启用/禁用特定供应商
-  "enabled_providers": ["anthropic", "openai"],
-  "disabled_providers": ["venice"]
-}
-```
-
-### 供应商配置
-
-```jsonc
-{
-  "provider": {
-    "anthropic": {
-      "apiKey": "sk-ant-..."
-    },
-    "openai": {
-      "apiKey": "sk-..."
-    },
-    "alibaba": {
-      "apiKey": "sk-...",
-      "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    }
-  }
-}
-```
-
-### Agent 配置
-
-```jsonc
-{
+  // 自定义 Agent：提示词、权限、可用工具
   "agent": {
-    "build": {
-      "model": "anthropic/claude-sonnet-4-20250514",
-      "temperature": 0.3
-    },
-    "plan": {
-      "model": "anthropic/claude-sonnet-4-20250514"
-    },
-    "my-custom-agent": {
-      "description": "用于特定任务的自定义 Agent",
-      "prompt": "你是一个专门的 Agent...",
+    "my-agent": {
+      "description": "负责迁移脚本",
+      "prompt": "你专注于数据库迁移…",
       "mode": "primary",
       "permission": {
         "edit": { "*": "allow" },
         "bash": "ask"
       }
     }
-  }
-}
-```
+  },
 
-### MCP 服务器
-
-```jsonc
-{
-  "mcp": {
-    "my-local-server": {
-      "type": "local",
-      "command": ["npx", "-y", "@my/mcp-server"],
-      "environment": {
-        "API_KEY": "..."
-      },
-      "timeout": 30000
-    },
-    "my-remote-server": {
-      "type": "remote",
-      "url": "https://mcp.example.com/sse",
-      "headers": {
-        "Authorization": "Bearer ..."
-      },
-      "oauth": {
-        "clientId": "...",
-        "scope": "read write"
-      }
+  // 供应商：内置 DeepSeek 直接填 Key；其他走 OpenAI 兼容端点
+  "provider": {
+    "deepseek": { "apiKey": "sk-..." },
+    "my-provider": {
+      "apiKey": "sk-...",
+      "baseURL": "https://api.example.com/v1"
     }
-  }
-}
-```
+  },
 
-### 权限
+  // MCP 服务器：本地进程或远程 SSE
+  "mcp": {
+    "my-local": {
+      "type": "local",
+      "command": ["npx", "-y", "@my/mcp-server"]
+    },
+    "my-remote": {
+      "type": "remote",
+      "url": "https://mcp.example.com/sse"
+    }
+  },
 
-```jsonc
-{
+  // 权限：按工具与路径
   "permission": {
     "read": { "*": "allow", "*.env": "ask" },
     "edit": { "*": "allow" },
-    "bash": "ask",
-    "webfetch": "allow",
-    "external_directory": { "*": "ask" }
-  }
-}
-```
+    "bash": "ask"
+  },
 
-### 会话压缩
-
-```jsonc
-{
+  // 上下文压缩
   "compaction": {
     "auto": true,
     "tail_turns": 4,
@@ -368,140 +195,66 @@ DuoDuo Code 使用 `duoduo.jsonc` 配置文件。可在项目根目录或全局�
 }
 ```
 
-完整配置参考请查看 [schema/config.json](schema/config.json)。
-
----
-
-## 支持的模型
-
-DuoDuo Code 支持所有已连接供应商的模型。模型从各供应商自身的模型目录自动发现，可按供应商过滤：
-
-| 供应商 | 示例模型 |
-|--------|----------|
-| OpenAI | GPT-4o, o3, o4-mini |
-| Anthropic | Claude Sonnet 4, Claude Haiku 4 |
-| Google | Gemini 2.5 Pro, Gemini 2.5 Flash |
-| xAI | Grok 3, Grok 3 Mini |
-| 阿里云通义千问 | Qwen3-235B, Qwen3-Coder |
-| Mistral | Mistral Large, Codestral |
-| Cohere | Command R+ |
-| Amazon Bedrock | Claude, Llama via Bedrock |
-| Azure | GPT-4o via Azure OpenAI |
-| 讯飞星火 | Spark 4.0 Ultra |
-| GitHub Copilot | GPT-4o via Copilot |
-| 本地模型 | 任何 OpenAI 兼容端点 |
-
-每个模型可配置成本追踪、上下文限制、模态和供应商特定选项。
-
----
-
 ## 架构
 
 ```
-┌─────────────────────────────────────────────────┐
-│                   客户端                          │
-│  ┌─────────┐  ┌─────────┐  ┌─────────────────┐ │
-│  │   TUI   │  │ Web 应用 │  │ 桌面端 (Tauri)  │ │
-│  └────┬────┘  └────┬────┘  └────────┬────────┘ │
-└───────┼─────────────┼────────────────┼──────────┘
-        │             │                │
-        └─────────────┼────────────────┘
-                      │ HTTP / WebSocket
-┌─────────────────────┼───────────────────────────┐
-│              服务器 (packages/duoduo)             │
-│  ┌──────────┐ ┌──────────┐ ┌──────────────────┐ │
-│  │  Agent   │ │  会话    │ │    智能层         │ │
-│  │   系统   │ │  管理器  │ │ (意图/质量)      │ │
-│  └──────────┘ └──────────┘ └──────────────────┘ │
-│  ┌──────────┐ ┌──────────┐ ┌──────────────────┐ │
-│  │  供应商  │ │   MCP    │ │    权限系统       │ │
-│  │   路由   │ │   客户端 │ │                  │ │
-│  └──────────┘ └──────────┘ └──────────────────┘ │
-│  ┌──────────┐ ┌──────────┐ ┌──────────────────┐ │
-│  │  工具    │ │   LSP    │ │   质量 /         │ │
-│  │  注册表  │ │   客户端 │ │   Cascade QA     │ │
-│  └──────────┘ └──────────┘ └──────────────────┘ │
-│  ┌──────────┐ ┌──────────┐ ┌──────────────────┐ │
-│  │  插件    │ │   ACP    │ │   压缩引擎       │ │
-│  │   SDK    │ │   服务器 │ │                  │ │
-│  └──────────┘ └──────────┘ └──────────────────┘ │
-└─────────────────────────────────────────────────┘
-                      │
-┌─────────────────────┼───────────────────────────┐
-│           Rust Crate (crates/)                   │
-│  ┌───────────────┐ ┌────────────┐ ┌───────────┐ │
-│  │   知识图谱    │ │  向量存储  │ │  记忆系统 │ │
-│  │  (Knowledge   │ │  (Vector   │ │  (Memory  │ │
-│  │   Graph)      │ │   Store)   │ │  System)  │ │
-│  └───────────────┘ └────────────┘ └───────────┘ │
-│  ┌───────────────┐ ┌────────────┐ ┌───────────┐ │
-│  │   安全设计    │ │  AST 引擎  │ │  代码搜索 │ │
-│  │  (Security    │ │  (AST      │ │  (Code    │ │
-│  │   Design)     │ │   Engine)  │ │  Search)  │ │
-│  └───────────────┘ └────────────┘ └───────────┘ │
-└─────────────────────────────────────────────────┘
+桌面端 (Tauri) / Web / TUI            packages/desktop · packages/app
+        │
+服务层（TypeScript）                  packages/duoduo — 会话 · Agent · 工具 · 权限 · MCP · LSP
+        │
+Rust 智能层                           crates/*
 ```
 
-### 核心包
+主要组成：
 
-| 包 | 说明 |
-|----|------|
-| `packages/duoduo` | 核心服务器 — Agent 逻辑、会话管理、工具注册、供应商路由 |
-| `packages/app` | 共享 Web UI 组件 (SolidJS) |
-| `packages/desktop` | 原生桌面应用 (Tauri) |
-| `packages/plugin` | 插件 SDK (`@duoduo-ai/plugin`) |
-| `packages/sdk` | 生成的 API 客户端 SDK |
-| `packages/shared` | 共享工具和类型 |
+| 部分 | 说明 |
+|------|------|
+| `packages/duoduo` | 核心服务：会话管理、Agent 循环、工具注册、供应商路由、MCP / LSP 客户端 |
+| `packages/app` / `packages/ui` | Web 界面与组件库（SolidJS） |
+| `packages/desktop` | Tauri 桌面壳 |
+| `packages/sdk` | 由 OpenAPI 生成的客户端 SDK |
+| `crates/duo-smart-layer` | 智能层：意图识别、流水线编排、Agent 循环调度 |
+| `crates/agent-executor` | 执行器：并行调度、快照、工具执行 |
+| `crates/knowledge-graph-store` | 代码库知识图谱与增量索引 |
+| `crates/context-builder` | 上下文装配（Super-RAG、Blueprint 预算） |
+| `crates/ast-engine` | tree-sitter AST 解析 |
+| `crates/code-search` | 代码语义检索 |
+| `crates/blackboard-*` | 多 Agent 共享黑板 |
+| `crates/permission-eval` | 权限求值 |
+| `packages/plugin` | 自定义工具开发 SDK（`@duoduo-ai/plugin`） |
 
----
+## 开发
 
-## 参与贡献
-
-欢迎贡献！请在提交 PR 前阅读 [贡献指南](./CONTRIBUTING.md)。
-
-### 开发环境
-
-要求：[Bun](https://bun.sh/) 1.3+
+要求 [Bun](https://bun.sh/) 1.3+（桌面构建另需 Rust 工具链）。
 
 ```bash
-# 安装依赖
 bun install
 
-# 启动开发服务器
+# 启动服务 + TUI
 bun dev
 
-# 指定目录启动
-bun dev /path/to/project
-
-# 启动 API 服务器
+# 只启动 API 服务器
 bun dev serve --port 4096
 
-# 启动 Web 应用（另开终端）
+# Web 界面（另开终端）
 bun run --cwd packages/app dev
 
-# 启动桌面应用
-bun run --cwd packages/desktop tauri dev
+# 桌面端开发
+bun run dev:desktop
+
+# 类型检查
+bun run typecheck
 ```
 
-### 构建
+构建：
 
 ```bash
-# 构建独立可执行文件
+# 当前平台的独立可执行文件
 ./packages/duoduo/script/build.ts --single
 
-# 构建桌面应用
+# 桌面安装包
 bun run --cwd packages/desktop tauri build
 ```
-
-### PR 规范
-
-- 所有 PR 必须关联已有 Issue
-- 遵循约定式提交格式（`feat:`、`fix:`、`docs:` 等）
-- 保持 PR 小而聚焦
-- UI 变更需附带截图/视频
-- 禁止 AI 生成的 PR 描述
-
----
 
 ## 许可证
 
@@ -510,7 +263,7 @@ bun run --cwd packages/desktop tauri build
 - opencode — Copyright (c) 2025 opencode — MIT License
 - DuoDuo Code — Copyright (c) 2026 DuoDuo — [MIT](./LICENSE)
 
-第三方开源组件的完整许可证声明在构建时由 `scripts/generate-third-party-licenses.ts` 自动生成，随每个发行包以 `ThirdPartyLicenses.txt` 提供；另见 [NOTICE](./NOTICE)。
+第三方组件的完整许可证声明由 `scripts/generate-third-party-licenses.ts` 在构建时生成，随发行包以 `ThirdPartyLicenses.txt` 提供；另见 [NOTICE](./NOTICE)。
 
 ## 免责声明
 

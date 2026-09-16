@@ -3,10 +3,11 @@
     <img src="packages/app/public/logo-2000.png" alt="DuoDuo Code logo" width="200">
   </a>
 </p>
-<p align="center">The open-source, provider-agnostic AI coding agent.</p>
+<p align="center">The open-source AI coding agent that plans, acts, and verifies — desktop / TUI / web.</p>
 <p align="center">
   <a href="https://www.npmjs.com/package/duoduo-ai"><img alt="npm" src="https://img.shields.io/npm/v/duoduo-ai?style=flat-square" /></a>
   <a href="https://github.com/duduoduo521/duoduo-code/actions/workflows/build.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/duduoduo521/duoduo-code/build.yml?style=flat-square&branch=main" /></a>
+</p>
 
 <p align="center">
   <a href="README.md">English</a> |
@@ -15,355 +16,176 @@
 
 ---
 
-## Why DuoDuo Code?
+DuoDuo Code is an agent-first coding tool: you describe the goal, and it breaks the task down, edits code, runs commands, verifies the outcome, and reports back. Behind that loop sits a set of in-house mechanisms — a Rust-powered intelligence layer, a codebase knowledge graph, persistent project memory, parallel multi-agent dispatch, and a built-in market for installing skills and MCP servers in one click.
 
-- **Provider-agnostic** — Not coupled to any single LLM provider. Use OpenAI, Anthropic, Google, local models, or any of 20+ providers.
-- **Open source (MIT)** — Full transparency, community-driven development.
-- **Client/server architecture** — Run the server anywhere, drive it from TUI, web, desktop, or mobile.
-- **Built-in LSP support** — Real diagnostics, completions, and go-to-definition out of the box.
-- **Terminal-first** — Built by neovim users; pushing the limits of what's possible in the terminal.
+## How It Works
 
----
+### Four-Phase Task Pipeline
 
-## Features
+Every task flows through **investigate → plan → execute → verify**. The primary agent advances between phases explicitly via `proceed_to_*` tools, and each phase gets its own context-assembly strategy and deliverables — nothing is crammed into one endless conversation.
 
-### Multi-Model Support
+### Parallel Agents + Shared Blackboard
 
-Connect to any LLM provider — switch freely without vendor lock-in.
+When a task can be split, the primary agent fans subtasks out to multiple sub-agents working in parallel (enable "parallel multi-agent dispatch" in Settings). Results converge by conflict grouping: independent work runs concurrently, conflicting work merges serially. Sub-agents exchange intermediate findings through a **shared blackboard** (`blackboard_*` tools: read / write / find / submit draft / submit stable / annotate) instead of guessing what the others did.
 
-| Provider | Provider | Provider |
-|----------|----------|----------|
-| OpenAI | Anthropic | Google |
-| xAI | Groq | Mistral |
-| Cohere | Amazon Bedrock | Azure |
-| DeepInfra | Together | Perplexity |
-| Vercel | Alibaba (Qwen) | OpenRouter |
-| GitLab | Venice | Cloudflare AI Gateway |
-| 讯飞星火 (iFlytek Spark) | GitHub Copilot | SAP AI Core |
+### Codebase Knowledge Graph
 
-### Agent System
+Projects are incrementally indexed into a **variable-level knowledge graph** (who defines what, who reads/writes, which function owns it). Changed files are re-indexed on demand — never a full rescan. Agents query the graph and symbols directly with `graph_query` and `symbol_search`, so locating code no longer relies on plain text search. The desktop app ships a **graph kanban** panel for visual browsing and one-click reindexing.
 
-| Agent | Mode | Description |
-|-------|------|-------------|
-| **build** | Primary | Default full-access agent for development work |
-| **plan** | Primary | Read-only agent for analysis and code exploration |
-| **general** | Sub-agent | Complex search and multi-step tasks (`@general`) |
-| **explore** | Sub-agent | Fast codebase exploration and search (`@explore`) |
-| **review** | Sub-agent | Code review with inline comments and suggestions |
-| **compaction** | Internal | Session compression to manage context window |
-| **title** | Internal | Auto-generate session titles |
-| **summary** | Internal | Progress summary generation |
-| Custom | User-defined | Create agents with custom prompts, tools, and permissions |
+### Project Memory
 
-Switch between primary agents with `Tab`. Define custom agents in configuration.
+Important conclusions are distilled into project memory that persists across sessions. In a new session the agent retrieves prior decisions via `recall_memory` — it never has to re-learn your project from scratch.
 
-### Tool System
+### Edit Quality
 
-| Tool | Description |
-|------|-------------|
-| `read` | Read file contents |
-| `write` | Create or overwrite files |
-| `edit` | Make targeted edits to existing files |
-| `bash` | Execute shell commands |
-| `grep` | Search file contents with regex |
-| `glob` | Find files by pattern matching |
-| `webfetch` | Fetch and extract web page content |
-| `task` | Delegate work to sub-agents |
-| `apply_patch` | Apply batch patches via unified diff |
-| `code_comment` | Insert inline code review comments |
-| `lsp` | LSP-powered diagnostics and operations |
-| `question` | Ask the user for clarification |
-| `skill` | Invoke agent skills |
-| `todowrite` | Create and track structured task lists |
-| `plan_exit` | Leave plan mode and begin execution |
-| `graph_query` | Query the project knowledge graph |
-| `symbol_search` | Semantic search for code symbols |
-| `recall_memory` | Recall persisted project memory |
-| `search_modifications` | Search code snapshot history for past edits |
-| `proceed_to_<phase>` | Advance the pipeline phase (`investigate` / `plan` / `execute` / `verify`) |
-| `blackboard_*` | Multi-agent shared blackboard (read / write / find / submit / annotate) |
-| MCP tools | Any tool exposed by connected MCP servers |
+- **Cascade QA** — a multi-stage quality pipeline that validates every edit against real LSP diagnostics; failing changes get reworked
+- **Super-RAG** — structured context retrieval that combines AST and graph signals to pinpoint relevant code
+- **Blueprint budget** — token budget management for complex tasks, so large changes don't derail mid-flight
 
-### Code Editing
+### Snapshots & Rollback
 
-- **Smart completion** — Context-aware code suggestions
-- **Inline editing** — Make precise edits without leaving the conversation
-- **Multi-file editing** — Coordinate changes across multiple files
-- **apply_patch** — Batch-apply unified diff patches for large changesets
-- **Cascade QA** — Multi-stage quality assurance pipeline that validates edits against LSP diagnostics
+Snapshots are captured automatically before changes and can be rolled back as a whole; the `snapshot_query` tool searches snapshot history for past edits, so "who changed this line, and why" is always answerable.
 
-### Session Management
+### Gear Market
 
-- **Multiple parallel sessions** — Work on several tasks simultaneously
-- **Session forking** — Branch a conversation to explore alternatives
-- **Compaction** — Automatic context compression when approaching token limits
-- **Overflow handling** — Graceful management of context window overflow with auto-discovered limits
-- **Progress summary** — Auto-generated summaries of session progress
+The built-in extension market aggregates two sources: the **ModelScope skill community** and the **MCP server registry**.
 
-### Knowledge System
+- Search, filter, and install skills (SKILL.md-driven) in one click; installed skills are invoked by the agent via the `skill` tool
+- Install MCP servers in one click with config written automatically; connection configs can be re-verified
+- Installed gears are managed centrally in Settings
 
-Powered by Rust crates for performance:
+### Models
 
-| Component | Description |
-|-----------|-------------|
-| Knowledge Graph | Structured relationship storage for codebase understanding |
-| Vector Store | Embedding-based semantic search |
-| Smart Layer | Intent detection, quality assessment, and pipeline orchestration |
-| Memory System | Persistent memory across sessions |
-
-### File Tree
-
-- Browse project files and directories
-- Create, delete, and rename files/folders
-- Multi-select operations
-- Search and filter
-- Drag-and-drop reordering
-
-### Integrated Terminal
-
-- Built on **ghostty-web** for a full-featured terminal experience
-- Bash tool integration for command execution
-- PTY support (Bun and Node.js runtimes)
-
-### MCP (Model Context Protocol)
-
-- Full MCP client implementation for connecting external tool servers
-- Agent Client Protocol (ACP) support for inter-agent communication
-- OAuth authentication flow for remote MCP servers
-- Configurable timeout and environment variables
-
-### Plugin System
-
-Extend DuoDuo Code with custom functionality:
-
-- **Custom tools** — Register new tools via the `@duoduo-ai/plugin` SDK
-- **Custom agents** — Define agents with custom prompts and permissions
-- **Lifecycle hooks** — Transform system prompts, intercept events, and more
-
-```typescript
-import { tool } from "@duoduo-ai/plugin"
-
-export default tool({
-  name: "my-tool",
-  description: "A custom tool",
-  // ... implementation
-})
-```
-
-### Code Quality
-
-- **LSP integration** — Real-time diagnostics, hover info, go-to-definition
-- **Cascade QA** — Multi-stage verification pipeline
-- **Super-RAG** — Structured context retrieval for accurate code generation
-- **Blueprint budget** — Token budget management for complex tasks
-
-### Notifications
-
-Desktop notifications for task events, configurable by category:
-
-- Task completion
-- Task failure
-- Permission requests
-
-### Settings
-
-Comprehensive configuration via `duoduo.jsonc`:
-
-- **Model configuration** — Default model, small model, per-agent model overrides
-- **Agent configuration** — Custom agents, prompts, permissions, tool access
-- **MCP servers** — Local (stdio) and remote (SSE) MCP server connections
-- **Permission management** — Fine-grained allow/deny/ask rules per tool
-- **Notification toggles** — Enable/disable notifications by category
-- **UI language** — English and Chinese interfaces
-
-### Interface
-
-- 🌐 **Bilingual** — English and Chinese UI
-- 🌙 **Theming** — Dark and light themes
-- 📑 **Tabs** — Multi-tab session management
-- 🔀 **Draggable panels** — Flexible layout with resizable panels
+- **Built-in DeepSeek** — works out of the box, dynamically discovers new models from DeepSeek's catalog, and validates your API key on connect
+- **Custom models** — add any OpenAI-compatible custom provider or model in Settings or `duoduo.jsonc`
 
 ### Security
 
-DuoDuo Code runs with the privileges of the account that launches it and is **not**
-wrapped in an OS-level sandbox. The agent can read files, run shell commands,
-install extensions, and call external services. Review the full model and known
-limitations in [SECURITY.md](./SECURITY.md) before running it against untrusted
-code.
+| Protection | How |
+|------------|-----|
+| Permission gates | Fine-grained allow / deny / ask approval per tool and path |
+| Dangerous command detection | Rust static classifier: blocklist + semantic coverage + fail-closed on dynamic command names |
+| Secret masking | Secrets in tool output are masked before reaching the model |
+| SSRF protection | Web fetch / repo clone reject private and loopback hosts; redirects are checked |
+| Path protection | Directory-boundary enforcement + sensitive-file blocklist |
+| Prompt-injection fencing | External instructions and tool results wrapped in XML fences with metacharacter escaping |
 
-Enforced protections:
+Full security model in [SECURITY.md](./SECURITY.md).
 
-| Feature | Implementation |
-|---------|---------------|
-| Permission approval system | Fine-grained `allow` / `deny` / `ask` per tool and path (`gate_permission`) |
-| Dangerous command detection | Rust static classifier (`bash_safety`): regex blocklist + semantic coverage + fail-closed on dynamic command names |
-| Prompt-injection fencing | Gear/skill instructions, tool results, and strategy additions wrapped in XML fences and metacharacter-escaped; `<structural_contract>` declared in system prompt |
-| Secret masking | Secrets in tool output masked before reaching the model (`sanitize_tool_output`) |
-| SSRF protection | Private/loopback host rejection and redirect checks on `webfetch` / `clone_repo` |
-| Path traversal prevention | Directory-boundary enforcement; sensitive-file blocklist (`is_sensitive_path`) |
-| CORS/CSRF protection | Server-side CORS configuration and CSRF tokens |
+### Desktop App
 
-**Not guaranteed:** OS sandboxing of command execution, and absolute resistance to
-prompt injection (LLM compliance with the contract is probabilistic — the real
-backstop is the permission gate plus OS isolation). See [SECURITY.md](./SECURITY.md).
+- Knowledge graph kanban: visual browsing + one-click reindex
+- Multi-session tabs, draggable panels, dark/light themes, English/Chinese UI
+- Integrated terminal, file tree, web preview panel
+- SSH remote projects: bidirectional SFTP sync with live status
+- Git worktree support, desktop notifications (configurable per category)
 
----
+## Agents & Tools
+
+Switch primary agents with `Tab`; custom agents are declared in configuration:
+
+| Agent | Role |
+|-------|------|
+| `build` | Primary, full-access development |
+| `plan` | Primary, read-only analysis |
+| `general` / `explore` / `scout` | Sub-agents for search and exploration workloads |
+| `title` / `summary` / `compaction` | Internal agents (titles, summaries, compression) |
+| Custom | Define prompts, permissions, and tools in config |
+
+Builtin tools (all real registrations):
+
+| Category | Tools |
+|----------|-------|
+| Files | `read` / `glob` / `grep` / `edit` / `write` / `apply_patch` / `code_comment` |
+| Execution | `bash` / `webfetch` / `task` (delegates to sub-agents) |
+| Memory & graph | `graph_query` / `symbol_search` / `recall_memory` / `snapshot_query` |
+| Pipeline | `proceed_to_investigate` / `proceed_to_plan` / `proceed_to_execute` / `proceed_to_verify` |
+| Collaboration | `blackboard_read` / `blackboard_write` / `blackboard_find` / `blackboard_submit_draft` / `blackboard_submit_stable` / `blackboard_annotate` |
+| Other | `skill` / `todo` / `question` / `lsp` (experimental) / `plan` (experimental) |
+| Extensions | Tools exposed by connected MCP servers; custom `.ts` tools under your project's `.duoduo/tool/` |
 
 ## Installation
 
 ### CLI
 
 ```bash
-# Quick install (macOS / Linux)
+# macOS / Linux
 curl -fsSL https://www.dd322.cn/update/code/cli/cli | bash
 
-# Quick install (Windows, PowerShell)
+# Windows (PowerShell)
 irm https://www.dd322.cn/update/code/cli/cli.ps1 | iex
 
-# Homebrew Tap (macOS / Linux, recommended)
+# Homebrew (macOS / Linux)
 brew install duoduo-ai/tap/duoduocode
 ```
 
-> [!TIP]
-> If you installed an early alpha build, remove it before installing.
+Installs to `$HOME/.duoduo/bin` by default; set `$DUODUO_BIN_DIR` to override.
 
 ### Desktop App
 
-Download from the [releases page](https://github.com/duduoduo521/duoduo-code/releases) or [www.dd322.cn/code/download](https://www.dd322.cn/code/download).
+Download from [www.dd322.cn/code/download](https://www.dd322.cn/code/download). Auto-update is built in.
 
-| Platform              | Download                                |
-| --------------------- | --------------------------------------- |
-| macOS (Apple Silicon) | `DuoDuoCode-<version>-aarch64.dmg` |
-| macOS (Intel)         | `DuoDuoCode-<version>-x64.dmg`     |
-| Windows               | `DuoDuoCode-<version>-x64-setup.exe`    |
-| Linux                 | `.deb`, `.rpm`, or AppImage             |
-
-Installers are listed in the table above. The desktop app ships with built-in auto-update; you can also grab them from the [releases page](https://github.com/duduoduo521/duoduo-code/releases).
-
-### Install Directory
-
-The install script installs to `$HOME/.duoduo/bin` by default. Set `$DUODUO_BIN_DIR` to override the installation directory.
-
-```bash
-DUODUO_BIN_DIR=/usr/local/bin curl -fsSL https://www.dd322.cn/update/code/cli/cli | bash
-DUODUO_BIN_DIR=$HOME/.local/bin curl -fsSL https://www.dd322.cn/update/code/cli/cli | bash
-```
-
----
+| Platform | Package |
+|----------|---------|
+| macOS (Apple Silicon / Intel) | `.dmg` |
+| Windows | `.exe` installer |
+| Linux | `.deb` / `.rpm` / AppImage |
 
 ## Configuration
 
-DuoDuo Code uses a `duoduo.jsonc` configuration file. Create it in your project root or global config directory.
-
-### Model Configuration
+Create a `duoduo.jsonc` in your project root or global config directory. Full reference: [schema/config.json](schema/config.json).
 
 ```jsonc
 {
-  // Default model for all agents
-  "model": "anthropic/claude-sonnet-4-20250514",
+  // Default model and small model (sub-agents, titles, compaction)
+  "model": "deepseek/deepseek-chat",
+  "small_model": "deepseek/deepseek-chat",
 
-  // Smaller model for sub-agents and compaction
-  "small_model": "anthropic/claude-haiku-4-20250506",
-
-  // Default agent
+  // Default primary agent
   "default_agent": "build",
 
-  // Enable/disable specific providers
-  "enabled_providers": ["anthropic", "openai"],
-  "disabled_providers": ["venice"]
-}
-```
-
-### Provider Configuration
-
-```jsonc
-{
-  "provider": {
-    "anthropic": {
-      "apiKey": "sk-ant-..."
-    },
-    "openai": {
-      "apiKey": "sk-..."
-    },
-    "alibaba": {
-      "apiKey": "sk-...",
-      "baseURL": "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    }
-  }
-}
-```
-
-### Agent Configuration
-
-```jsonc
-{
+  // Custom agents: prompt, permissions, tools
   "agent": {
-    "build": {
-      "model": "anthropic/claude-sonnet-4-20250514",
-      "temperature": 0.3
-    },
-    "plan": {
-      "model": "anthropic/claude-sonnet-4-20250514"
-    },
-    "my-custom-agent": {
-      "description": "A custom agent for specific tasks",
-      "prompt": "You are a specialized agent...",
+    "my-agent": {
+      "description": "Handles migration scripts",
+      "prompt": "You focus on database migrations...",
       "mode": "primary",
       "permission": {
         "edit": { "*": "allow" },
         "bash": "ask"
       }
     }
-  }
-}
-```
+  },
 
-### MCP Servers
-
-```jsonc
-{
-  "mcp": {
-    "my-local-server": {
-      "type": "local",
-      "command": ["npx", "-y", "@my/mcp-server"],
-      "environment": {
-        "API_KEY": "..."
-      },
-      "timeout": 30000
-    },
-    "my-remote-server": {
-      "type": "remote",
-      "url": "https://mcp.example.com/sse",
-      "headers": {
-        "Authorization": "Bearer ..."
-      },
-      "oauth": {
-        "clientId": "...",
-        "scope": "read write"
-      }
+  // Providers: built-in DeepSeek takes a key; others use OpenAI-compatible endpoints
+  "provider": {
+    "deepseek": { "apiKey": "sk-..." },
+    "my-provider": {
+      "apiKey": "sk-...",
+      "baseURL": "https://api.example.com/v1"
     }
-  }
-}
-```
+  },
 
-### Permissions
+  // MCP servers: local process or remote SSE
+  "mcp": {
+    "my-local": {
+      "type": "local",
+      "command": ["npx", "-y", "@my/mcp-server"]
+    },
+    "my-remote": {
+      "type": "remote",
+      "url": "https://mcp.example.com/sse"
+    }
+  },
 
-```jsonc
-{
+  // Permissions: per tool and path
   "permission": {
     "read": { "*": "allow", "*.env": "ask" },
     "edit": { "*": "allow" },
-    "bash": "ask",
-    "webfetch": "allow",
-    "external_directory": { "*": "ask" }
-  }
-}
-```
+    "bash": "ask"
+  },
 
-### Compaction
-
-```jsonc
-{
+  // Context compaction
   "compaction": {
     "auto": true,
     "tail_turns": 4,
@@ -373,138 +195,66 @@ DuoDuo Code uses a `duoduo.jsonc` configuration file. Create it in your project 
 }
 ```
 
-For full configuration reference, see [schema/config.json](schema/config.json).
-
----
-
-## Supported Models
-
-DuoDuo Code supports models from all connected providers. Models are auto-discovered from each provider's model catalog and can be filtered per provider:
-
-| Provider | Example Models |
-|----------|---------------|
-| OpenAI | GPT-4o, o3, o4-mini |
-| Anthropic | Claude Sonnet 4, Claude Haiku 4 |
-| Google | Gemini 2.5 Pro, Gemini 2.5 Flash |
-| xAI | Grok 3, Grok 3 Mini |
-| Alibaba (Qwen) | Qwen3-235B, Qwen3-Coder |
-| Mistral | Mistral Large, Codestral |
-| Cohere | Command R+ |
-| Amazon Bedrock | Claude, Llama via Bedrock |
-| Azure | GPT-4o via Azure OpenAI |
-| 讯飞星火 | Spark 4.0 Ultra |
-| GitHub Copilot | GPT-4o via Copilot |
-| Local models | Any OpenAI-compatible endpoint |
-
-Each model can be configured with cost tracking, context limits, modalities, and provider-specific options.
-
----
-
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│                   Clients                        │
-│  ┌─────────┐  ┌─────────┐  ┌─────────────────┐ │
-│  │   TUI   │  │ Web App │  │ Desktop (Tauri) │ │
-│  └────┬────┘  └────┬────┘  └────────┬────────┘ │
-└───────┼─────────────┼────────────────┼──────────┘
-        │             │                │
-        └─────────────┼────────────────┘
-                      │ HTTP / WebSocket
-┌─────────────────────┼───────────────────────────┐
-│              Server (packages/duoduo)            │
-│  ┌──────────┐ ┌──────────┐ ┌──────────────────┐ │
-│  │  Agent   │ │ Session  │ │   Smart Layer    │ │
-│  │ System   │ │ Manager  │ │ (Intent/Quality) │ │
-│  └──────────┘ └──────────┘ └──────────────────┘ │
-│  ┌──────────┐ ┌──────────┐ ┌──────────────────┐ │
-│  │ Provider │ │   MCP    │ │   Permission     │ │
-│  │ Router   │ │  Client  │ │     System       │ │
-│  └──────────┘ └──────────┘ └──────────────────┘ │
-│  ┌──────────┐ ┌──────────┐ ┌──────────────────┐ │
-│  │  Tools   │ │   LSP    │ │    Quality /     │ │
-│  │ Registry │ │  Client  │ │   Cascade QA     │ │
-│  └──────────┘ └──────────┘ └──────────────────┘ │
-│  ┌──────────┐ ┌──────────┐ ┌──────────────────┐ │
-│  │  Plugin  │ │   ACP    │ │   Compaction     │ │
-│  │   SDK    │ │  Server  │ │    Engine        │ │
-│  └──────────┘ └──────────┘ └──────────────────┘ │
-└─────────────────────────────────────────────────┘
-                      │
-┌─────────────────────┼───────────────────────────┐
-│           Rust Crates (crates/)                  │
-│  ┌───────────────┐ ┌────────────┐ ┌───────────┐ │
-│  │ Knowledge     │ │   Vector   │ │  Memory   │ │
-│  │ Graph Store   │ │   Store    │ │  System   │ │
-│  └───────────────┘ └────────────┘ └───────────┘ │
-│  ┌───────────────┐ ┌────────────┐ ┌───────────┐ │
-│  │  Security     │ │   AST      │ │  Code     │ │
-│  │  Design       │ │  Engine    │ │  Search   │ │
-│  └───────────────┘ └────────────┘ └───────────┘ │
-└─────────────────────────────────────────────────┘
+Desktop (Tauri) / Web / TUI           packages/desktop · packages/app
+        │
+Server layer (TypeScript)             packages/duoduo — sessions · agents · tools · permissions · MCP · LSP
+        │
+Rust intelligence layer               crates/*
 ```
 
-### Key Packages
+Main components:
 
-| Package | Description |
-|---------|-------------|
-| `packages/duoduo` | Core server — agent logic, session management, tool registry, provider routing |
-| `packages/app` | Shared web UI components (SolidJS) |
-| `packages/desktop` | Native desktop app (Tauri) |
-| `packages/plugin` | Plugin SDK (`@duoduo-ai/plugin`) |
-| `packages/sdk` | Generated API client SDK |
-| `packages/shared` | Shared utilities and types |
+| Part | Description |
+|------|-------------|
+| `packages/duoduo` | Core server: session management, agent loop, tool registry, provider routing, MCP / LSP clients |
+| `packages/app` / `packages/ui` | Web UI and component library (SolidJS) |
+| `packages/desktop` | Tauri desktop shell |
+| `packages/sdk` | OpenAPI-generated client SDK |
+| `crates/duo-smart-layer` | Intelligence layer: intent detection, pipeline orchestration, agent-loop scheduling |
+| `crates/agent-executor` | Executor: parallel dispatch, snapshots, tool execution |
+| `crates/knowledge-graph-store` | Codebase knowledge graph and incremental indexing |
+| `crates/context-builder` | Context assembly (Super-RAG, blueprint budget) |
+| `crates/ast-engine` | tree-sitter AST parsing |
+| `crates/code-search` | Semantic code retrieval |
+| `crates/blackboard-*` | Multi-agent shared blackboard |
+| `crates/permission-eval` | Permission evaluation |
+| `packages/plugin` | Custom tool SDK (`@duoduo-ai/plugin`) |
 
----
+## Development
 
-## Contributing
-
-We welcome contributions! Please read the [contributing guide](./CONTRIBUTING.md) before submitting a pull request.
-
-### Development Setup
-
-Requirements: [Bun](https://bun.sh/) 1.3+
+Requires [Bun](https://bun.sh/) 1.3+ (desktop builds also need the Rust toolchain).
 
 ```bash
-# Install dependencies
 bun install
 
-# Start dev server
+# Start server + TUI
 bun dev
 
-# Start with a specific directory
-bun dev /path/to/project
-
-# Start API server
+# Start the API server only
 bun dev serve --port 4096
 
-# Start web app (separate terminal)
+# Web UI (separate terminal)
 bun run --cwd packages/app dev
 
-# Start desktop app
-bun run --cwd packages/desktop tauri dev
+# Desktop development
+bun run dev:desktop
+
+# Typecheck
+bun run typecheck
 ```
 
-### Building
+Building:
 
 ```bash
-# Build standalone executable
+# Standalone executable for the current platform
 ./packages/duoduo/script/build.ts --single
 
-# Build desktop app
+# Desktop installers
 bun run --cwd packages/desktop tauri build
 ```
-
-### PR Guidelines
-
-- All PRs must reference an existing issue
-- Follow conventional commit format (`feat:`, `fix:`, `docs:`, etc.)
-- Keep PRs small and focused
-- UI changes require screenshots/videos
-- No AI-generated PR descriptions
-
----
 
 ## License
 

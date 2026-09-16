@@ -18,7 +18,7 @@
 ## Why DuoDuo IDE?
 
 - **Provider-agnostic** — Not coupled to any single LLM provider. Use OpenAI, Anthropic, Google, local models, or any of 20+ providers.
-- **100% open source** — Full transparency, community-driven development.
+- **Open source (MIT)** — Full transparency, community-driven development.
 - **Client/server architecture** — Run the server anywhere, drive it from TUI, web, desktop, or mobile.
 - **Built-in LSP support** — Real diagnostics, completions, and go-to-definition out of the box.
 - **Terminal-first** — Built by neovim users; pushing the limits of what's possible in the terminal.

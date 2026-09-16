@@ -132,7 +132,6 @@ pub(crate) fn decode_card_action(event: &serde_json::Value) -> Option<FeishuCard
     })
 }
 
-#[allow(dead_code)]
 // ---------- pure decision / parsing cores (unit-tested) ----------
 
 /// Extract `(chat_id, message_text)` from an `im.message.receive_v1` event.
@@ -141,6 +140,7 @@ pub(crate) fn decode_card_action(event: &serde_json::Value) -> Option<FeishuCard
 /// inner `content` is a JSON string; if it parses, its `text` field is used,
 /// otherwise the raw content string is returned verbatim. Pure core of
 /// `handle_event`.
+#[allow(dead_code)]
 pub(crate) fn extract_im_message(event: &serde_json::Value) -> Option<(String, String)> {
     let event_type = event
         .get("header")

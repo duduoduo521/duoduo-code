@@ -865,7 +865,7 @@ impl FeishuApiClient {
             .http
             .patch(&url)
             .header("Authorization", format!("Bearer {}", token))
-            .json(&serde_json::json!({ "content": card_body(&card) }))
+            .json(&serde_json::json!({ "content": card_body(card) }))
             .send()
             .await;
 

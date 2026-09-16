@@ -134,10 +134,10 @@ fn detect_physical_cpus() -> usize {
                 }
             } else if let Some(rest) = line.strip_prefix("core id") {
                 cur_core = parse_num(rest);
-            } else if line.trim().is_empty() {
-                if let Some(core) = cur_core.take() {
-                    packages.entry(cur_pkg).or_default().insert(core);
-                }
+            } else if line.trim().is_empty()
+                && let Some(core) = cur_core.take()
+            {
+                packages.entry(cur_pkg).or_default().insert(core);
             }
         }
         if let Some(core) = cur_core.take() {

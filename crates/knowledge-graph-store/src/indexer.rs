@@ -324,6 +324,9 @@ impl Default for ProjectIndexState {
     }
 }
 
+/// `project_id -> (file path -> edge ids)` 反向索引（增量删除文件边用）。
+type FileToEdges = Arc<std::sync::Mutex<HashMap<String, HashMap<String, Vec<String>>>>>;
+
 /// Project indexer that converts source code into knowledge graph entities and relations.
 pub struct ProjectIndexer {
     graph: Arc<KnowledgeGraphStore>,
@@ -344,7 +347,7 @@ pub struct ProjectIndexer {
     ///
     /// Nested by project for the same reason as the graph's own lookup tables:
     /// file paths are only unique inside one project.
-    file_to_edges: Arc<std::sync::Mutex<HashMap<String, HashMap<String, Vec<String>>>>>,
+    file_to_edges: FileToEdges,
     /// Per-project dirty set: `project_id → project_path` for projects whose
     /// in-memory graph changed and whose bincode snapshot needs re-saving.
     ///
@@ -2092,10 +2095,8 @@ impl ProjectIndexer {
     fn mark_project_open(&self, project_id: &str) {
         if let Err(e) = self.update_registry(|reg| {
             let entry = reg.projects.get_mut(project_id)?;
-            if entry.closed_at.is_none() {
-                return None; // no-op: don't rewrite the file
-            }
-            entry.closed_at = None;
+            // no-op when already open: don't rewrite the file
+            entry.closed_at.take()?;
             Some(())
         }) {
             warn!(error = %e, "Failed to mark project open in index registry");

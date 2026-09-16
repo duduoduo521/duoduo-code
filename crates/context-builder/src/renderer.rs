@@ -29,10 +29,10 @@ pub fn is_temporal(relation: &RstRelation) -> bool {
     )
 }
 
-/// Check if a relation is rhetorical (contrast/concession/elaboration/background/evidence/exemplifies).
-/// Mirrors TS `isRhetorical` (types.ts L271-280).
-/// Check if a role should never be compressed (constraint/directive).
-/// Mirrors TS `neverCompress` (types.ts L283-285).
+// Check if a relation is rhetorical (contrast/concession/elaboration/background/evidence/exemplifies).
+// Mirrors TS `isRhetorical` (types.ts L271-280).
+// Check if a role should never be compressed (constraint/directive).
+// Mirrors TS `neverCompress` (types.ts L283-285).
 // ============ Phase / Token / Budget (existing, verified) ============
 
 /// Convert a TaskPhase to the default TaskType.
@@ -51,11 +51,11 @@ pub fn phase_to_task_type(phase: &TaskPhase) -> TaskType {
     }
 }
 
-/// Token estimator — the project-wide single source is
-/// `duo_utils::text::estimate_tokens` (CJK-aware: ~2 tokens per CJK char,
-/// ~4 ASCII chars per token). The previous local copy used `ceil(utf16/4)`,
-/// which under-counted Chinese text by ~8x and made every structured-context
-/// budget effectively a no-op (P2-25).
+// Token estimator — the project-wide single source is
+// `duo_utils::text::estimate_tokens` (CJK-aware: ~2 tokens per CJK char,
+// ~4 ASCII chars per token). The previous local copy used `ceil(utf16/4)`,
+// which under-counted Chinese text by ~8x and made every structured-context
+// budget effectively a no-op (P2-25).
 
 /// Calculate structured budget based on task type.
 ///

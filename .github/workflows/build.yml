@@ -421,6 +421,7 @@ jobs:
         run: chmod +x packages/desktop/src-tauri/sidecars/duo-smart-layer-* packages/desktop/src-tauri/sidecars/duoduocode-cli-*
 
       - name: List sidecars
+        shell: bash
         run: ls -la packages/desktop/src-tauri/sidecars/
 
       - uses: tauri-apps/tauri-action@v0

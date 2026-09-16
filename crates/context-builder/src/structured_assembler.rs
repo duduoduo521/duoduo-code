@@ -630,6 +630,7 @@ impl StructuredAssembler {
 
     // ============ Phase 2 ============
 
+    #[allow(clippy::too_many_arguments)] // 阶段拆分的固定入参集合，重构成上下文结构体留待后续
     fn phase2(
         &self,
         nodes: &mut HashMap<String, NarrativeElement>,

@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 interface ImportMetaEnv {
   readonly VITE_DUODUO_SERVER_HOST: string
   readonly VITE_DUODUO_SERVER_PORT: string

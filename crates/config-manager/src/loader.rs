@@ -452,6 +452,9 @@ mod tests {
             // SAFETY: Test-only env var manipulation; single-threaded within this test.
             unsafe {
                 std::env::set_var("XDG_CONFIG_HOME", &tmp_dir);
+                // secret fallback 文件写在 XDG_DATA_HOME 下，测试必须一并隔离，
+                // 否则会读写真实的 ~/.local/share/duoduo-ai/secure-keys.enc.json
+                std::env::set_var("XDG_DATA_HOME", &tmp_dir);
             }
 
             let config = load_config().expect("load_config should succeed");
@@ -461,6 +464,8 @@ mod tests {
             // SAFETY: Restoring env var state.
             unsafe {
                 std::env::remove_var("XDG_CONFIG_HOME");
+            std::env::remove_var("XDG_DATA_HOME");
+                std::env::remove_var("XDG_DATA_HOME");
             }
             let _ = std::fs::remove_dir_all(&tmp_dir);
         }
@@ -558,6 +563,10 @@ mod tests {
             // SAFETY: Test-only env var manipulation.
             unsafe {
                 std::env::set_var("XDG_CONFIG_HOME", &tmp_base);
+            // secret fallback 文件写在 XDG_DATA_HOME 下，测试必须一并隔离
+            std::env::set_var("XDG_DATA_HOME", &tmp_base);
+                // secret fallback 文件写在 XDG_DATA_HOME 下，测试必须一并隔离
+                std::env::set_var("XDG_DATA_HOME", &tmp_base);
             }
 
             let toml_content = r#"
@@ -599,6 +608,8 @@ enabled = false
             // SAFETY: Restoring env var state.
             unsafe {
                 std::env::remove_var("XDG_CONFIG_HOME");
+            std::env::remove_var("XDG_DATA_HOME");
+                std::env::remove_var("XDG_DATA_HOME");
             }
             let _ = std::fs::remove_dir_all(&tmp_base);
         }
@@ -624,6 +635,10 @@ enabled = false
             // SAFETY: Test-only env var manipulation; single-threaded within this test.
             unsafe {
                 std::env::set_var("XDG_CONFIG_HOME", &tmp_base);
+            // secret fallback 文件写在 XDG_DATA_HOME 下，测试必须一并隔离
+            std::env::set_var("XDG_DATA_HOME", &tmp_base);
+                // secret fallback 文件写在 XDG_DATA_HOME 下，测试必须一并隔离
+                std::env::set_var("XDG_DATA_HOME", &tmp_base);
             }
 
             let mut env_vars = HashMap::new();
@@ -652,6 +667,8 @@ enabled = false
             // SAFETY: Restoring env var state.
             unsafe {
                 std::env::remove_var("XDG_CONFIG_HOME");
+            std::env::remove_var("XDG_DATA_HOME");
+                std::env::remove_var("XDG_DATA_HOME");
             }
             let _ = std::fs::remove_dir_all(&tmp_base);
         }
@@ -671,6 +688,10 @@ enabled = false
             // SAFETY: Test-only env var manipulation; single-threaded within this test.
             unsafe {
                 std::env::set_var("XDG_CONFIG_HOME", &tmp_base);
+            // secret fallback 文件写在 XDG_DATA_HOME 下，测试必须一并隔离
+            std::env::set_var("XDG_DATA_HOME", &tmp_base);
+                // secret fallback 文件写在 XDG_DATA_HOME 下，测试必须一并隔离
+                std::env::set_var("XDG_DATA_HOME", &tmp_base);
             }
 
             let initial_toml = r#"
@@ -721,6 +742,8 @@ enabled = false
             // SAFETY: Restoring env var state.
             unsafe {
                 std::env::remove_var("XDG_CONFIG_HOME");
+            std::env::remove_var("XDG_DATA_HOME");
+                std::env::remove_var("XDG_DATA_HOME");
             }
             let _ = std::fs::remove_dir_all(&tmp_base);
         }
@@ -740,6 +763,10 @@ enabled = false
             // SAFETY: Test-only env var manipulation; single-threaded within this test.
             unsafe {
                 std::env::set_var("XDG_CONFIG_HOME", &tmp_base);
+            // secret fallback 文件写在 XDG_DATA_HOME 下，测试必须一并隔离
+            std::env::set_var("XDG_DATA_HOME", &tmp_base);
+                // secret fallback 文件写在 XDG_DATA_HOME 下，测试必须一并隔离
+                std::env::set_var("XDG_DATA_HOME", &tmp_base);
             }
 
             let env_vars = HashMap::new();
@@ -752,6 +779,8 @@ enabled = false
             // SAFETY: Restoring env var state.
             unsafe {
                 std::env::remove_var("XDG_CONFIG_HOME");
+            std::env::remove_var("XDG_DATA_HOME");
+                std::env::remove_var("XDG_DATA_HOME");
             }
             let _ = std::fs::remove_dir_all(&tmp_base);
         }
@@ -782,6 +811,8 @@ enabled = false
         // SAFETY: Test-only env var manipulation; serialized by ENV_TEST_LOCK.
         unsafe {
             std::env::set_var("XDG_CONFIG_HOME", &tmp_base);
+            // secret fallback 文件写在 XDG_DATA_HOME 下，测试必须一并隔离
+            std::env::set_var("XDG_DATA_HOME", &tmp_base);
         }
 
         // Split the two sections across *different* threads. If every writer
@@ -830,6 +861,7 @@ enabled = false
         // SAFETY: Restoring env var state.
         unsafe {
             std::env::remove_var("XDG_CONFIG_HOME");
+            std::env::remove_var("XDG_DATA_HOME");
         }
         let _ = std::fs::remove_dir_all(&tmp_base);
     }
@@ -860,6 +892,8 @@ enabled = false
         // SAFETY: Test-only env var manipulation; serialized by ENV_TEST_LOCK.
         unsafe {
             std::env::set_var("XDG_CONFIG_HOME", &tmp_base);
+            // secret fallback 文件写在 XDG_DATA_HOME 下，测试必须一并隔离
+            std::env::set_var("XDG_DATA_HOME", &tmp_base);
         }
 
         let mut handles = Vec::new();
@@ -893,6 +927,7 @@ enabled = false
         // SAFETY: Restoring env var state.
         unsafe {
             std::env::remove_var("XDG_CONFIG_HOME");
+            std::env::remove_var("XDG_DATA_HOME");
         }
         let _ = std::fs::remove_dir_all(&tmp_base);
     }

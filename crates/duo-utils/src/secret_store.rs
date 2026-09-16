@@ -233,6 +233,8 @@ fn get_machine_id() -> Option<String> {
 
 fn fallback_store(id: &str, secret: &str) -> anyhow::Result<()> {
     let data_dir = get_data_dir()?;
+    // 首次写入时 data_dir/duoduo-ai 可能尚不存在（XDG_DATA_HOME 指向的全新目录）
+    std::fs::create_dir_all(&data_dir)?;
     let enc_key = derive_encryption_key(&data_dir);
 
     let nonce_bytes: [u8; 12] = rand::random();

@@ -238,7 +238,6 @@ export class AgentClient {
    * returns { cancelled: false } in that case.
    */
   cancelRunLoop(sessionID: string): Promise<{ cancelled: boolean; task_id: string; message?: string }> {
-    process.stderr.write(`[TRACE-cancel] TS cancelRunLoop called for sessionID=${sessionID}\n`)
     return this.client.post(`/agent/cancel/runloop-${sessionID}`, {})
   }
 
@@ -278,7 +277,6 @@ export class AgentClient {
           } else if (line.startsWith("data:")) {
             currentData = line.slice(5).trim()
           } else if (line === "" && currentEvent && currentData) {
-            process.stderr.write(`[TRACE-sse-raw] event=${currentEvent}\n`)
             yield { event: currentEvent, data: currentData }
             currentEvent = ""
             currentData = ""

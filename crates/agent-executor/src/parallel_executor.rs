@@ -87,6 +87,13 @@ pub struct ParallelContext {
     /// the parent's `GET /agent/metrics` totals. `None` ⇒ each sub-agent keeps its
     /// own counters (previous behavior; usage not aggregated).
     pub shared_token_usage: Option<Arc<SharedTokenUsage>>,
+    /// Parent runLoop session id, used for event attribution when emitting
+    /// per-subtask start/finish events.
+    pub session_id: String,
+    /// Parent runLoop event bus. When set, each sub-task emits
+    /// `ParallelSubtaskStarted`/`ParallelSubtaskFinished` so the SSE bridge can
+    /// surface fan-out progress to the frontend. `None` ⇒ no events (tests).
+    pub event_bus: Option<crate::event_bus::RunLoopEventBus>,
 }
 
 /// A single independent sub-task to dispatch in parallel.
@@ -316,8 +323,20 @@ pub async fn dispatch_with_cancel(
                 let max_retries = ctx.max_retries;
                 let child_cancel = parent_cancel.child_token();
                 let mut attempts = 0u32;
+                let mode = match tool_set {
+                    LoopToolSet::Explore => "explore",
+                    LoopToolSet::Codegen => "codegen",
+                };
                 loop {
                     if child_cancel.is_cancelled() {
+                        if let Some(bus) = &ctx.event_bus {
+                            bus.emit(crate::event_bus::LoopStreamEvent::ParallelSubtaskFinished {
+                                session_id: ctx.session_id.clone(),
+                                subtask_id: id.clone(),
+                                ok: false,
+                                error: Some("cancelled".into()),
+                            });
+                        }
                         group_results.push(SubTaskResult {
                             id,
                             output: String::new(),
@@ -325,6 +344,18 @@ pub async fn dispatch_with_cancel(
                             error: Some("cancelled".into()),
                         });
                         break;
+                    }
+                    if attempts == 0 && let Some(bus) = &ctx.event_bus {
+                        // Best-effort progress event; the task text is truncated to
+                        // keep the SSE payload small.
+                        let mut task_preview = task_prompt.clone();
+                        task_preview.truncate(200);
+                        bus.emit(crate::event_bus::LoopStreamEvent::ParallelSubtaskStarted {
+                            session_id: ctx.session_id.clone(),
+                            subtask_id: id.clone(),
+                            task: task_preview,
+                            mode: mode.to_string(),
+                        });
                     }
                     let agent_id = format!("parallel-{}", id);
                     let executor = ctx.build_executor(
@@ -339,6 +370,14 @@ pub async fn dispatch_with_cancel(
                         .await
                     {
                         Ok(output) => {
+                            if let Some(bus) = &ctx.event_bus {
+                                bus.emit(crate::event_bus::LoopStreamEvent::ParallelSubtaskFinished {
+                                    session_id: ctx.session_id.clone(),
+                                    subtask_id: id.clone(),
+                                    ok: true,
+                                    error: None,
+                                });
+                            }
                             group_results.push(SubTaskResult {
                                 id,
                                 output,
@@ -366,6 +405,14 @@ pub async fn dispatch_with_cancel(
                                     error = %e,
                                     "Parallel sub-task failed (no retry: attempt had side effects or retry budget spent)"
                                 );
+                                if let Some(bus) = &ctx.event_bus {
+                                    bus.emit(crate::event_bus::LoopStreamEvent::ParallelSubtaskFinished {
+                                        session_id: ctx.session_id.clone(),
+                                        subtask_id: id.clone(),
+                                        ok: false,
+                                        error: Some(format!("{}", e)),
+                                    });
+                                }
                                 group_results.push(SubTaskResult {
                                     id,
                                     output: String::new(),
@@ -568,7 +615,7 @@ pub async fn decompose_and_dispatch(
 /// Returns an empty `Vec` on any failure so the caller can fall back to the
 /// serial loop. The planner is read-only and produces a JSON array of
 /// `{ "id": str, "task": str }` objects (or `[]` when indivisible).
-async fn decompose_task(ctx: &ParallelContext, task_prompt: &str) -> Vec<SubTask> {
+pub async fn decompose_task(ctx: &ParallelContext, task_prompt: &str) -> Vec<SubTask> {
     let planner = ctx.build_executor("planner", CancellationToken::new(), None, None, None);
         let system = "You are a task decomposition planner. Given a high-level \
         engineering task, break it into a set of INDEPENDENT sub-tasks that can \
@@ -596,17 +643,25 @@ async fn decompose_task(ctx: &ParallelContext, task_prompt: &str) -> Vec<SubTask
 fn parse_subtasks(text: &str) -> Vec<SubTask> {
     let start = match text.find('[') {
         Some(i) => i,
-        None => return Vec::new(),
+        None => {
+            tracing::warn!("G7 planner output has no JSON array; falling back to serial loop");
+            return Vec::new();
+        }
     };
     let end = match text.rfind(']') {
         Some(i) => i + 1,
-        None => return Vec::new(),
+        None => {
+            tracing::warn!("G7 planner output has no JSON array terminator; falling back to serial loop");
+            return Vec::new();
+        }
     };
     let json = &text[start..end];
     let Ok(arr) = serde_json::from_str::<serde_json::Value>(json) else {
+        tracing::warn!("G7 planner output is not valid JSON; falling back to serial loop");
         return Vec::new();
     };
     let Some(arr) = arr.as_array() else {
+        tracing::warn!("G7 planner output is not a JSON array; falling back to serial loop");
         return Vec::new();
     };
     let mut out = Vec::new();
@@ -680,6 +735,8 @@ mod tests {
             permission_rules: None,
             auto_accept: false,
             shared_token_usage: None,
+            session_id: "test-session".into(),
+            event_bus: None,
         });
         let results = dispatch(Arc::clone(&ctx), vec![]).await;
         assert!(results.is_empty());
@@ -758,6 +815,8 @@ mod tests {
             permission_rules: None,
             auto_accept: false,
             shared_token_usage: None,
+            session_id: "test-session".into(),
+            event_bus: None,
         })
     }
 

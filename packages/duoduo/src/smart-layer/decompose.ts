@@ -1,5 +1,6 @@
 import { Effect, Stream } from "effect"
 import { tool, jsonSchema } from "ai"
+import { Log } from "@/util"
 import { LLM } from "@/session/llm"
 import { Agent } from "@/agent/agent"
 import { SystemPrompt } from "@/session/system"
@@ -8,6 +9,8 @@ import type { MessageV2 } from "@/session/message-v2"
 import type { SubTaskRequest } from "./agent"
 import type { InterfaceContract } from "./types"
 import { buildFileContract, renderFileContract } from "./contract"
+
+const log = Log.create({ service: "smart-layer.decompose" })
 
 /**
  * Deterministic TS-side task decomposition for G7 parallel dispatch.
@@ -176,5 +179,15 @@ export function decomposeTask(args: {
       targetFile?: string
     }>
     return yield* buildSubTasks(input, envLines, codingStandards)
-  }).pipe(Effect.orElseSucceed(() => [] as SubTaskRequest[]))
+  }).pipe(
+    Effect.tapError((e) =>
+      Effect.sync(() => {
+        log.warn("task decomposition failed; falling back to serial dispatch", {
+          sessionID: args.sessionID,
+          error: e instanceof Error ? e.message : String(e),
+        })
+      }),
+    ),
+    Effect.orElseSucceed(() => [] as SubTaskRequest[]),
+  )
 }

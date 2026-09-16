@@ -953,7 +953,6 @@ export const SessionRoutes = lazy(() =>
         const sessionID = c.req.valid("param").sessionID
         const body = c.req.valid("json")
         const promptT0 = Date.now()
-        process.stderr.write(`[TRACE-route] ⓪ prompt_async received, sessionID=${sessionID}\n`)
         const smartLayer = createSmartLayerClients()
         const taskId = sessionID
         if (smartLayer) {
@@ -993,9 +992,6 @@ export const SessionRoutes = lazy(() =>
             svc.prompt({ ...body, sessionID } as unknown as SessionPrompt.PromptInput),
           ),
         ).catch((err) => {
-          process.stderr.write(
-            `[TRACE-route] ✗ prompt_async caught error: typeof=${typeof err}, isErr=${err instanceof Error}, val=${String(err)}, keys=${typeof err === "object" && err !== null ? Object.keys(err).join(",") : "N/A"}\n`,
-          )
           log.error("prompt_async failed", { sessionID, error: err })
           if (smartLayer) {
             void smartLayer.client
@@ -1017,7 +1013,7 @@ export const SessionRoutes = lazy(() =>
             typeof err === "object" && err !== null && typeof (err).toObject === "function"
               ? (err).toObject()
               : new NamedError.Unknown({ message: err instanceof Error ? err.message : String(err) }).toObject()
-          process.stderr.write(`[TRACE-route] ✗ publishing session.error: errorObj=${JSON.stringify(errorObj)}\n`)
+          log.warn("publishing session.error", { sessionID, error: errorObj })
           void Bus.publish(Session.Event.Error, {
             sessionID,
             error: errorObj,

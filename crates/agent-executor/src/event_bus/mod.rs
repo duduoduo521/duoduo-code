@@ -100,6 +100,20 @@ pub enum LoopStreamEvent {
         child_session_id: String,
         error: String,
     },
+    /// Parallel fan-out (G7): one sub-task started executing.
+    ParallelSubtaskStarted {
+        session_id: String,
+        subtask_id: String,
+        task: String,
+        mode: String,
+    },
+    /// Parallel fan-out (G7): one sub-task finished (`ok: false` ⇒ failed/cancelled).
+    ParallelSubtaskFinished {
+        session_id: String,
+        subtask_id: String,
+        ok: bool,
+        error: Option<String>,
+    },
 }
 
 /// Lightweight summary of a tool call for event payloads.

@@ -2293,56 +2293,57 @@ the task normally.\n\
 
         messages.push(LlmMessage::system(&full_system_prompt));
 
-        if feature_flags::memory_as_user_msg() {
-            if let Some(ref sa) = self.structured_assembler {
-                // Deep context path: StructuredAssembler → RhetoricGraph → Render.
-                // Single shared pipeline (see `render_structured_context`); the
-                // former inline copy drifted from routes/agent.rs.
-                let pp = self.project_path.to_str().unwrap_or("").to_string();
-                // Use the real session id when one is bound. A freshly minted
-                // UUID matches no stored session, so every session-scoped
-                // memory lookup inside `assemble` returned nothing and the
-                // whole session-memory layer was dead on this path. The UUID
-                // remains only as a fallback for genuinely session-less runs.
-                let session_id = self
-                    .session_id
-                    .clone()
-                    .unwrap_or_else(|| format!("loop-{}", uuid::Uuid::new_v4()));
-                // Pass the task prompt as the user message: `assemble` gates KG
-                // retrieval on `user_message.is_some()`, so passing `None` here
-                // disabled knowledge-graph context for this path entirely.
-                let user_msg = full_task_prompt.clone();
-                let phase = self.current_phase();
-                if let context_builder::StructuredContextOutcome::Rendered(rendered) =
-                    context_builder::render_structured_context(
-                        sa.clone(),
-                        session_id,
-                        Some(user_msg),
-                        2000,
-                        pp,
-                        true,
-                        phase,
-                    )
-                    .await
-                {
-                    messages.push(LlmMessage::user(&rendered));
-                }
-            } else if let Some(ref cb) = self.context_builder {
-                let cb_clone = cb.clone();
-                let sp = system_prompt.to_string();
-                let pp = self.project_path.to_str().unwrap_or("").to_string();
-                let ctx_result = tokio::task::spawn_blocking(move || {
-                    cb_clone.assemble_with_project(&sp, 500, Some(&pp))
-                })
-                .await;
-                if let Ok(Ok(ctx)) = ctx_result
-                    && !ctx.assembled_context.is_empty() {
-                        messages.push(LlmMessage::user(format!(
-                            "## Relevant Memory\n{}\n\nUse these memories to provide context-aware responses.",
-                            ctx.assembled_context
-                        )));
-                    }
+        // Memory/project context injection (always on; was previously gated
+        // behind the removed `DUO_FF_MEMORY_AS_USER_MSG` experiment flag).
+        // Keeps sub-agents aligned with the main loop's context pipeline.
+        if let Some(ref sa) = self.structured_assembler {
+            // Deep context path: StructuredAssembler → RhetoricGraph → Render.
+            // Single shared pipeline (see `render_structured_context`); the
+            // former inline copy drifted from routes/agent.rs.
+            let pp = self.project_path.to_str().unwrap_or("").to_string();
+            // Use the real session id when one is bound. A freshly minted
+            // UUID matches no stored session, so every session-scoped
+            // memory lookup inside `assemble` returned nothing and the
+            // whole session-memory layer was dead on this path. The UUID
+            // remains only as a fallback for genuinely session-less runs.
+            let session_id = self
+                .session_id
+                .clone()
+                .unwrap_or_else(|| format!("loop-{}", uuid::Uuid::new_v4()));
+            // Pass the task prompt as the user message: `assemble` gates KG
+            // retrieval on `user_message.is_some()`, so passing `None` here
+            // disabled knowledge-graph context for this path entirely.
+            let user_msg = full_task_prompt.clone();
+            let phase = self.current_phase();
+            if let context_builder::StructuredContextOutcome::Rendered(rendered) =
+                context_builder::render_structured_context(
+                    sa.clone(),
+                    session_id,
+                    Some(user_msg),
+                    2000,
+                    pp,
+                    true,
+                    phase,
+                )
+                .await
+            {
+                messages.push(LlmMessage::user(&rendered));
             }
+        } else if let Some(ref cb) = self.context_builder {
+            let cb_clone = cb.clone();
+            let sp = system_prompt.to_string();
+            let pp = self.project_path.to_str().unwrap_or("").to_string();
+            let ctx_result = tokio::task::spawn_blocking(move || {
+                cb_clone.assemble_with_project(&sp, 500, Some(&pp))
+            })
+            .await;
+            if let Ok(Ok(ctx)) = ctx_result
+                && !ctx.assembled_context.is_empty() {
+                    messages.push(LlmMessage::user(format!(
+                        "## Relevant Memory\n{}\n\nUse these memories to provide context-aware responses.",
+                        ctx.assembled_context
+                    )));
+                }
         }
 
         messages.push(LlmMessage::user(&full_task_prompt));

@@ -67,7 +67,6 @@ export const EventRoutes = () =>
         }
 
         const unsub = await Bus.subscribeAll((event) => {
-          if (event.type && event.type.includes("PartDelta")) process.stderr.write(`[TRACE-bus-fwd] forwarding ${event.type}\n`)
           q.push(JSON.stringify(event))
           if (event.type === Bus.InstanceDisposed.type) {
             stop()

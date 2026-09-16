@@ -623,7 +623,7 @@ async fn schedule(
                 let content_for_mem = resp.content.clone();
                 let pp_owned = pp.clone();
                 let task_id_for_mem = task_id.clone();
-                let _ = tokio::task::spawn_blocking(move || {
+                match tokio::task::spawn_blocking(move || {
                     let summary = if content_for_mem.len() > 2000 {
                         let end = content_for_mem.floor_char_boundary(1500);
                         format!(
@@ -665,7 +665,16 @@ async fn schedule(
                         user_id: None,
                     })
                 })
-                .await;
+                .await
+                {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(e)) => {
+                        tracing::warn!(error = %e, task_id = %task_id, "Failed to store scheduled-task memory (best-effort, continuing)");
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, task_id = %task_id, "Memory store task panicked or was cancelled (best-effort, continuing)");
+                    }
+                }
             }
 
             let sched = scheduler_for_exec.clone();
@@ -712,23 +721,13 @@ async fn cancel_agent(
     State(state): State<crate::server::AppState>,
     Path(task_id): Path<String>,
 ) -> Result<Json<serde_json::Value>> {
-    eprintln!("[TRACE-cancel] cancel_agent called, task_id={}", task_id);
     let cancellations = state.agent_cancellations.lock().await;
     if let Some(token) = cancellations.get(&task_id) {
-        eprintln!(
-            "[TRACE-cancel] cancel_agent FOUND token for task_id={}, calling token.cancel()",
-            task_id
-        );
         token.cancel();
         Ok(Json(
             serde_json::json!({"cancelled": true, "task_id": task_id}),
         ))
     } else {
-        eprintln!(
-            "[TRACE-cancel] cancel_agent token NOT found for task_id={}, keys available: {:?}",
-            task_id,
-            cancellations.keys().collect::<Vec<_>>()
-        );
         Ok(Json(serde_json::json!({
             "cancelled": false,
             "task_id": task_id,
@@ -1159,10 +1158,11 @@ async fn execute(
                 let memory = state.memory.clone();
                 let project_path_owned = project_path_str.clone();
                 let task_id_for_mem = task_id.clone();
+                let task_id_for_log = task_id_for_mem.clone();
                 let prompt_for_mem = req.prompt.clone();
                 let content_for_mem = resp.content.clone();
 
-                let _ = tokio::task::spawn_blocking(move || {
+                match tokio::task::spawn_blocking(move || {
                     // Structured content: task description + key output summary
                     let summary = if content_for_mem.len() > 2000 {
                         let end = content_for_mem.floor_char_boundary(1500);
@@ -1207,7 +1207,16 @@ async fn execute(
                         user_id: None,
                     })
                 })
-                .await;
+                .await
+                {
+                    Ok(Ok(_)) => {}
+                    Ok(Err(e)) => {
+                        tracing::warn!(error = %e, task_id = %task_id_for_log, "Failed to store agent-execute memory (best-effort, continuing)");
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, task_id = %task_id_for_log, "Memory store task panicked or was cancelled (best-effort, continuing)");
+                    }
+                }
             }
 
             let sched = scheduler.clone();
@@ -2523,11 +2532,6 @@ async fn run_loop_handler(
     tracing::Span::current().set_parent(trace_cx.into_context());
 
     let session_id = req.session_id.clone();
-    eprintln!(
-        "[TRACE-rust] ① run_loop_handler called, session_id={}, model={}",
-        session_id,
-        req.model.as_deref().unwrap_or("?")
-    );
     let intent_type = req.intent_type.clone();
 
     // Read LoopConfig from config manager (fallback to env vars when absent).
@@ -2582,10 +2586,6 @@ async fn run_loop_handler(
             _ => max_steps,                      // default: use original
         }
     };
-    eprintln!(
-      "[TRACE-rust] effective_max_steps={}, intent={:?}, default_MAX_STEPS={}",
-      effective_max_steps, intent_type, agent_executor::MAX_STEPS
-    );
     // Sub-agent loop limits (LoopConfig.sub_agent_*, -1 = unlimited). Applied
     // to `task` children via the executor and to G7 fan-out via ParallelContext.
     let sub_agent_limits = {
@@ -2872,15 +2872,6 @@ async fn run_loop_handler(
         .as_ref()
         .map(|lc| lc.reflect_on.clone())
         .unwrap_or_else(|| "keypoint".to_string());
-
-    eprintln!(
-        "[TRACE-rust] ⓪ runLoop spawn: api_url={}, has_api_key={}, model={}, msg_count={}, tools={}",
-        api_url,
-        api_key.is_some(),
-        model,
-        req.messages.len(),
-        tools_from_ts.as_ref().map(|t| t.len()).unwrap_or(0)
-    );
 
     tokio::spawn(async move {
         // Acquire per-session lock inside the spawned task
@@ -3409,27 +3400,13 @@ async fn run_loop_handler(
         // writing with an empty message_id would violate it.
         let mut pending_step_start: Option<(String, String)> = None; // (snapshot_hash, part_id)
         if let Some(ref svc) = snapshot_svc {
-            eprintln!(
-                "[TRACE-rust] snapshot track start, worktree={}",
-                project_path_spawn
-            );
-            let t0_snap = std::time::Instant::now();
             match svc.track() {
                 Ok(hash) => {
-                    eprintln!(
-                        "[TRACE-rust] snapshot track ok, elapsed={:?}",
-                        t0_snap.elapsed()
-                    );
                     prev_snapshot_hash = Some(hash.clone());
                     let start_part_id = new_part_id();
                     pending_step_start = Some((hash, start_part_id));
                 }
                 Err(e) => {
-                    eprintln!(
-                        "[TRACE-rust] snapshot track FAILED, elapsed={:?}, error={}",
-                        t0_snap.elapsed(),
-                        e
-                    );
                     tracing::warn!(error = %e, "Initial snapshot track failed (non-fatal)");
                 }
             }
@@ -3678,6 +3655,8 @@ async fn run_loop_handler(
                         input_tokens: live_metrics.input_tokens.clone(),
                     },
                 )),
+                session_id: session_id_spawn.clone(),
+                event_bus: Some(event_bus_spawn.clone()),
             });
 
             // G7 precedence: explicit TS-sent sub_tasks win over the Rust LLM
@@ -3685,55 +3664,233 @@ async fn run_loop_handler(
             // the decomposition. When neither is available we fall through to
             // the serial loop unchanged.
             let explicit = req.sub_tasks.clone().filter(|t| !t.is_empty());
-            let results = if let Some(tasks) = explicit {
-                tracing::info!(
-                    session_id = %session_id_spawn,
-                    count = tasks.len(),
-                    "G7 parallel dispatch: using explicit TS sub-tasks (precedence over planner)"
-                );
-                let subtasks: Vec<agent_executor::parallel_executor::SubTask> = tasks
-                    .into_iter()
-                    .map(sub_task_request_to_sub_task)
-                    .collect();
-                agent_executor::parallel_executor::dispatch_with_cancel(
+            let is_explicit = explicit.is_some();
+            let subtasks: Vec<agent_executor::parallel_executor::SubTask> =
+                if let Some(tasks) = explicit {
+                    tracing::info!(
+                        session_id = %session_id_spawn,
+                        count = tasks.len(),
+                        "G7 parallel dispatch: using explicit TS sub-tasks (precedence over planner)"
+                    );
+                    tasks
+                        .into_iter()
+                        .map(sub_task_request_to_sub_task)
+                        .collect()
+                } else {
+                    // No explicit list — fall back to the Rust LLM planner (read-only).
+                    let task_prompt = messages
+                        .iter()
+                        .rev()
+                        .find(|m| m.role == "user")
+                        .map(|m| m.content.clone())
+                        .unwrap_or_default();
+                    agent_executor::parallel_executor::decompose_task(
+                        &parallel_ctx,
+                        &task_prompt,
+                    )
+                    .await
+                };
+
+            let results = if !subtasks.is_empty() {
+                // ── G7 dispatch card ──
+                // Persisted synthetic assistant message + tool part so the
+                // frontend sees the fan-out while it runs (Running) and its
+                // outcome (Completed) through the standard tool-part pipeline.
+                // finish="tool-calls" is REQUIRED: the TS poll treats a new
+                // assistant row with finish=stop as run-loop completion.
+                let g7_now = chrono::Utc::now().timestamp_millis();
+                let g7_msg_id = new_message_id();
+                let g7_info =
+                    duo_types::MessageInfo::Assistant(duo_types::AssistantMessageInfo {
+                        id: g7_msg_id.clone(),
+                        session_id: session_id_spawn.clone(),
+                        time: duo_types::AssistantMessageTime {
+                            created: g7_now as f64,
+                            completed: None,
+                        },
+                        error: None,
+                        parent_id: parent_user_msg_id
+                            .clone()
+                            .unwrap_or_else(|| session_id_spawn.clone()),
+                        model_id: model_spawn.clone(),
+                        provider_id: config_provider.clone(),
+                        mode: "rust-run-loop".to_string(),
+                        agent: agent_name_spawn.clone(),
+                        path: duo_types::AssistantMessagePath {
+                            cwd: project_path_spawn.clone(),
+                            root: project_path_spawn.clone(),
+                        },
+                        summary: None,
+                        tokens: duo_types::TokenInfo {
+                            total: None,
+                            input: 0.0,
+                            output: 0.0,
+                            reasoning: 0.0,
+                            cache: duo_types::TokenCacheInfo {
+                                read: 0.0,
+                                write: 0.0,
+                            },
+                            breakdown: None,
+                            cache_hit_rate: None,
+                        },
+                        structured: None,
+                        variant: None,
+                        finish: Some("tool-calls".to_string()),
+                    });
+                if let Err(e) = msg_store.insert_message(
+                    &g7_msg_id,
+                    &session_id_spawn,
+                    g7_now,
+                    &serde_json::to_string(&g7_info).unwrap_or_default(),
+                ) {
+                    tracing::warn!(error = %e, "Failed to insert G7 dispatch card message");
+                }
+
+                let g7_part_id = new_part_id();
+                let g7_call_id = format!("call_g7_{}", ascending_id_suffix());
+                let g7_input: std::collections::HashMap<String, serde_json::Value> = {
+                    let mut m = std::collections::HashMap::new();
+                    m.insert(
+                        "source".to_string(),
+                        serde_json::Value::String(
+                            if is_explicit { "ts_planner" } else { "rust_planner" }.to_string(),
+                        ),
+                    );
+                    m.insert(
+                        "subTasks".to_string(),
+                        serde_json::Value::Array(
+                            subtasks
+                                .iter()
+                                .map(|t| {
+                                    serde_json::json!({
+                                        "id": t.id,
+                                        "mode": match t.tool_set {
+                                            agent_executor::agentic_loop::LoopToolSet::Explore => "explore",
+                                            _ => "codegen",
+                                        },
+                                        "task": t.task_prompt.chars().take(200).collect::<String>(),
+                                    })
+                                })
+                                .collect(),
+                        ),
+                    );
+                    m
+                };
+                let g7_part = duo_types::PartData::Tool(duo_types::ToolPartData {
+                    base: duo_types::PartBase {
+                        id: g7_part_id.clone(),
+                        session_id: session_id_spawn.clone(),
+                        message_id: g7_msg_id.clone(),
+                    },
+                    call_id: g7_call_id.clone(),
+                    tool: "parallel_dispatch".to_string(),
+                    state: duo_types::ToolState::Running {
+                        input: g7_input,
+                        title: Some("parallel_dispatch".to_string()),
+                        metadata: None,
+                        time: duo_types::ToolTimeStart {
+                            start: g7_now as f64,
+                        },
+                    },
+                    metadata: None,
+                });
+                // Inserted directly as Running (NOT Pending): the TS poll executes
+                // Pending tool parts as delegated tools, which would misfire on
+                // this synthetic card.
+                if let Err(e) = msg_store.insert_part(
+                    &g7_part_id,
+                    &g7_msg_id,
+                    &session_id_spawn,
+                    g7_now,
+                    &serde_json::to_string(&g7_part).unwrap_or_default(),
+                ) {
+                    tracing::warn!(error = %e, "Failed to insert G7 dispatch card part");
+                }
+                event_bus_spawn.emit(agent_executor::LoopStreamEvent::ToolRunning {
+                    session_id: session_id_spawn.clone(),
+                    call_id: g7_call_id.clone(),
+                    part_id: g7_part_id.clone(),
+                });
+
+                let results = agent_executor::parallel_executor::dispatch_with_cancel(
                     Arc::clone(&parallel_ctx),
                     subtasks,
                     cancel_token.clone(),
                 )
-                .await
-            } else {
-                // No explicit list — fall back to the Rust LLM planner (read-only).
-                let task_prompt = messages
+                .await;
+
+                // Finalize the dispatch card with the aggregated report.
+                let succeeded = results
                     .iter()
-                    .rev()
-                    .find(|m| m.role == "user")
-                    .map(|m| m.content.clone())
-                    .unwrap_or_default();
-                agent_executor::parallel_executor::decompose_and_dispatch(
-                    &parallel_ctx,
-                    &task_prompt,
-                    cancel_token.clone(),
-                )
-                .await
-            };
-            if !results.is_empty() {
-                let succeeded = results.iter().filter(|r| r.status == agent_executor::parallel_executor::SubTaskStatus::Succeeded).count();
+                    .filter(|r| r.status == agent_executor::parallel_executor::SubTaskStatus::Succeeded)
+                    .count();
+                let report = agent_executor::parallel_executor::aggregate_reports(&results);
+                let g7_done = chrono::Utc::now().timestamp_millis();
+                let g7_input_final: std::collections::HashMap<String, serde_json::Value> = {
+                    let mut m = std::collections::HashMap::new();
+                    m.insert(
+                        "subTasks".to_string(),
+                        serde_json::json!({
+                            "succeeded": succeeded,
+                            "failed": results.len().saturating_sub(succeeded),
+                        }),
+                    );
+                    m
+                };
+                let g7_part_done = duo_types::PartData::Tool(duo_types::ToolPartData {
+                    base: duo_types::PartBase {
+                        id: g7_part_id.clone(),
+                        session_id: session_id_spawn.clone(),
+                        message_id: g7_msg_id.clone(),
+                    },
+                    call_id: g7_call_id.clone(),
+                    tool: "parallel_dispatch".to_string(),
+                    state: duo_types::ToolState::Completed {
+                        input: g7_input_final,
+                        output: report.chars().take(50_000).collect(),
+                        title: "parallel_dispatch".to_string(),
+                        metadata: std::collections::HashMap::new(),
+                        time: duo_types::ToolTimeCompleted {
+                            start: g7_now as f64,
+                            end: g7_done as f64,
+                            compacted: None,
+                        },
+                        attachments: None,
+                    },
+                    metadata: None,
+                });
+                if let Err(e) = msg_store.update_part(
+                    &g7_part_id,
+                    &serde_json::to_string(&g7_part_done).unwrap_or_default(),
+                ) {
+                    tracing::warn!(error = %e, "Failed to finalize G7 dispatch card part");
+                }
+                event_bus_spawn.emit(agent_executor::LoopStreamEvent::ToolCompleted {
+                    session_id: session_id_spawn.clone(),
+                    call_id: g7_call_id.clone(),
+                    part_id: g7_part_id.clone(),
+                });
+
                 tracing::info!(
                     session_id = %session_id_spawn,
                     total = results.len(),
                     succeeded = succeeded,
                     "G7 parallel dispatch completed; folding reports into main loop"
                 );
-                let report = agent_executor::parallel_executor::aggregate_reports(&results);
-                messages.push(agent_executor::LlmMessage::user(format!(
-                    "## Parallel sub-agent findings\n{}",
-                    report
-                )));
+                results
             } else {
                 tracing::info!(
                     session_id = %session_id_spawn,
                     "G7 parallel dispatch produced no sub-tasks; continuing with serial loop"
                 );
+                Vec::new()
+            };
+            if !results.is_empty() {
+                let report = agent_executor::parallel_executor::aggregate_reports(&results);
+                messages.push(agent_executor::LlmMessage::user(format!(
+                    "## Parallel sub-agent findings\n{}",
+                    report
+                )));
             }
         }
 
@@ -4247,15 +4404,6 @@ async fn run_loop_handler(
                 session_id: session_id_spawn.clone(),
                 step: steps,
             });
-            eprintln!(
-                "[TRACE-rust] ② calling LLM stream, step={}, model={}",
-                steps, model_spawn
-            );
-            let cancel_state_before = cancel_token.is_cancelled();
-            eprintln!(
-                "[TRACE-cancel] before call_llm_stream step={}, cancel_token.is_cancelled={}",
-                steps, cancel_state_before
-            );
             let stream_result = agent_executor::call_llm_stream(
                 &api_url_spawn,
                 api_key_spawn.as_deref(),
@@ -4267,11 +4415,10 @@ async fn run_loop_handler(
 
             let mut llm_stream = match stream_result {
                 Ok(s) => {
-                    eprintln!("[TRACE-rust] ③ LLM stream connected ok");
                     s
                 }
                 Err(e) => {
-                    eprintln!("[TRACE-rust] ✗ LLM stream error: {}", e);
+                    tracing::warn!(error = %e, session_id = %session_id_spawn, "LLM stream failed; aborting run loop");
                     last_error = Some(e.to_string());
                     break;
                 }
@@ -4386,12 +4533,6 @@ async fn run_loop_handler(
                     }
                 }
             }
-            eprintln!(
-                "[TRACE-rust] ④ LLM stream consumed, text_len={}, reasoning_len={}, tool_calls={}",
-                full_text.len(),
-                reasoning_text.len(),
-                tool_calls.len()
-            );
             if let Some(err_msg) = last_error.as_ref() {
                 // Check if the error is a context overflow — if so, mark it so TS
                 // can trigger compaction and retry (mirrors TS processor.ts halt() L688-718).
@@ -4451,10 +4592,6 @@ async fn run_loop_handler(
                         session_id: session_id_spawn.clone(),
                         message: "context_overflow".to_string(),
                     });
-                    eprintln!(
-                      "[TRACE-rust] ⚠ context_overflow → breaking runLoop at step={}",
-                      steps
-                    );
                 }
                 break;
             }
@@ -4611,20 +4748,6 @@ async fn run_loop_handler(
                 && !force_text_only
                 && !round_truncated
                 && completion_decision(confirm_rounds, &full_text) == CompletionDecision::AutoClose;
-            let finish_val = if tool_calls.is_empty() {
-                "stop"
-            } else {
-                "tool-calls"
-            };
-            let completed_val = if tool_calls.is_empty() {
-                "Some"
-            } else {
-                "None"
-            };
-            eprintln!(
-                "[TRACE-rust] ⑤ assistant message written to DB, id={}, finish={}, completed={}",
-                assistant_msg_id, finish_val, completed_val
-            );
 
             // ── Write deferred StepStartPart (now that assistant message exists) ──
             // The StepStartPart was prepared before the loop started but could not be
@@ -4903,19 +5026,11 @@ async fn run_loop_handler(
                     // Wrap-up round: tools were intentionally disabled (step cap
                     // or budget), so the LLM's text-only summary is the final
                     // answer — break as before.
-                    eprintln!(
-                        "[TRACE-rust] ⑥ runLoop done (wrap-up text-only), steps={}, emitting LoopDone",
-                        steps
-                    );
                     tracing::info!(session_id = %session_id_spawn, steps, "run_loop done");
                     break;
                 }
                 match completion_decision(confirm_rounds, &full_text) {
                     CompletionDecision::Done => {
-                        eprintln!(
-                            "[TRACE-rust] ⑥ runLoop done (TASK_COMPLETE marker), steps={}",
-                            steps
-                        );
                         tracing::info!(session_id = %session_id_spawn, steps, "run_loop done (explicit marker)");
                         break;
                     }
@@ -5410,10 +5525,6 @@ async fn run_loop_handler(
                             continue;
                         }
                         // Permission needs UI interaction — must delegate to TS
-                        eprintln!(
-                            "[TRACE-rust] ⑥ tool '{}' needs permission, delegating to TS (callID={})",
-                            tool_name, call_id
-                        );
                         tracing::info!(tool = %tool_name, reason = %msg, "tool needs permission ask, delegating to TS");
                         // Transition back to Pending so TS poll can detect and execute
                         self_transition_part_to_pending(
@@ -5716,10 +5827,6 @@ async fn run_loop_handler(
                                     continue;
                                 }
                                 // Rust cannot execute this tool (Unknown tool, etc.) — delegate to TS
-                                eprintln!(
-                                    "[TRACE-rust] ⑥ tool '{}' not in Rust ({}), delegating to TS (callID={})",
-                                    tool_name, e, call_id
-                                );
                                 tracing::debug!(tool = %tool_name, error = %e, "tool not in Rust, delegating to TS");
                                 // Transition back to Pending so TS poll can detect and execute
                                 self_transition_part_to_pending(
@@ -5837,15 +5944,7 @@ async fn run_loop_handler(
             // ── Wait for delegated tool results ──
             if !tool_result_futs.is_empty() {
                 let wait_start = std::time::Instant::now();
-                eprintln!(
-                    "[TRACE-rust] ⑦ waiting for {} delegated tool results from TS...",
-                    tool_result_futs.len()
-                );
                 let results = futures::future::join_all(tool_result_futs).await;
-                eprintln!(
-                    "[TRACE-rust] ⑦ delegated tool results received (count={})",
-                    results.len()
-                );
                 // DEBUG timing (debug-level only; no effect on normal logic).
                 // Helps verify whether a delegated-tool wait (TS→Rust result
                 // round-trip) is the bottleneck when a run appears to hang.
@@ -6280,10 +6379,7 @@ async fn run_loop_handler(
                         agent_executor::reflect::MAX_REFLECT_STALL,
                         residual_text
                     )));
-                    eprintln!(
-                      "[TRACE-rust] ⚠ reflect stall fuse triggered at step={} → breaking runLoop early (last assistant finish may be tool-calls)",
-                      steps
-                    );
+                    tracing::warn!(session_id = %session_id_spawn, step = steps, "reflect stall fuse triggered; breaking run loop early");
                     break;
                 }
             }
@@ -6749,24 +6845,18 @@ async fn run_loop_handler(
                         &serde_json::to_string(&marker).unwrap_or_default(),
                     ) {
                         tracing::warn!(error = %e, "Failed to insert aborted assistant message");
-                    } else {
-                        last_assistant_msg_id = Some(marker_id);
                     }
                 }
             }
         }
 
         if let Some(err) = &last_error {
-            eprintln!("[TRACE-rust] ✗ runLoop ended with error: {}", err);
+            tracing::warn!(session_id = %session_id_spawn, error = %err, "runLoop ended with error");
             bus.emit(agent_executor::LoopStreamEvent::LoopError {
                 session_id: session_id_spawn.clone(),
                 message: err.clone(),
             });
         } else {
-            eprintln!(
-                "[TRACE-rust] ⑨ runLoop completed normally, steps={}, last_assistant_msg_id={:?}, emitting LoopDone",
-                steps, last_assistant_msg_id
-            );
             bus.emit(agent_executor::LoopStreamEvent::LoopDone {
                 session_id: session_id_spawn.clone(),
                 steps,
@@ -6775,10 +6865,6 @@ async fn run_loop_handler(
 
         // Clean up cancellation token and event bus (identity-gated: a
         // superseded run must not delete the newer run's entries).
-        eprintln!(
-            "[TRACE-cancel] runLoop cleanup: removing cancel_key={} from agent_cancellations",
-            cancel_key
-        );
         cleanup_run_loop_registration(
             &state_clone,
             &cancel_key,
@@ -6790,10 +6876,6 @@ async fn run_loop_handler(
 
     // Return immediately — the runLoop is running in the background.
     // TS polls DB to track progress.
-    eprintln!(
-        "[TRACE-rust] returning HTTP {{ status: started }} for session_id={}",
-        session_id
-    );
     Ok(Json(serde_json::json!({
         "status": "started",
         "sessionId": session_id,
@@ -6926,6 +7008,16 @@ async fn run_loop_events_handler(
                         agent_executor::LoopStreamEvent::SubagentError { .. } => Event::default()
                             .event("subagent_error")
                             .data(serde_json::to_string(&event).unwrap_or_default()),
+                        agent_executor::LoopStreamEvent::ParallelSubtaskStarted { .. } => {
+                            Event::default()
+                                .event("subtask_started")
+                                .data(serde_json::to_string(&event).unwrap_or_default())
+                        }
+                        agent_executor::LoopStreamEvent::ParallelSubtaskFinished { .. } => {
+                            Event::default()
+                                .event("subtask_finished")
+                                .data(serde_json::to_string(&event).unwrap_or_default())
+                        }
                     };
                     Some((Ok(sse_event), (rx, sid, is_terminal)))
                 }

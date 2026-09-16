@@ -445,17 +445,6 @@ impl MemorySystem {
         crate::migration::run_migrations(&conn)
     }
 
-    /// Configure embedding API for vector search.
-    /// When set, new memories will have embeddings generated asynchronously
-    /// and vector search will be used alongside FTS5.
-    /// Configure embedding API for vector search (builder pattern).
-    /// When set, new memories will have embeddings generated asynchronously
-    /// and vector search will be used alongside FTS5.
-    pub fn with_embedding_config(self, config: EmbeddingConfig) -> Self {
-        *duo_utils::sync::lock(&self.embedding_config) = Some(config);
-        self
-    }
-
     /// Dynamically update embedding config at runtime (e.g. when LLM config changes).
     /// This is safe to call from a shared `Arc<MemorySystem>`.
     pub fn set_embedding_config(&self, config: EmbeddingConfig) {
@@ -1772,22 +1761,6 @@ impl MemorySystem {
         Ok(rows.filter_map(|r| r.ok()).collect())
     }
 
-    /// Retrieve all plan IDs that have a fingerprint for the given file path.
-    ///
-    /// Used during plan matching to find candidate plans whose base state
-    /// should be compared against the current file hash.
-    pub fn get_plans_by_file(&self, file_path: &str) -> Result<Vec<(String, String)>> {
-        let conn = self.get_read_conn()?;
-        let mut stmt = conn.prepare(
-            "SELECT plan_memory_id, base_ast_hash
-             FROM plan_file_fingerprints WHERE file_path = ?1",
-        )?;
-        let rows = stmt.query_map(rusqlite::params![file_path], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
-        })?;
-        Ok(rows.filter_map(|r| r.ok()).collect())
-    }
-
     /// Update a numeric counter in a plan's metadata JSON.
     ///
     /// `field` is one of `"success_count"`, `"failed_count"`, `"rejected_count"`.
@@ -2395,12 +2368,6 @@ impl MemorySystem {
             PersistenceBackend::ExternalPool { write_pool, .. } => Some(write_pool.clone()),
             PersistenceBackend::InMemory { .. } => None,
         }
-    }
-}
-
-impl Default for MemorySystem {
-    fn default() -> Self {
-        Self::new().expect("Failed to initialize memory-system")
     }
 }
 

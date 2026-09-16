@@ -1383,12 +1383,10 @@ NOTE: At any point in time through this workflow you should feel free to ask the
     const prompt: (input: PromptInput) => Effect.Effect<MessageV2.WithParts, unknown, unknown> = Effect.fn(
       "SessionPrompt.prompt",
     )(function* (input: PromptInput) {
-      process.stderr.write(`[TRACE-prompt] ① prompt() called, sessionID=${input.sessionID}\n`)
       yield* elog.info("prompt: start", { sessionID: input.sessionID })
       const session = yield* sessions.get(input.sessionID)
       yield* revert.cleanup(session)
       const message = yield* createUserMessage(input)
-      process.stderr.write(`[TRACE-prompt] ② userMessage created, messageID=${message.info.id}\n`)
       // 首条真实用户消息已落库：后台用其文本设置会话标题（占位），使侧栏立即显示可读标题
       // 而非自动生成的 "New session - <时间戳>"；恰好一条真实用户消息时还会用 LLM 生成正式标题覆盖占位。
       // forkDaemon 避免阻塞本次回复；placeholder 写入在前，LLM 覆盖在后。
@@ -1462,16 +1460,8 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         setCascadeQA(input.sessionID, input.cascadeQA)
       }
 
-      process.stderr.write(`[TRACE-prompt] ③ entering runAgentTurn\n`)
       yield* elog.info("prompt: entering runAgentTurn", { sessionID: input.sessionID })
       return yield* runAgentTurn({ sessionID: input.sessionID, autoAccept: input.autoAccept }).pipe(
-        Effect.tap((result) =>
-          Effect.sync(() => {
-            process.stderr.write(
-              `[TRACE-prompt] ⑧ runAgentTurn returned, role=${result.info.role}, finish=${(result.info as any).finish}\n`,
-            )
-          }),
-        ),
         Effect.ensuring(destroyBlackboard),
       )
     })
@@ -1834,9 +1824,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       // stale data before Rust even starts the LLM call.
       const snapshotMsgs = yield* MessageV2.filterCompactedEffect(sessionID)
       const prevLastAssistantId = snapshotMsgs.findLast((m) => m.info.role === "assistant")?.info.id
-      process.stderr.write(
-        `[TRACE-poll] snapshot: prevLastAssistantId=${prevLastAssistantId ?? "none"}, totalMsgs=${snapshotMsgs.length}\n`,
-      )
 
       // ── SSE subscription for zero-latency streaming ──
       // Subscribe to Rust runLoop events in parallel. SSE events drive:
@@ -1972,7 +1959,10 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         // Field pre-fetch failed (e.g. no user message yet, model lookup
         // failed). Skip placeholder assistant — degrades to original
         // one-shot behaviour, no worse than the status quo.
-        process.stderr.write(`[TRACE-sse] assistant placeholder builder skipped: ${e instanceof Error ? e.message : String(e)}\n`)
+        log.warn("assistant placeholder builder skipped", {
+          sessionID,
+          error: e instanceof Error ? e.message : String(e),
+        })
       }
 
       function ensureAssistantPlaceholder(messageID: string) {
@@ -1998,11 +1988,9 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       if (clients?.agent) {
         const sseStream: Effect.Effect<void> = Effect.promise(async () => {
           try {
-            process.stderr.write(`[TRACE-sse] subscribing to Rust runLoop events for sessionID=${sessionID}\n`)
             for await (const { event, data } of clients.agent.subscribeRunLoopEvents(sessionID)) {
               if (sseDone) break
               if (event === "thinking") {
-                process.stderr.write(`[TRACE-partdelta] thinking received data=${data.slice(0, 100)}\n`)
                 const parsed = JSON.parse(data) as { messageID: string; partID: string; content: string }
                 // Create placeholder part on first delta so frontend reducer can find it.
                 ensurePlaceholder(sessionID, parsed.messageID, parsed.partID, "reasoning")
@@ -2018,7 +2006,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   delta: parsed.content,
                 })
               } else if (event === "delta") {
-                process.stderr.write(`[TRACE-partdelta] delta received data=${data.slice(0, 100)}\n`)
                 const parsed = JSON.parse(data) as { messageID: string; partID: string; content: string }
                 // Same placeholder logic as thinking — must exist before delta can accumulate.
                 ensurePlaceholder(sessionID, parsed.messageID, parsed.partID, "text")
@@ -2033,7 +2020,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   delta: parsed.content,
                 })
             } else if (event === "loop_done" || event === "loop_error") {
-              process.stderr.write(`[TRACE-sse] received ${event}, setting sseDone=true\n`)
               sseDone = true
               // Capture the error text from a `loop_error` event so the poll
               // loop can synthesize a visible assistant error message when the
@@ -2080,9 +2066,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   subagentType: string
                   description: string
                 }
-                process.stderr.write(
-                  `[TRACE-sse] subagent_started: child=${parsed.childSessionId} type=${parsed.subagentType}\n`,
-                )
                 // Fetch child session Info from shared DB and publish to frontend.
                 // Bus.publish is async and self-executing (fire-and-forget with void).
                 void (async () => {
@@ -2097,9 +2080,10 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                       info,
                     })
                   } catch (err) {
-                    process.stderr.write(
-                      `[TRACE-sse] subagent_started: failed to publish session for child=${parsed.childSessionId}: ${err}\n`,
-                    )
+                    log.warn("subagent_started: failed to publish child session", {
+                      childSessionId: parsed.childSessionId,
+                      error: String(err),
+                    })
                   }
                 })()
               } else if (event === "subagent_done") {
@@ -2108,7 +2092,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   parentSessionId: string
                   childSessionId: string
                 }
-                process.stderr.write(`[TRACE-sse] subagent_done: child=${parsed.childSessionId}\n`)
                 void Bus.publish(SessionStatus.Event.Status as any, {
                   sessionID: parsed.childSessionId,
                   status: { type: "idle" as const },
@@ -2120,7 +2103,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   childSessionId: string
                   error: string
                 }
-                process.stderr.write(`[TRACE-sse] subagent_error: child=${parsed.childSessionId} error=${parsed.error}\n`)
                 void Bus.publish(SessionStatus.Event.Status as any, {
                   sessionID: parsed.childSessionId,
                   status: { type: "idle" as const },
@@ -2131,12 +2113,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 // Log for diagnostics; real-time typewriter effect may stutter.
                 const parsed = JSON.parse(data) as { missed: number }
                 void elog.warn("sse lagged, falling back to polling", { sessionID, missed: parsed.missed })
-              } else if (event === "loop_started") {
-                process.stderr.write(`[TRACE-sse] received loop_started — Rust runLoop is running\n`)
-              } else if (event === "llm_call_done") {
-                process.stderr.write(`[TRACE-sse] received llm_call_done\n`)
               } else if (event === "tool_pending") {
-                process.stderr.write(`[TRACE-sse] received tool_pending\n`)
                 // Publish placeholder tool part so frontend can show it immediately.
                 // Full data (input/output) will be published when the poll loop
                 // reads the completed part from DB.
@@ -2162,7 +2139,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   })
                 }
               } else if (event === "tool_running") {
-                process.stderr.write(`[TRACE-sse] received tool_running\n`)
                 // Clear the published flag so the poll loop re-publishes
                 // the running part with updated state.
                 const tr = JSON.parse(data) as { session_id: string; call_id: string; part_id: string }
@@ -2173,7 +2149,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   }
                 }
               } else if (event === "tool_completed") {
-                process.stderr.write(`[TRACE-sse] received tool_completed\n`)
                 // Clear the published flag so the poll loop re-publishes
                 // the completed part with full data (input, output, etc.).
                 const tc = JSON.parse(data) as { session_id: string; call_id: string; part_id: string }
@@ -2185,7 +2160,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   }
                 }
               } else if (event === "tool_error") {
-                process.stderr.write(`[TRACE-sse] received tool_error\n`)
                 // Same as tool_completed — clear flag so poll loop re-publishes with error state
                 const te = JSON.parse(data) as { session_id: string; call_id: string; part_id: string; error: string }
                 for (const key of toolPartsPublished) {
@@ -2198,9 +2172,10 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             }
           } catch (sseErr) {
             // SSE failed — silently fall back to polling
-            process.stderr.write(
-              `[TRACE-sse] SSE connection failed: ${sseErr instanceof Error ? sseErr.message : String(sseErr)}\n`,
-            )
+            log.warn("runLoop SSE connection failed; falling back to DB polling", {
+              sessionID,
+              error: sseErr instanceof Error ? sseErr.message : String(sseErr),
+            })
           }
         })
         yield* sseStream.pipe(Effect.ignore, Effect.forkIn(scope))
@@ -2220,7 +2195,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         // cannot reach this loop; this flag is the reliable stop signal so that
         // clicking STOP actually stops polling instead of running to the budget.
         if (abortedSessions.has(sessionID)) {
-          process.stderr.write(`[TRACE-poll] abort signaled for ${sessionID}, returning early\n`)
           yield* elog.debug("timing: poll aborted by user", { sessionID, attempt, elapsedMs: Date.now() - pollT0 })
           abortedSessions.delete(sessionID)
           return yield* lastAssistant(sessionID)
@@ -2243,9 +2217,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           } else if (goneSince === null) {
             goneSince = nowMs
           } else if (nowMs - goneSince >= LIVENESS_GRACE_MS) {
-            process.stderr.write(
-              `[TRACE-poll] ⚠ liveness probe: runLoop gone without terminal event for ${sessionID}, resolving\n`,
-            )
             yield* elog.warn("rustRunLoopPoll: runLoop exited without terminal event", { sessionID, attempt })
             const finalMsgs = yield* MessageV2.filterCompactedEffect(sessionID)
             const finalAssistant = finalMsgs.findLast((m) => m.info.role === "assistant")
@@ -2261,9 +2232,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         // window; cancel it and surface a visible error instead of polling
         // forever.
         if (nowMs - lastProgressAt >= STUCK_THRESHOLD_MS) {
-          process.stderr.write(
-            `[TRACE-poll] ⚠ no DB progress for ${STUCK_THRESHOLD_MS}ms, cancelling stuck runLoop ${sessionID}\n`,
-          )
           yield* elog.warn("rustRunLoopPoll: no-progress watchdog fired, cancelling runLoop", {
             sessionID,
             attempt,
@@ -2295,14 +2263,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         if (sseDone) {
           const msgs = yield* MessageV2.filterCompactedEffect(sessionID)
           const lastAssistantMsg = msgs.findLast((m) => m.info.role === "assistant")
-          const lastFinish = lastAssistantMsg
-            ? (lastAssistantMsg.info as MessageV2.Assistant).finish
-            : "none"
-          if (attempt < 3 || attempt % 30 === 0) {
-            process.stderr.write(
-              `[TRACE-poll] sseDone exit-check attempt=${attempt}, lastAssistant=${lastAssistantMsg?.info.id ?? "none"}, prevLast=${prevLastAssistantId ?? "none"}, finish=${lastFinish}\n`,
-            )
-          }
           // Run ended with an error (loop_error). This branch MUST run BEFORE
           // the new-assistant early-return below: when a multi-round run dies
           // mid-flight (e.g. LLM HTTP 429 after tool rounds), the previous
@@ -2311,16 +2271,10 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           // error — the UI went idle with no error card at all. runError is
           // only set by loop_error (never by loop_done), so this is precise.
           if (runError) {
-            process.stderr.write(
-              `[TRACE-poll] sseDone + runError → synthesizing error message (attempt=${attempt}, lastAssistant=${lastAssistantMsg?.info.id ?? "none"}, finish=${lastFinish})\n`,
-            )
             return yield* createRunLoopErrorMessage(sessionID, runError)
           }
           // Normal completion: a NEW assistant message was produced by the run.
           if (lastAssistantMsg && lastAssistantMsg.info.id !== prevLastAssistantId) {
-            process.stderr.write(
-              `[TRACE-poll] ✓ loop_done + new assistant → exiting early (attempt=${attempt}, finish=${lastFinish})\n`,
-            )
             return lastAssistantMsg
           }
           // Run ended (loop_done) but produced NO new assistant
@@ -2330,9 +2284,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           // Defensive: sseDone without a new message AND without a captured
           // error. Should not happen, but avoid an infinite spin — fall back
           // to the last known assistant message (same fallback as budget-exhausted).
-          process.stderr.write(
-            `[TRACE-poll] sseDone + no new assistant + no error → fallback (attempt=${attempt})\n`,
-          )
+          yield* elog.debug("poll: sseDone fallback exit (no new assistant, no error)", { sessionID, attempt })
           return yield* lastAssistant(sessionID)
         }
 
@@ -2367,18 +2319,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           }
         }
 
-        // Log every 30th poll attempt (or first 3) to avoid spam
-        if (attempt < 3 || attempt % 30 === 0) {
-          const lastAssistant = msgs.findLast((m) => m.info.role === "assistant")
-          const pendingTools = msgs
-            .filter((m) => m.info.role === "assistant")
-            .flatMap((m) => m.parts)
-            .filter((p) => p.type === "tool" && p.state.status === "pending")
-          process.stderr.write(
-            `[TRACE-poll] attempt=${attempt}, msgs=${msgs.length}, lastAssistant=${lastAssistant ? `id=${lastAssistant.info.id},finish=${(lastAssistant.info as MessageV2.Assistant).finish}` : "none"}, pendingTools=${pendingTools.length}, sseDone=${sseDone}\n`,
-          )
-        }
-
         // 1. Detect and execute pending tool parts delegated from Rust.
         // Rust inserts tool parts as Pending. For tools it delegates to TS,
         // it leaves the part in Pending state (only Rust-executed tools
@@ -2400,9 +2340,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           yield* Effect.forEach(
             pendingParts,
             (part) => {
-              process.stderr.write(
-                `[TRACE-poll] executing delegated tool: ${part.tool} (state=${part.state.status}), callID=${part.callID}\n`,
-              )
               // DEBUG timing (debug-level only; no effect on normal logic).
               return elog
                 .debug("timing: delegated tool executed", {
@@ -2446,9 +2383,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           lastAssistantMsg.info.id !== prevLastAssistantId &&
           (lastAssistantMsg.info as MessageV2.Assistant).finish === "stop"
         ) {
-          process.stderr.write(
-            `[TRACE-poll] ⑧ runLoop completed! new msg id=${lastAssistantMsg.info.id}, finish=${(lastAssistantMsg.info as MessageV2.Assistant).finish}, returning\n`,
-          )
           // DEBUG timing (debug-level only; no effect on normal logic).
           yield* elog.debug("timing: runLoop completed", { sessionID, attempt, elapsedMs: Date.now() - pollT0 })
           return lastAssistantMsg
@@ -2483,7 +2417,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
     ) => Effect.Effect<MessageV2.WithParts, unknown, unknown> = Effect.fn(
       "SessionPrompt.delegateToRustRunLoop",
     )(function* (sessionID: SessionID, autoAccept?: boolean) {
-        process.stderr.write(`[TRACE-delegate] ④ delegateToRustRunLoop start, sessionID=${sessionID}\n`)
         yield* elog.info("delegateToRustRunLoop: start", { sessionID })
         // A previous run may have been aborted; clear the flag so this new run
         // is not immediately terminated by a stale abort signal.
@@ -2494,29 +2427,26 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         // TS then polls DB until the assistant message has a finish field.
         const clients = createSmartLayerClients()
         if (!clients) {
-          process.stderr.write(`[TRACE-delegate] ✗ no smart-layer clients! DUO_SMART_LAYER_URL not set?\n`)
           yield* elog.error("delegateToRustRunLoop: no smart-layer clients", { sessionID })
           return yield* Effect.fail(new NamedError.Unknown({ message: "Rust runLoop requires smart-layer connection" }))
         }
-        process.stderr.write(`[TRACE-delegate] ⑤ smart-layer clients ok, gathering context\n`)
 
         // Gather context for Rust runLoop: tools, permission_rules, model, agent, project_path
-        const session = yield* sessions
-          .get(sessionID)
-          .pipe(
-            Effect.tapError((e) =>
-              Effect.sync(() => process.stderr.write(`[TRACE-delegate] ✗ sessions.get failed: ${String(e)}\n`)),
-            ),
-          )
-        process.stderr.write(`[TRACE-delegate] ⑤a session ok\n`)
+        const session = yield* sessions.get(sessionID).pipe(
+          Effect.tapError((e) =>
+            elog.warn("delegateToRustRunLoop: sessions.get failed (non-critical)", { sessionID, error: String(e) }),
+          ),
+        )
         const lastUserMsg = yield* sessions
           .findMessage(sessionID, (m) => m.info.role === "user" && !!m.info.model)
           .pipe(
             Effect.tapError((e) =>
-              Effect.sync(() => process.stderr.write(`[TRACE-delegate] ✗ sessions.findMessage failed: ${String(e)}\n`)),
+              elog.warn("delegateToRustRunLoop: sessions.findMessage failed (non-critical)", {
+                sessionID,
+                error: String(e),
+              }),
             ),
           )
-        process.stderr.write(`[TRACE-delegate] ⑤b lastUserMsg ok (isSome=${Option.isSome(lastUserMsg)})\n`)
         const agentName =
           Option.isSome(lastUserMsg) && lastUserMsg.value.info.role === "user"
             ? lastUserMsg.value.info.agent
@@ -2528,15 +2458,11 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           Option.isSome(lastUserMsg) && lastUserMsg.value.info.role === "user"
             ? lastUserMsg.value.info.locale
             : undefined
-        process.stderr.write(`[TRACE-delegate] ⑤c agentName=${agentName}\n`)
-        const agent = yield* agents
-          .get(agentName)
-          .pipe(
-            Effect.tapError((e) =>
-              Effect.sync(() => process.stderr.write(`[TRACE-delegate] ✗ agents.get failed: ${String(e)}\n`)),
-            ),
-          )
-        process.stderr.write(`[TRACE-delegate] ⑤d agent ok\n`)
+        const agent = yield* agents.get(agentName).pipe(
+          Effect.tapError((e) =>
+            elog.warn("delegateToRustRunLoop: agents.get failed (non-critical)", { sessionID, error: String(e) }),
+          ),
+        )
         const modelRef =
           Option.isSome(lastUserMsg) && lastUserMsg.value.info.role === "user"
             ? lastUserMsg.value.info.model
@@ -2545,26 +2471,33 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         if (modelRef) {
           model = yield* getModel(modelRef.providerID, modelRef.modelID, sessionID).pipe(
             Effect.tapError((e) =>
-              Effect.sync(() => process.stderr.write(`[TRACE-delegate] ✗ getModel(modelRef) failed: ${String(e)}\n`)),
+              elog.warn("delegateToRustRunLoop: getModel(modelRef) failed (non-critical)", {
+                sessionID,
+                error: String(e),
+              }),
             ),
           )
         } else if (agent?.model) {
           model = yield* getModel(agent.model.providerID, agent.model.modelID, sessionID).pipe(
             Effect.tapError((e) =>
-              Effect.sync(() =>
-                process.stderr.write(`[TRACE-delegate] ✗ getModel(agent.model) failed: ${String(e)}\n`),
-              ),
+              elog.warn("delegateToRustRunLoop: getModel(agent.model) failed (non-critical)", {
+                sessionID,
+                error: String(e),
+              }),
             ),
           )
         } else {
           const fallback = yield* lastModel(sessionID).pipe(
             Effect.tapError((e) =>
-              Effect.sync(() => process.stderr.write(`[TRACE-delegate] ✗ lastModel failed: ${String(e)}\n`)),
+              elog.warn("delegateToRustRunLoop: lastModel failed (non-critical)", { sessionID, error: String(e) }),
             ),
           )
           model = yield* getModel(fallback.providerID, fallback.modelID, sessionID).pipe(
             Effect.tapError((e) =>
-              Effect.sync(() => process.stderr.write(`[TRACE-delegate] ✗ getModel(fallback) failed: ${String(e)}\n`)),
+              elog.warn("delegateToRustRunLoop: getModel(fallback) failed (non-critical)", {
+                sessionID,
+                error: String(e),
+              }),
             ),
           )
         }
@@ -2577,8 +2510,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         if (discoveredOutput !== undefined) {
           model.limit = { ...model.limit, output: discoveredOutput }
         }
-
-        process.stderr.write(`[TRACE-delegate] ⑤e model ok: providerID=${model.providerID}, modelID=${model.api.id}\n`)
 
         // Build system prompt from SystemPrompt.provider + environment.
         // This is passed to the Rust runLoop via postRunLoop's system_prompt
@@ -2614,10 +2545,12 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             })
             .pipe(
               Effect.tapError((e) =>
-                Effect.sync(() => process.stderr.write(`[TRACE-delegate] ✗ registry.tools failed: ${String(e)}\n`)),
+                elog.warn("delegateToRustRunLoop: registry.tools failed (non-critical)", {
+                  sessionID,
+                  error: String(e),
+                }),
               ),
             )
-          process.stderr.write(`[TRACE-delegate] ⑤f registry.tools ok (${registryTools.length} tools)\n`)
 
           // Filter tools by permission — mirrors the TS path's resolveTools
           // (llm.ts:513-519). Without this, the LLM may see tools it cannot
@@ -2628,7 +2561,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             mergedPermissionRules,
           )
           const visibleTools = registryTools.filter((t) => !disabledToolSet.has(t.id))
-          process.stderr.write(`[TRACE-delegate] ⑤f1 permission filter: ${registryTools.length} → ${visibleTools.length} tools (${disabledToolSet.size} disabled)\n`)
 
           for (const t of visibleTools) {
             const cacheKey = `${model.providerID}:${model.api.id}:${t.id}`
@@ -2647,14 +2579,11 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             })
           }
 
-          const mcpToolMap = yield* mcp
-            .tools()
-            .pipe(
-              Effect.tapError((e) =>
-                Effect.sync(() => process.stderr.write(`[TRACE-delegate] ✗ mcp.tools failed: ${String(e)}\n`)),
-              ),
-            )
-          process.stderr.write(`[TRACE-delegate] ⑤g mcp.tools ok (${Object.keys(mcpToolMap).length} tools)\n`)
+          const mcpToolMap = yield* mcp.tools().pipe(
+            Effect.tapError((e) =>
+              elog.warn("delegateToRustRunLoop: mcp.tools failed (non-critical)", { sessionID, error: String(e) }),
+            ),
+          )
           for (const [key, item] of Object.entries(mcpToolMap)) {
             if (!item.execute) continue
             // Apply same permission filter to MCP tools
@@ -2687,10 +2616,12 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         // Get project path
         const ctx = yield* InstanceState.context.pipe(
           Effect.tapError((e) =>
-            Effect.sync(() => process.stderr.write(`[TRACE-delegate] ✗ InstanceState.context failed: ${String(e)}\n`)),
+            elog.warn("delegateToRustRunLoop: InstanceState.context failed (non-critical)", {
+              sessionID,
+              error: String(e),
+            }),
           ),
         )
-        process.stderr.write(`[TRACE-delegate] ⑤h ctx ok: dir=${ctx.directory}, worktree=${ctx.worktree}\n`)
 
         // Extract output_format from the last user message if it has a json_schema format
         const outputFormat =
@@ -2714,23 +2645,17 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         // Set session status to busy for the duration of the Rust runLoop.
         // This mirrors the old TS processor.ts "start" event handler (L240-242)
         // which set status to busy when the LLM stream started.
-        yield* status
-          .set(sessionID, { type: "busy" })
-          .pipe(
-            Effect.tapError((e) =>
-              Effect.sync(() => process.stderr.write(`[TRACE-delegate] ✗ status.set(busy) failed: ${String(e)}\n`)),
-            ),
-          )
-        process.stderr.write(`[TRACE-delegate] ⑤i status.set(busy) ok\n`)
+        yield* status.set(sessionID, { type: "busy" }).pipe(
+          Effect.tapError((e) =>
+            elog.warn("delegateToRustRunLoop: status.set(busy) failed (non-critical)", { sessionID, error: String(e) }),
+          ),
+        )
 
         // Pass LLM config inline so the smart-layer can use it even if no
         // prior POST /agent/config call has been made (fresh install / keyring empty).
         // The smart-layer falls back to its stored config if these are empty.
         const providerInfo = yield* provider
           .getProvider(model.providerID)
-        process.stderr.write(
-          `[TRACE-delegate] ⑤j providerInfo ok (hasKey=${!!(providerInfo as any)?.key}, hasBaseURL=${!!(providerInfo as any)?.options?.baseURL})\n`,
-        )
         // Prefer provider-level baseURL, fall back to model-level api.url
         const providerBaseUrl: string | undefined =
           ((providerInfo as any)?.options?.baseURL as string | undefined) || (model.api as any)?.url || undefined
@@ -2754,7 +2679,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             .join(" ")
           : ""
 
-        process.stderr.write(`[TRACE-delegate] ⑤k+⑤l+⑥ calling intent.clarify / getLoopConfig / ensureSession concurrently...\n`)
         const [clarification, loopCfg, _sess] = yield* Effect.all(
           [
             userText
@@ -2764,8 +2688,12 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   try: () => clients.intent.clarify({ userInput: userText }),
                   catch: (e) => new Cause.UnknownError(e),
                 }).pipe(
+                  Effect.tapError((e) =>
+                    Effect.sync(() =>
+                      log.warn("intent.clarify failed (non-critical)", { sessionID, error: String(e) }),
+                    ),
+                  ),
                   Effect.orElseSucceed(() => {
-                    process.stderr.write(`[TRACE-delegate] ⑤k intent.clarify failed (non-critical)\n`)
                     return undefined as { intentType?: string; confidence?: number } | undefined
                   }),
                 )
@@ -2773,16 +2701,20 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             Effect.tryPromise({
               try: () => clients.agent.getLoopConfig(),
               catch: (e) => (e instanceof Error ? e : new DuoduoError({ message: String(e), cause: e })),
-            }).pipe(Effect.orElseSucceed(() => undefined)),
+            }).pipe(
+              Effect.tapError(() =>
+                Effect.sync(() =>
+                  log.warn("getLoopConfig failed; G7 TS decomposition skipped (Rust planner / serial fallback)", { sessionID }),
+                ),
+              ),
+              Effect.orElseSucceed(() => undefined),
+            ),
             Effect.tryPromise({
               try: () => clients.agent.ensureSession(sessionID, ctx.worktree ?? ctx.directory),
               catch: (e) => (e instanceof Error ? e : new DuoduoError({ message: String(e), cause: e })),
             }).pipe(Effect.orElseSucceed(() => undefined)),
           ],
           { concurrency: 3 },
-        )
-        process.stderr.write(
-          `[TRACE-delegate] ⑤k+⑤l+⑥ done: intent=${JSON.stringify(clarification)}, loopCfg=${JSON.stringify(loopCfg)}\n`,
         )
         if (clarification?.intentType) {
           intentType = clarification.intentType
@@ -2801,7 +2733,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         let subTasks: SubTaskRequest[] | undefined
         if (loopCfg?.parallelDispatch && Option.isSome(lastUserMsg)) {
           if (userText) {
-            process.stderr.write(`[TRACE-delegate] ⑤l parallel_dispatch on; TS decomposing task\n`)
             subTasks = yield* decomposeTask({
               user: lastUserMsg.value.info,
               task: userText,
@@ -2809,9 +2740,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               agentName,
               sessionID,
             }).pipe(Effect.orElseSucceed(() => undefined))
-            process.stderr.write(
-              `[TRACE-delegate] ⑤l TS decomposition produced ${subTasks?.length ?? 0} sub-tasks\n`,
-            )
           }
         }
 
@@ -2902,9 +2830,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           // NOTE: `ensureSession` is now performed concurrently (above) and
           // has already completed BEFORE this gen runs, so the Rust
           // session-exists precondition still holds — behaviour identical.
-          process.stderr.write(
-            `[TRACE-delegate] ⑥ posting to Rust /agent/run_loop, model=${model.api.id}, agent=${agentName}\n`,
-          )
           yield* elog.info("delegateToRustRunLoop: posting to Rust /agent/run_loop", { sessionID })
           yield* Effect.tryPromise({
             try: () =>
@@ -2975,7 +2900,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               elog.error("delegateToRustRunLoop: postRunLoop failed", { sessionID, error: String(e) }),
             ),
           )
-          process.stderr.write(`[TRACE-delegate] ⑦ postRunLoop ok, starting poll\n`)
           yield* elog.info("delegateToRustRunLoop: postRunLoop ok, starting poll", { sessionID })
           // DEBUG timing (debug-level only; no effect on normal logic).
           yield* elog.debug("timing: postRunLoop ok (context+RAG assembly done)", {
@@ -2990,20 +2914,14 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         )
 
         // Post-delegation side effects (preserved from old TS runLoop path)
-        process.stderr.write(
-          `[TRACE-post] ⑨ post-loop side effects start, role=${result.info.role}, finish=${(result.info as any).finish}\n`,
-        )
 
         // 1. Store conversation memory (fire-and-forget)
-        process.stderr.write(`[TRACE-post] ⑨-1 storeConversationMemory start\n`)
         const finalMsgs = yield* MessageV2.filterCompactedEffect(sessionID)
-        process.stderr.write(`[TRACE-post] ⑨-1 filterCompacted ok, msgs=${finalMsgs.length}\n`)
         yield* completion.storeConversationMemory(sessionID, finalMsgs).pipe(
 // @effect-diagnostics-next-line catchUnfailableEffect:off
           Effect.catch(() => Effect.void),
           Effect.forkIn(scope),
         )
-        process.stderr.write(`[TRACE-post] ⑨-1 storeConversationMemory forked\n`)
 
         // 2. Code review (cascadeQA) — previously a fire-and-forget fork of a
         // separate review session lived here. That fork never flowed its results
@@ -3013,20 +2931,16 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         // annotation-based回流 is tracked as a known boundary (see plan §8.4).
 
         // 3. Compaction prune (fire-and-forget)
-        process.stderr.write(`[TRACE-post] ⑨-3 compaction.prune start\n`)
         yield* compaction.prune({ sessionID }).pipe(Effect.ignore, Effect.forkIn(scope))
-        process.stderr.write(`[TRACE-post] ⑨-3 compaction.prune forked\n`)
 
         // 4. Session summary (fire-and-forget) — mirrors TS processor.ts L449-457
         // which triggered summary.summarize after each finish-step.
         const resultParentID = (result.info as MessageV2.Assistant).parentID
         if (resultParentID) {
-          process.stderr.write(`[TRACE-post] ⑨-4 summarize start, parentID=${resultParentID}\n`)
           yield* summary.summarize({ sessionID, messageID: resultParentID }).pipe(
             Effect.catchCause((cause) => elog.warn("summary.summarize failed", { cause: String(cause) })),
             Effect.forkIn(scope),
           )
-          process.stderr.write(`[TRACE-post] ⑨-4 summarize forked\n`)
         }
 
         // 5. Check if the Rust runLoop ended due to context overflow — if so, trigger
@@ -3038,7 +2952,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 // @effect-diagnostics-next-line preferSchemaOverJson:off
             typeof resultInfo.error === "object" ? JSON.stringify(resultInfo.error) : String(resultInfo.error)
           if (errorMsg.includes("context_overflow")) {
-            process.stderr.write(`[TRACE-post] ⑨-5 context overflow detected\n`)
             yield* elog.info("context overflow detected, triggering compaction", { sessionID })
             const session = yield* sessions.get(sessionID)
             const msgs = yield* sessions.messages({ sessionID })
@@ -3077,7 +2990,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           }
         }
 
-        process.stderr.write(`[TRACE-post] ⑩ post-loop side effects done, returning result\n`)
         return result
       })
 
@@ -3114,7 +3026,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       // retries. The cache is in-memory only — it never mutates persisted or
       // user config.
       for (const nextOutput of OUTPUT_RETRY_LADDER) {
-        process.stderr.write(`[TRACE-output-retry] max_tokens error, retrying with output=${nextOutput}\n`)
         yield* elog.info("output limit too high, retrying with smaller max_tokens", { sessionID, nextOutput })
         // Resolve the real model for this session (mirrors delegateToRustRunLoop)
         // so the cache key matches and the value is stored against the right model.
@@ -3149,9 +3060,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       if (input.allowedPaths?.length) {
         for (const p of input.allowedPaths) Instance.addAllowedPath(p)
       }
-      process.stderr.write(`[TRACE-runAgentTurn] entering delegateToRustRunLoopWithOutputRetry\n`)
       const res = yield* delegateToRustRunLoopWithOutputRetry(input.sessionID, input.autoAccept)
-      process.stderr.write(`[TRACE-runAgentTurn] delegateToRustRunLoopWithOutputRetry returned ok\n`)
       return res
     })
 

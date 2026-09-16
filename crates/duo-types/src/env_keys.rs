@@ -55,8 +55,6 @@ pub mod core {
 pub mod feature_flags {
     /// Build a stable-prefix send-view each round.
     pub const STABLE_PREFIX: &str = "DUO_FF_STABLE_PREFIX";
-    /// Move dynamic memory context out of the system prompt.
-    pub const MEMORY_AS_USER_MSG: &str = "DUO_FF_MEMORY_AS_USER_MSG";
     /// Recursively sort JSON-object keys in `ToolDefinition.parameters`.
     pub const CANONICALIZE_TOOLS: &str = "DUO_FF_CANONICALIZE_TOOLS";
     /// De-duplicate identical tool calls within a single round.

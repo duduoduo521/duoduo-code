@@ -404,6 +404,8 @@ pub fn register_tool(reg: ToolReg) {
 
     if let Ok(mut r) = DYNAMIC_REGISTRY.lock() {
         r.push(reg);
+    } else {
+        tracing::warn!("DYNAMIC_REGISTRY poisoned; runtime tool registration skipped");
     }
 }
 
@@ -419,6 +421,8 @@ pub fn clear_dynamic_tools() {
             }
         }
         r.clear();
+    } else {
+        tracing::warn!("DYNAMIC_REGISTRY poisoned; runtime tool cleanup skipped");
     }
 }
 

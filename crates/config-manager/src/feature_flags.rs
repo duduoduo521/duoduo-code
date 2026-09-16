@@ -14,12 +14,6 @@ pub fn stable_prefix() -> bool {
     flag(ff::STABLE_PREFIX)
 }
 
-/// Move dynamic memory context out of the system prompt and inject it as a
-/// separate `role="user"` message, keeping the system prompt fully static.
-pub fn memory_as_user_msg() -> bool {
-    flag(ff::MEMORY_AS_USER_MSG)
-}
-
 /// Recursively sort JSON-object keys in `ToolDefinition.parameters` before
 /// serialisation.  The current `serde_json::json!` macro already produces
 /// `BTreeMap`-ordered output, so this is a **no-op safety net**.

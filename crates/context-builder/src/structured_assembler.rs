@@ -180,6 +180,18 @@ static SYMBOL_RE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|
         .expect("SYMBOL_RE is a valid literal pattern")
 });
 
+/// FNV-1a 64-bit hash. Inlined (std-only, no new dependency) and byte-stable
+/// across compiler versions and platforms, so a persisted id derived from it
+/// never drifts.
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for &b in bytes {
+        hash ^= b as u64;
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
 /// Convert days-since-Unix-epoch to a proleptic Gregorian `(year, month, day)`.
 ///
 /// Howard Hinnant's `civil_from_days` algorithm — exact for all dates, including
@@ -223,31 +235,12 @@ impl StructuredAssembler {
         if detail.trim().len() < 20 {
             return None;
         }
-        // R-B: 同 decision_context 已存在则跳过。
-        // 注意:`search` 是 FTS5 + Jaccard 的**模糊相关性**检索,不是精确匹配,
-        // 因此必须对返回结果按 metadata.decision_context 做精确复核,
-        // 否则任意"相关"的旧决策都会误判为重复,导致新决策被永久静默丢弃。
-        let dup = duo_types::MemorySearchRequest {
-            query: ctx.to_string(),
-            limit: 10,
-            layers: Some(vec!["2".to_string()]),
-            tags: Some(vec![DECISION_TAG.to_string()]),
-            project_path: None,
-        };
-        if let Ok(entries) = self.memory.search(&dup) {
-            let existing = entries.iter().find(|e| {
-                e.metadata
-                    .as_ref()
-                    .and_then(|m| m.get("decision_context"))
-                    .and_then(|v| v.as_str())
-                    .is_some_and(|c| c == ctx)
-            });
-            // 已存在同一 decision_context:不重复写入,但仍返回既有 id,
-            // 以便调用方把 KG 链接挂到这条已有记忆上(否则桥接会恒空)。
-            if let Some(e) = existing {
-                return Some(e.id.clone());
-            }
-        }
+        // R-B: 同 decision_context 去重由**确定性幂等 id** 在存储层保证:
+        // id = "decision-" + FNV-1a64(decision_context)。同 context → 同 id →
+        // `store()` 的显式 id 合并式 upsert(P0-03)自动覆盖为最新 detail,
+        // 与检索成败彻底解耦。旧实现用模糊检索(search)做去重前置:检索失败
+        // 被 `if let Ok` 当作"无重复"、旧决策未进 top10 时也会漏判,均导致重复写。
+        let decision_id = format!("decision-{:016x}", fnv1a64(ctx.as_bytes()));
         // 本 crate 未依赖 chrono,用 Howard Hinnant 的 civil_from_days 算法做精确换算。
         // 原实现 `1970 + days/365` 与 `(days%365)/1` 会随闰年逐年漂移(2026 年已偏差数十天),
         // 且把"小时"当作"日"字段输出,属于事实错误,这里彻底修正。
@@ -289,7 +282,7 @@ impl StructuredAssembler {
         // 因此 tags 必须包含裸 "decision"(DECISION_TAG);只写 "agentic_loop_decision"
         // 会漏掉 0.85 分支而落到 0.3 默认值。provenance 由 DECISION_SOURCE_TAG 保留。
         match self.memory.store(&duo_types::MemoryStoreRequest {
-            id: None,
+            id: Some(decision_id),
             content: format!("[{}] DECISION {}: {}", date, ctx, detail),
             summary: Some(format!("[{}] DECISION {}", date, ctx)),
             layer: "2".to_string(),

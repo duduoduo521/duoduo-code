@@ -3586,6 +3586,51 @@ async fn run_loop_handler(
         // and drives the stall fuse (shared with AgenticLoopExecutor).
         let mut reflect_ledger = agent_executor::reflect::ReflectLedger::new();
 
+        // ── In-session conversation memory recall (moved from the TS side) ──
+        // Retrieve THIS session's stored conversation memories (tags=["conversation"])
+        // and inject them as a trailing system message so follow-up prompts stay
+        // grounded even after compaction drops the tail. Must run BEFORE the G7
+        // block: the G7 findings fold-in pushes a synthetic *user* message, which
+        // would otherwise be picked up as the recall query below. FTS5 search
+        // failure is logged (warn) and non-fatal — recall never blocks the loop.
+        if let Some(last_user) = messages.iter().rev().find(|m| m.role == "user") {
+            let recall_query = last_user.content.trim();
+            if !recall_query.is_empty() {
+                match state_clone.memory.search(&duo_types::MemorySearchRequest {
+                    query: recall_query.to_string(),
+                    limit: 20,
+                    layers: None,
+                    tags: Some(vec!["conversation".to_string()]),
+                    project_path: req.project_path.clone(),
+                }) {
+                    Ok(entries) => {
+                        let session_mems: Vec<&str> = entries
+                            .iter()
+                            .filter(|e| e.session_id.as_deref() == Some(session_id_spawn.as_str()))
+                            .map(|e| e.content.as_str())
+                            .filter(|c| !c.is_empty())
+                            .collect();
+                        if !session_mems.is_empty() {
+                            let recall = format!(
+                                "相关会话记忆（来自本会话早期轮次，供参考）：\n{}",
+                                session_mems
+                                    .iter()
+                                    .enumerate()
+                                    .map(|(i, c)| format!("{}. {}", i + 1, c))
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            );
+                            messages.push(agent_executor::LlmMessage::system(recall));
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, session_id = %session_id_spawn,
+                            "In-session conversation memory recall failed (non-critical)");
+                    }
+                }
+            }
+        }
+
         // ── G7: optional parallel multi-agent pre-dispatch ──
         // When `LoopConfig.parallel_dispatch` is enabled, decompose the user task
         // into independent sub-tasks and run them concurrently through the *shared*

@@ -2771,49 +2771,10 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           reqMessages.push({ role: "user", content: userText })
         }
 
-        // ── P1: in-session conversation memory recall ──
-        // Recover earlier decisions/context from THIS session's stored
-        // memories (tags=["conversation"]) so follow-up questions in a long
-        // task stay grounded even after compaction drops the tail. Filtered
-        // client-side by sessionID because the search API only supports
-        // project_path scoping, not session scoping.
-        const memCtx = yield* InstanceState.context
-        yield* Effect.tryPromise({
-          try: async () => {
-            const memClients = createSmartLayerClients()
-            if (!memClients?.memory) return
-            // The Rust search short-circuits empty queries ([R-04] guard in
-            // memory-system/src/store.rs) and pure-punctuation queries degrade
-            // to "any N entries" — so recall only runs with real user text.
-            // The previous empty-string query made this whole block a no-op
-            // (P1-12); the field match below is camelCase because MemoryEntry
-            // serializes `sessionId`.
-            const query = userText?.trim()
-            if (!query) return
-            const hits = await memClients.memory.search(
-              query,
-              20,
-              undefined,
-              ["conversation"],
-              memCtx.directory,
-            )
-            const sessionMemories = hits
-              .filter((h) => h.sessionId === sessionID)
-              .map((h) => h.content)
-              .filter(Boolean)
-            if (sessionMemories.length > 0) {
-              reqMessages.push({
-                role: "system",
-                content:
-                  "相关会话记忆（来自本会话早期轮次，供参考）：\n" +
-                  sessionMemories.map((c, i) => `${i + 1}. ${c}`).join("\n"),
-              })
-            }
-          },
-          catch: () => {
-            // Memory recall is best-effort; never block the run loop on it.
-          },
-        }).pipe(Effect.ignore)
+        // ── In-session conversation memory recall moved to the Rust run_loop ──
+        // (duo-smart-layer/src/routes/agent.rs): it searches tags=["conversation"]
+        // scoped to this session and injects a trailing system message there.
+        // Failure is logged (warn) on the Rust side; recall stays best-effort.
 
         yield* elog.info("delegateToRustRunLoop: calling postRunLoop", {
           sessionID,

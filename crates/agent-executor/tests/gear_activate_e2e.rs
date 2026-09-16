@@ -8,7 +8,7 @@
 //! ## Why a self-built fixture instead of the real gears repo
 //!
 //! This test used to point `DUODUO_GEARS_DIR` at an external `duoduocode-gears`
-//! checkout (`D:\duoduocode-gears\gears` or a sibling of the workspace). That
+//! checkout (a sibling of the workspace). That
 //! checkout is not part of this repository, so on any machine without it the
 //! loader found zero gears and the assertions failed — a red test that said
 //! nothing about the code under test. A test whose outcome depends on an

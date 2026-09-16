@@ -225,7 +225,7 @@ brew install duoduo-ai/tap/duoduocode
 ```
 
 > [!TIP]
-> Remove versions older than 0.1.x before installing.
+> If you installed an early alpha build, remove it before installing.
 
 ### Desktop App
 

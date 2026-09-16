@@ -220,7 +220,7 @@ brew install duoduo-ai/tap/duoduocode
 ```
 
 > [!TIP]
-> 安装前请先移除 0.1.x 之前的旧版本。
+> 如果安装过早期 alpha 版本，请先移除再安装。
 
 ### 桌面应用
 

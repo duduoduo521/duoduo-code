@@ -1,106 +1,43 @@
 import { test, expect } from "@playwright/test"
 import { startMockLLM, type MockLLMServer } from "./mock-llm/server"
-import { startIsolatedBackend, type IsolatedBackend } from "./helpers/backend"
+import { startIsolatedBackend, createIsolatedXdgDirs, type IsolatedBackend, type IsolatedXdgDirs } from "./helpers/backend"
+import { startSmartLayerSidecar, isSmartLayerAvailable, type SmartLayerSidecar } from "./helpers/smart-layer"
 
 /**
- * Integration test for the Smart Layer `/agent/run_loop` endpoint.
+ * Integration tests for the Smart Layer agentic loop, driven end to end
+ * through the session prompt route (POST <backend>/session/:id/message —
+ * the route the UI's prompt flow delegates to):
  *
- * This is the formalized replacement for the legacy, out-of-tree script
- * `test-runloop.ts` (which lived in the repo root and was never wired into
- * CI). It spins up its own isolated backend + an observable mock LLM so the
- * loop's round-trips can be asserted directly.
+ *   UI-equivalent prompt → TS backend → Rust run_loop → mock LLM →
+ *   SSE events → persistence → REST-serveable messages.
  *
  * Assertions:
- *   - the endpoint acknowledges with `status: "started"` + a `sessionId`
- *   - the session reaches idle without manual abort
- *   - at least one assistant message is produced
  *   - the mock LLM was invoked (proving the loop ran, not just echoed)
- *   - a tool-calling turn occurred (the `read` tool is requested by the fixture)
+ *   - a tool-calling turn occurred (`success-tool-read` requests `read`;
+ *     a later mock call carrying the tool_call proves the loop executed
+ *     the tool and continued)
+ *   - the full-stack flow persists an assistant reply the backend can serve
+ *     back, including multi-chunk streamed text assembled from every delta
+ *
+ * The sidecar binary is built by CI (e2e.yml) or locally via
+ * `cargo build -p duo-smart-layer`; when absent these tests skip (never fake-red).
  */
 
-const TOOL_MODEL = "mock/success-tool-read"
+const TOOL_MODEL = "success-tool-read"
+const TEXT_MODEL = "success-text-short"
+const MULTI_CHUNK_MODEL = "success-text-multi-chunk"
+const MULTI_CHUNK_TEXT = "Hello, this is a mocked streaming reply."
 
-function runLoopHeaders(projectDir: string): Record<string, string> {
-  return {
-    "Content-Type": "application/json",
-    "x-duoduo-directory": encodeURIComponent(projectDir),
-  }
+/** GET the backend's effective config (triggers AppLayer/provider build). */
+async function getConfigFor(backend: IsolatedBackend) {
+  const url = new URL("/config", backend.url)
+  url.searchParams.set("directory", backend.projectDir)
+  const res = await fetch(url.toString(), {
+    headers: { "x-duoduo-directory": encodeURIComponent(backend.projectDir) },
+  })
+  if (!res.ok) throw new Error(`getConfigFor failed: ${res.status}`)
+  return res.json()
 }
-
-async function startRunLoop(
-  backendUrl: string,
-  projectDir: string,
-  sessionId: string,
-  model: string,
-): Promise<{ status: string; sessionId: string }> {
-  const res = await fetch(`${backendUrl}/agent/run_loop`, {
-    method: "POST",
-    headers: runLoopHeaders(projectDir),
-    body: JSON.stringify({
-      sessionID: sessionId,
-      model,
-      messages: [{ role: "user", content: "Read the README and tell me what this project is." }],
-      tools: ["read", "grep", "glob", "task"],
-      system_prompt: "You are DuoDuoCode, a coding agent. Use the read tool when needed.",
-      intent_type: "question",
-    }),
-  })
-  if (!res.ok) {
-    // /agent/run_loop 由 Rust smart-layer 侧车承载；E2E 隔离环境不构建侧车，
-    // 端点必然不可用——跳过而非假红（待 harness 集成 Rust 侧车后恢复）。
-    test.info().skip(
-      true,
-      `Smart-layer /agent/run_loop unavailable in this environment (${res.status}); requires the Rust sidecar`,
-    )
-  }
-  const data = (await res.json()) as { status?: string; sessionId?: string }
-  return { status: data.status ?? "", sessionId: data.sessionId ?? sessionId }
-}
-
-test.describe("Agent run_loop integration", () => {
-  let mock: MockLLMServer
-  let backend: IsolatedBackend
-
-  test.beforeAll(async () => {
-    mock = await startMockLLM(0)
-    backend = await startIsolatedBackend({ mockLlmUrl: mock.url, defaultModel: "success-text-short" })
-  })
-
-  test.afterAll(async () => {
-    await backend.stop().catch(() => {})
-    await mock.stop().catch(() => {})
-  })
-
-  test(
-    "run_loop drives the agentic loop and invokes tools",
-    { tag: ["@core", "@run-loop"] },
-    async () => {
-      const session = await createTestSessionFor(backend, "run-loop-e2e")
-      expect(session.id).toBeTruthy()
-
-      const started = await startRunLoop(backend.url, backend.projectDir, session.id, TOOL_MODEL)
-      expect(started.status).toBe("started")
-      expect(started.sessionId).toBe(session.id)
-
-      await waitForSessionIdleFor(backend, session.id, 60_000)
-
-      const messages = await getMessagesFor(backend, session.id)
-      expect(Array.isArray(messages)).toBe(true)
-      expect(messages.length).toBeGreaterThan(0)
-
-      // The mock must have been hit at least once — otherwise the loop
-      // never actually ran against the LLM.
-      expect(mock.calls.length).toBeGreaterThanOrEqual(1)
-
-      // The `success-tool-read` fixture requests the `read` tool, so the
-      // loop must have issued at least one tool-calling LLM turn.
-      const toolCalls = mock.calls.flatMap((c) => c.tools)
-      expect(toolCalls).toContain("read")
-    },
-  )
-})
-
-// ─── Session helpers bound to a specific backend (sdk.ts targets the global one) ───
 
 async function createTestSessionFor(backend: IsolatedBackend, title: string) {
   const url = new URL("/session", backend.url)
@@ -127,29 +64,135 @@ async function getMessagesFor(backend: IsolatedBackend, sessionId: string) {
   return Array.isArray(data) ? data : (data?.messages ?? [])
 }
 
-async function waitForSessionIdleFor(backend: IsolatedBackend, sessionId: string, timeoutMs = 30_000) {
-  const start = Date.now()
-  while (Date.now() - start < timeoutMs) {
-    const url = new URL("/session/status", backend.url)
-    url.searchParams.set("directory", backend.projectDir)
-    try {
-      const res = await fetch(url.toString(), {
-        method: "GET",
-        headers: { "x-duoduo-directory": encodeURIComponent(backend.projectDir) },
-        signal: AbortSignal.timeout(2_000),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        if (!data) break
-        if (data.type === "idle" || data.status === "idle") break
-        if (Array.isArray(data)) {
-          const ours = data.find((s: { id?: string; sessionID?: string; type?: string; status?: string }) => s.id === sessionId || s.sessionID === sessionId)
-          if (!ours || ours.type === "idle" || ours.status === "idle") break
-        }
-      }
-    } catch {
-      // backend transient — keep polling
-    }
-    await new Promise((r) => setTimeout(r, 500))
+/** POST the synchronous session prompt (what the UI prompt flow delegates to). */
+async function sendSessionPrompt(
+  backend: IsolatedBackend,
+  sessionId: string,
+  text: string,
+  model: { providerID: string; modelID: string },
+): Promise<string> {
+  const url = new URL(`/session/${sessionId}/message`, backend.url)
+  url.searchParams.set("directory", backend.projectDir)
+  const res = await fetch(url.toString(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-duoduo-directory": encodeURIComponent(backend.projectDir) },
+    body: JSON.stringify({ parts: [{ type: "text", text }], model }),
+  })
+  if (!res.ok) throw new Error(`sendSessionPrompt failed: ${res.status}`)
+  const body = await res.text()
+  if (!body.trim()) {
+    test.info().skip(true, "Session prompt stream returned empty body — agent backend unavailable")
   }
+  return body
 }
+
+test.describe("Agent run_loop integration", () => {
+  test.skip(!isSmartLayerAvailable(), "duo-smart-layer binary not built — run `cargo build -p duo-smart-layer`")
+
+  // The synchronous session prompt route runs the full agent pipeline
+  // (context assembly → run loop → persistence) — well beyond the default
+  // 30s local timeout.
+  test.setTimeout(120_000)
+
+  let mock: MockLLMServer
+  let sidecar: SmartLayerSidecar
+  let backend: IsolatedBackend
+  let xdg: IsolatedXdgDirs
+
+  test.beforeAll(async () => {
+    xdg = createIsolatedXdgDirs()
+    sidecar = await startSmartLayerSidecar({ xdgEnv: xdg.env, logDir: `${xdg.root}/logs` })
+    mock = await startMockLLM(0)
+    backend = await startIsolatedBackend({
+      mockLlmUrl: mock.url,
+      defaultModel: "success-text-short",
+      smartLayerUrl: sidecar.url,
+      xdg,
+    })
+
+    // Harness self-check: the seeded mock provider config must expose every
+    // fixture model, otherwise prompt flows die with ModelNotFoundError
+    // (observed when the AppLayer builds providers from a stale/partial
+    // config — this assertion turns that silent failure into a loud one).
+    const cfg = await getConfigFor(backend)
+    const mockModels = Object.keys(
+      ((cfg as Record<string, any>)?.provider?.mock?.models as Record<string, unknown>) ?? {},
+    )
+    expect(
+      mockModels,
+      `mock provider models missing fixtures — got: ${JSON.stringify(mockModels)}`,
+    ).toEqual(expect.arrayContaining([TOOL_MODEL, TEXT_MODEL, MULTI_CHUNK_MODEL]))
+  })
+
+  test.afterAll(async () => {
+    await backend.stop().catch(() => {})
+    await sidecar.stop().catch(() => {})
+    await mock.stop().catch(() => {})
+  })
+
+  test(
+    "agentic loop executes the read tool across LLM rounds (full stack)",
+    { tag: ["@core", "@run-loop", "@full-stack"] },
+    async () => {
+      const session = await createTestSessionFor(backend, "run-loop-tool-e2e")
+
+      // The `success-tool-read` fixture answers every round with a `read`
+      // tool call. The Rust loop must execute the tool (README.md exists in
+      // the project dir) and continue — a later mock call whose messages
+      // carry the tool_call proves the round-trip happened. The loop is
+      // bounded by the completion-confirm auto-close mechanism.
+      await sendSessionPrompt(backend, session.id, "Read the README", {
+        providerID: "mock",
+        modelID: TOOL_MODEL,
+      })
+
+      const messages = await getMessagesFor(backend, session.id)
+      expect(messages.length).toBeGreaterThan(0)
+
+      // Round 2+ requests carried the assistant `read` tool_call — the loop
+      // executed the tool and continued instead of echoing a single reply.
+      const toolCalls = mock.calls.flatMap((c) => c.tools)
+      expect(toolCalls).toContain("read")
+      expect(mock.calls.length).toBeGreaterThanOrEqual(2)
+    },
+  )
+
+  test(
+    "session prompt flow runs end to end through TS backend → sidecar → mock LLM",
+    { tag: ["@core", "@run-loop", "@full-stack"] },
+    async () => {
+      const session = await createTestSessionFor(backend, "prompt-full-stack-e2e")
+
+      // Multi-chunk fixture proves streaming chunks traverse the whole
+      // pipeline and are assembled into one assistant reply.
+      await sendSessionPrompt(backend, session.id, "Say hello", {
+        providerID: "mock",
+        modelID: MULTI_CHUNK_MODEL,
+      })
+
+      // The reply must be persisted and served back by the backend.
+      const messages = await getMessagesFor(backend, session.id)
+      expect(messages.length).toBeGreaterThan(0)
+      const serialized = JSON.stringify(messages)
+      expect(serialized).toContain(MULTI_CHUNK_TEXT)
+
+      // The loop really hit the LLM (not an echo path).
+      expect(mock.calls.length).toBeGreaterThanOrEqual(1)
+    },
+  )
+
+  test(
+    "short single-chunk reply flows through the full stack",
+    { tag: ["@smoke", "@run-loop"] },
+    async () => {
+      const session = await createTestSessionFor(backend, "prompt-short-e2e")
+      await sendSessionPrompt(backend, session.id, "Say OK", {
+        providerID: "mock",
+        modelID: TEXT_MODEL,
+      })
+      const messages = await getMessagesFor(backend, session.id)
+      expect(messages.length).toBeGreaterThan(0)
+      expect(JSON.stringify(messages)).toContain("OK")
+    },
+  )
+})

@@ -39,6 +39,45 @@ export interface BackendOptions {
   defaultModel?: string
   /** Directory into which test project files will be seeded. */
   projectName?: string
+  /**
+   * URL of a running duo-smart-layer sidecar. When set, the backend gets
+   * DUO_SMART_LAYER_URL so prompt/run-loop flows delegate to the Rust side.
+   */
+  smartLayerUrl?: string
+  /**
+   * Pre-created XDG dirs to reuse (shared with a sidecar started by the
+   * caller). When omitted, fresh isolated XDG dirs are created internally.
+   */
+  xdg?: { root: string; env: Record<string, string> }
+}
+
+export interface IsolatedXdgDirs {
+  root: string
+  env: Record<string, string>
+}
+
+/**
+ * Create an isolated set of XDG base dirs. Callers that run a duo-smart-layer
+ * sidecar alongside the backend should create these ONCE and pass them to
+ * both `startSmartLayerSidecar({ xdgEnv })` and
+ * `startIsolatedBackend({ xdg })` so both processes share the data dir.
+ */
+export function createIsolatedXdgDirs(): IsolatedXdgDirs {
+  const root = mkdtempSync(join(tmpdir(), "duoduo-e2e-xdg-"))
+  const config = join(root, "config")
+  const data = join(root, "data")
+  const cache = join(root, "cache")
+  const state = join(root, "state")
+  for (const d of [config, data, cache, state]) mkdirSync(d, { recursive: true })
+  return {
+    root,
+    env: {
+      XDG_CONFIG_HOME: config,
+      XDG_DATA_HOME: data,
+      XDG_CACHE_HOME: cache,
+      XDG_STATE_HOME: state,
+    },
+  }
 }
 
 function buildMockProviderConfig(mockLlmUrl: string, defaultModel: string) {
@@ -49,6 +88,7 @@ function buildMockProviderConfig(mockLlmUrl: string, defaultModel: string) {
     "success-text-short",
     "success-text-multi-chunk",
     "success-text-markdown",
+    "success-tool-read",
     "success-tool-edit",
     "success-tool-malformed-args",
     "error-401-html-gateway",
@@ -59,6 +99,7 @@ function buildMockProviderConfig(mockLlmUrl: string, defaultModel: string) {
     "truncated-mid-text",
     "truncated-finish-length",
     "slow-streaming",
+    "streaming-long",
   ]
   const models: Record<string, unknown> = {}
   for (const id of fixtures) {
@@ -119,12 +160,16 @@ async function waitForReady(url: string, timeoutMs = 60_000): Promise<void> {
 export async function startIsolatedBackend(opts: BackendOptions): Promise<IsolatedBackend> {
   const homeDir = mkdtempSync(join(tmpdir(), "duoduo-e2e-home-"))
   const configDir = mkdtempSync(join(tmpdir(), "duoduo-e2e-cfg-"))
-  const xdgRoot = mkdtempSync(join(tmpdir(), "duoduo-e2e-xdg-"))
-  const xdgConfigHome = join(xdgRoot, "config")
-  const xdgDataHome = join(xdgRoot, "data")
-  const xdgCacheHome = join(xdgRoot, "cache")
-  const xdgStateHome = join(xdgRoot, "state")
-  for (const d of [xdgConfigHome, xdgDataHome, xdgCacheHome, xdgStateHome]) mkdirSync(d, { recursive: true })
+  // Reuse caller-provided XDG dirs when shared with a sidecar; else create fresh.
+  const sharedXdg = opts.xdg ?? null
+  const xdgRoot = sharedXdg?.root ?? createIsolatedXdgDirs().root
+  const xdgConfigHome = sharedXdg?.env.XDG_CONFIG_HOME ?? join(xdgRoot, "config")
+  const xdgDataHome = sharedXdg?.env.XDG_DATA_HOME ?? join(xdgRoot, "data")
+  const xdgCacheHome = sharedXdg?.env.XDG_CACHE_HOME ?? join(xdgRoot, "cache")
+  const xdgStateHome = sharedXdg?.env.XDG_STATE_HOME ?? join(xdgRoot, "state")
+  if (!sharedXdg) {
+    for (const d of [xdgConfigHome, xdgDataHome, xdgCacheHome, xdgStateHome]) mkdirSync(d, { recursive: true })
+  }
   const projectRoot = mkdtempSync(join(tmpdir(), "duoduo-e2e-proj-"))
   const projectDir = opts.projectName ? join(projectRoot, opts.projectName) : projectRoot
   if (projectDir !== projectRoot) mkdirSync(projectDir, { recursive: true })
@@ -174,6 +219,11 @@ export async function startIsolatedBackend(opts: BackendOptions): Promise<Isolat
         HOME: homeDir,
         // Force backend to skip auth.
         DUODUO_SERVER_PASSWORD: "",
+        // Wire the backend to a running Rust smart-layer sidecar (if any).
+        // Per packages/duoduo/src/smart-layer/index.ts the env var wins over
+        // the well-known URL file, and setting it at process start avoids the
+        // startup race where clients are created before the sidecar is ready.
+        ...(opts.smartLayerUrl ? { DUO_SMART_LAYER_URL: opts.smartLayerUrl } : {}),
         // Prevent telemetry / network calls.
         DUODUO_DISABLE_AUTOUPDATE: "1",
         NO_COLOR: "1",
@@ -219,7 +269,9 @@ export async function startIsolatedBackend(opts: BackendOptions): Promise<Isolat
         // ignore
       }
     }
-    for (const dir of [homeDir, configDir, xdgRoot, projectRoot]) {
+    // Shared XDG dirs are owned by the caller (sidecar/dev-server) — only
+    // clean up dirs we created ourselves.
+    for (const dir of [homeDir, configDir, ...(sharedXdg ? [] : [xdgRoot]), projectRoot]) {
       try {
         if (existsSync(dir)) rmSync(dir, { recursive: true, force: true })
       } catch {

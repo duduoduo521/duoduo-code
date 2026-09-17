@@ -1,7 +1,7 @@
 /**
  * Mock LLM server for e2e testing.
  *
- * Listens on `127.0.0.1:4097`, exposes an OpenAI-compatible
+ * Listens on `127.0.0.1:4097` by default, exposes an OpenAI-compatible
  * `/v1/chat/completions` endpoint that streams a fixture file from
  * `./fixtures/<model>.sse`, where `<model>` is extracted from the
  * request body's `model` field. The IDE's mock provider is configured
@@ -12,12 +12,23 @@
  *   `# status: NNN`        — HTTP status code (default 200)
  *   `# content-type: TYPE` — Content-Type header (default text/event-stream)
  *   `# delay-ms: N`        — milliseconds delay between SSE events (default 0)
- *   `# truncate-after: N`  — close socket after N data lines without [DONE]
+ *   `# truncate-after: N`  — destroy socket after N data lines without [DONE]
  *
  * All other `#` lines (comments) are stripped from the response.
+ *
+ * IMPLEMENTATION NOTE (2026-09-17): this server intentionally does NOT use
+ * the `fetch`-style `Request`/`Response`/`ReadableStream` abstraction. The
+ * previous implementation built a `Response` around a `ReadableStream` and
+ * pumped it via `res.body.getReader()` — under the Bun runtime the first
+ * `reader.next()` NEVER resolves (Bun Response/ReadableStream interop bug),
+ * so every chat-completions request hung until the client timed out. Plain
+ * `node:http` (writeHead + sequential `res.write`) works identically under
+ * BOTH Bun and Node, which is required because the harness starts this
+ * server under Bun while Playwright spec `beforeAll` hooks import it under
+ * Node.
  */
 import { existsSync, readFileSync } from "node:fs"
-import { createServer, type Server } from "node:http"
+import { createServer, type Server, type IncomingMessage, type ServerResponse } from "node:http"
 import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -33,7 +44,11 @@ interface FixturePlan {
 }
 
 function parseFixture(text: string): FixturePlan {
-  const lines = text.split("\n")
+  // Normalize CRLF → LF: fixtures checked out with core.autocrlf or written
+  // on Windows carry \r\n, which would otherwise (a) break the `# directive`
+  // regex via a trailing \r and (b) glue all SSE events into one because the
+  // event splitter matches "\n\n" only.
+  const lines = text.replace(/\r\n/g, "\n").split("\n")
   const plan: FixturePlan = {
     status: 200,
     contentType: "text/event-stream",
@@ -60,15 +75,15 @@ function parseFixture(text: string): FixturePlan {
   return plan
 }
 
-async function extractScenario(req: Request): Promise<string> {
-  const url = new URL(req.url)
+async function extractScenario(req: IncomingMessage, rawBody: Buffer): Promise<string> {
+  const url = new URL(req.url ?? "/", "http://mock.local")
   // Path-based override: /v1/chat/completions/<scenario>
   const tail = url.pathname.replace(/^\/v1\/chat\/completions\/?/, "")
   if (tail) return tail
   // Body-based: model field
-  if (req.body) {
+  if (rawBody.length > 0) {
     try {
-      const body = (await req.clone().json()) as { model?: string }
+      const body = JSON.parse(rawBody.toString("utf8")) as { model?: string }
       if (body.model) return body.model
     } catch {
       // ignore
@@ -77,60 +92,54 @@ async function extractScenario(req: Request): Promise<string> {
   return "success-text-short"
 }
 
-async function buildResponse(scenario: string): Promise<Response> {
+/**
+ * Stream the fixture for `scenario` directly onto the node response.
+ *
+ * Non-streaming fixtures (errors, plain text/HTML/JSON bodies) are written
+ * in one shot. Streaming fixtures write SSE events sequentially with the
+ * optional per-event delay; `truncate-after` destroys the socket mid-stream
+ * to simulate a dropped connection.
+ */
+async function serveFixture(scenario: string, nodeRes: ServerResponse): Promise<void> {
   const fixturePath = resolve(FIXTURES_DIR, `${scenario}.sse`)
   if (!existsSync(fixturePath)) {
-    return new Response(`fixture not found: ${scenario}`, {
-      status: 404,
-      headers: { "content-type": "text/plain" },
-    })
+    nodeRes.writeHead(404, { "content-type": "text/plain" })
+    nodeRes.end(`fixture not found: ${scenario}`)
+    return
   }
 
-  const text = readFileSync(fixturePath, "utf8")
-  const plan = parseFixture(text)
+  const plan = parseFixture(readFileSync(fixturePath, "utf8"))
 
   // Non-streaming responses (errors, plain text/HTML/JSON bodies)
   if (!plan.contentType.startsWith("text/event-stream")) {
-    return new Response(plan.body, {
-      status: plan.status,
-      headers: { "content-type": plan.contentType },
-    })
+    nodeRes.writeHead(plan.status, { "content-type": plan.contentType })
+    nodeRes.end(plan.body)
+    return
   }
 
   // Streaming SSE responses with optional delay/truncation
-  const events = plan.body.split(/\n\n/).filter((e) => e.trim().length > 0)
-  const truncateAfter = plan.truncateAfter
-  const delayMs = plan.delayMs
-
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const encoder = new TextEncoder()
-      let dataCount = 0
-      try {
-        for (const evt of events) {
-          if (evt.startsWith("data:")) dataCount++
-          controller.enqueue(encoder.encode(evt + "\n\n"))
-          if (truncateAfter !== null && dataCount >= truncateAfter) {
-            controller.error(new Error("simulated mid-stream truncation"))
-            return
-          }
-          if (delayMs > 0) await new Promise((r) => setTimeout(r, delayMs))
-        }
-        controller.close()
-      } catch (err) {
-        controller.error(err)
-      }
-    },
+  const events = plan.body
+    .split(/\r?\n\r?\n/)
+    .map((e) => e.replace(/\r/g, ""))
+    .filter((e) => e.trim().length > 0)
+  nodeRes.writeHead(plan.status, {
+    "content-type": plan.contentType,
+    "cache-control": "no-cache",
+    "x-accel-buffering": "no",
   })
 
-  return new Response(stream, {
-    status: plan.status,
-    headers: {
-      "content-type": plan.contentType,
-      "cache-control": "no-cache",
-      "x-accel-buffering": "no",
-    },
-  })
+  let dataCount = 0
+  for (const evt of events) {
+    if (evt.startsWith("data:")) dataCount++
+    nodeRes.write(evt + "\n\n")
+    if (plan.truncateAfter !== null && dataCount >= plan.truncateAfter) {
+      // Simulated mid-stream truncation: destroy the socket without [DONE].
+      nodeRes.destroy()
+      return
+    }
+    if (plan.delayMs > 0) await new Promise((r) => setTimeout(r, plan.delayMs))
+  }
+  nodeRes.end()
 }
 
 export interface MockLLMCall {
@@ -183,65 +192,67 @@ function countToolCalls(body: { messages?: Array<Record<string, unknown>> }): { 
 export async function startMockLLM(port = 4097): Promise<MockLLMServer> {
   const calls: MockLLMCall[] = []
 
-  // fetch-style handler (Request/Response), shared by the node:http bridge below.
-  // Must run under BOTH Bun (dev-server wrapper) and Node (Playwright test runner
-  // imports this file directly in run-loop specs — Bun is not defined under Node).
-  async function handle(req: Request): Promise<Response> {
-    const url = new URL(req.url)
-
-    // Health check
-    if (url.pathname === "/health") {
-      return new Response("ok", { status: 200 })
-    }
-
-    // Models list (some clients probe this)
-    if (url.pathname === "/v1/models") {
-      const ids = ["success-text-short", "success-text-multi-chunk", "success-text-markdown"]
-      return Response.json({
-        object: "list",
-        data: ids.map((id) => ({ id, object: "model", created: 1700000000, owned_by: "mock" })),
-      })
-    }
-
-    // Chat completions
-    if (url.pathname.startsWith("/v1/chat/completions")) {
-      const scenario = await extractScenario(req)
-      const body = await req.clone().json().catch(() => ({})) as { model?: string; messages?: Array<Record<string, unknown>> }
-      const { count, tools } = countToolCalls(body)
-      calls.push({ scenario, model: body.model ?? null, toolCallCount: count, tools, at: Date.now() })
-      return buildResponse(scenario)
-    }
-
-    return new Response("not found", { status: 404 })
-  }
-
   const server: Server = createServer((nodeReq, nodeRes) => {
     const chunks: Buffer[] = []
     nodeReq.on("data", (c: Buffer) => chunks.push(c))
     nodeReq.on("error", () => {})
     nodeReq.on("end", async () => {
+      const rawBody = Buffer.concat(chunks)
       try {
-        const host = nodeReq.headers.host ?? "127.0.0.1"
-        const req = new Request(`http://${host}${nodeReq.url ?? "/"}`, {
-          method: nodeReq.method,
-          headers: nodeReq.headers as Record<string, string>,
-          body: nodeReq.method === "GET" || nodeReq.method === "HEAD" ? undefined : Buffer.concat(chunks),
-        })
-        const res = await handle(req)
-        const headers: Record<string, string> = {}
-        res.headers.forEach((v, k) => {
-          headers[k] = v
-        })
-        nodeRes.writeHead(res.status, headers)
-        if (res.body) {
-          const reader = res.body.getReader()
-          for (;;) {
-            const { done, value } = await reader.next()
-            if (done) break
-            nodeRes.write(value)
-          }
+        const url = new URL(nodeReq.url ?? "/", "http://mock.local")
+
+        // Health check
+        if (url.pathname === "/health") {
+          nodeRes.writeHead(200, { "content-type": "text/plain" })
+          nodeRes.end("ok")
+          return
         }
-        nodeRes.end()
+
+        // Debug: number of chat-completions calls recorded so far (used by
+        // stop/interrupt specs to assert the agent loop actually cancelled).
+        if (url.pathname === "/debug/calls") {
+          nodeRes.writeHead(200, { "content-type": "application/json" })
+          nodeRes.end(JSON.stringify({ count: calls.length }))
+          return
+        }
+
+        // Models list (some clients probe this)
+        if (url.pathname === "/v1/models") {
+          const ids = ["success-text-short", "success-text-multi-chunk", "success-text-markdown"]
+          nodeRes.writeHead(200, { "content-type": "application/json" })
+          nodeRes.end(
+            JSON.stringify({
+              object: "list",
+              data: ids.map((id) => ({ id, object: "model", created: 1700000000, owned_by: "mock" })),
+            }),
+          )
+          return
+        }
+
+        // Chat completions
+        if (url.pathname.startsWith("/v1/chat/completions")) {
+          const scenario = await extractScenario(nodeReq, rawBody)
+          let body: { model?: string; messages?: Array<Record<string, unknown>> } = {}
+          if (rawBody.length > 0) {
+            body = JSON.parse(rawBody.toString("utf8"))
+          }
+          const { count, tools } = countToolCalls(body)
+          const round = calls.filter((c) => c.scenario === scenario).length
+          calls.push({ scenario, model: body.model ?? null, toolCallCount: count, tools, at: Date.now() })
+          // Tool-call fixtures answer EVERY round with the same tool call — a
+          // static fixture cannot "conclude" like a real model would, so the
+          // agentic loop would spin forever (observed: 2217 rounds until the
+          // client timed out). From the SECOND round of a tool-call scenario
+          // on, serve the plain-text fixture instead: round 1 exercises the
+          // tool round-trip, later rounds let the loop finish naturally.
+          const effScenario =
+            scenario.startsWith("success-tool-") && round >= 1 ? "success-text-short" : scenario
+          await serveFixture(effScenario, nodeRes)
+          return
+        }
+
+        nodeRes.writeHead(404, { "content-type": "text/plain" })
+        nodeRes.end("not found")
       } catch (err) {
         try {
           nodeRes.writeHead(500, { "content-type": "text/plain" })
@@ -253,8 +264,8 @@ export async function startMockLLM(port = 4097): Promise<MockLLMServer> {
     })
   })
 
-  const listenPort = await new Promise<number>((resolvePort, reject) => {
-    server.once("error", reject)
+  const listenPort = await new Promise<number>((resolvePort, rejectPort) => {
+    server.once("error", rejectPort)
     server.listen(port, "127.0.0.1", () => {
       resolvePort((server.address() as { port: number }).port)
     })

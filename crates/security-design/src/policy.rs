@@ -130,6 +130,29 @@ impl Default for SecurityPolicy {
     }
 }
 
+/// Canonicalize `path`, resolving RELATIVE paths against `base_dir` when
+/// provided.
+///
+/// A relative tool argument (e.g. the LLM calling `read` with
+/// `"filePath": "README.md"`) must be interpreted relative to the PROJECT
+/// directory, not relative to the sidecar process's current working
+/// directory — `Path::canonicalize()` on a relative path silently joins the
+/// process CWD, which made every relative path look like it was "outside the
+/// project directory" whenever the sidecar was started from anywhere else.
+/// When the joined path does not exist yet (the "create a new file" case),
+/// fall back to canonicalizing the deepest existing prefix so symlinks
+/// inside the project are still resolved.
+fn canonicalize_against(path: &str, base_dir: Option<&Path>) -> PathBuf {
+    let p = Path::new(path);
+    let absolute = match base_dir {
+        Some(base) if !p.is_absolute() => base.join(p),
+        _ => p.to_path_buf(),
+    };
+    absolute
+        .canonicalize()
+        .unwrap_or_else(|_| resolve_existing_prefix(&absolute.to_string_lossy()))
+}
+
 impl SecurityPolicy {
     /// Create a security policy scoped to a project directory.
     ///
@@ -174,16 +197,14 @@ impl SecurityPolicy {
     pub fn check_path_access(&self, path: &str) -> Result<(), String> {
         // Rule 1: Whitelist check — explicit allowed_paths list takes precedence.
         if !self.allowed_paths.is_empty() {
-            let canonical = std::path::Path::new(path)
-                .canonicalize()
-                .unwrap_or_else(|_| std::path::PathBuf::from(path));
+            // Relative arguments are resolved against the project root (which
+            // is always implicitly part of allowed_paths — see agent.rs's
+            // task-scoped sandbox construction).
+            let canonical = canonicalize_against(path, self.project_path.as_deref());
             let canonical_str = canonical.to_string_lossy();
 
             let permitted = self.allowed_paths.iter().any(|allowed| {
-                let allowed_path = std::path::Path::new(allowed);
-                let canonical_allowed = allowed_path
-                    .canonicalize()
-                    .unwrap_or_else(|_| allowed_path.to_path_buf());
+                let canonical_allowed = canonicalize_against(allowed, None);
                 let allowed_str = canonical_allowed.to_string_lossy();
 
                 // Directory-boundary matching:
@@ -203,21 +224,17 @@ impl SecurityPolicy {
             }
         } else if let Some(ref project_path) = self.project_path {
             // Rule 2: Project-path scoping — restrict access to the project directory.
-            // Full canonicalize succeeds only when the whole path exists. For a
-            // not-yet-existing path (the "create a new file" case), fall back to
-            // canonicalizing the deepest existing prefix so symlinks inside the
-            // project are still resolved; falling back to the raw string would
-            // let `<project>/<symlink-to-outside>/new.txt` escape the root.
-            let canonical = std::path::Path::new(path)
-                .canonicalize()
-                .unwrap_or_else(|_| resolve_existing_prefix(path));
+            // Relative paths are resolved against the project directory, NOT the
+            // sidecar process's CWD (see `canonicalize_against`). The deepest-
+            // existing-prefix fallback handles the not-yet-existing "create a new
+            // file" case so `<project>/<symlink-to-outside>/new.txt` cannot escape.
+            let canonical = canonicalize_against(path, Some(project_path));
             let canonical_str = canonical.to_string_lossy();
 
-            let canonical_project = project_path
-                .canonicalize()
-                .unwrap_or_else(|_| resolve_existing_prefix(
-                    project_path.to_string_lossy().as_ref(),
-                ));
+            let canonical_project = canonicalize_against(
+                project_path.to_string_lossy().as_ref(),
+                None,
+            );
             let project_str = canonical_project.to_string_lossy();
 
             let permitted = canonical_str == project_str
@@ -388,6 +405,56 @@ mod tests {
         // Only whitelist is enforced; project_path is ignored when whitelist is non-empty
         assert!(policy.check_path_access("/opt/data/file.txt").is_ok());
         assert!(policy.check_path_access("/home/user/project/src/main.rs").is_err());
+    }
+
+    // ── Relative-path resolution regression (e2e run-loop tool round-trip) ──
+    //
+    // The LLM routinely passes RELATIVE file arguments ("README.md"). These
+    // must resolve against the project directory, not the sidecar process's
+    // CWD — previously `Path::canonicalize()` joined the CWD, so every
+    // relative read inside a project started from another directory was
+    // misclassified as "outside the project directory" and escalated to a
+    // permission ask, deadlocking the loop when no UI could answer it.
+
+    #[test]
+    fn relative_path_resolves_against_project_root() {
+        let project = std::env::temp_dir().join("sec-design-rel-proj");
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join("README.md"), "x").unwrap();
+
+        let policy = SecurityPolicy::with_project_path(project.clone());
+        // Relative path inside the project — must be allowed (previously
+        // misclassified as outside because canonicalize() joined the CWD).
+        assert!(policy.check_path_access("README.md").is_ok());
+        assert!(policy.check_path_access("./README.md").is_ok());
+
+        // A relative path that does not exist yet but stays inside the
+        // project (the "create a new file" case) — also allowed.
+        assert!(policy.check_path_access("src/new_file.rs").is_ok());
+
+        std::fs::remove_dir_all(&project).ok();
+    }
+
+    #[test]
+    fn relative_path_outside_project_still_denied() {
+        let project = std::env::temp_dir().join("sec-design-rel-out");
+        std::fs::create_dir_all(&project).ok();
+        std::fs::create_dir_all(std::env::temp_dir().join("sec-design-rel-sibling")).unwrap();
+
+        let policy = SecurityPolicy::with_project_path(project.clone());
+        // `..` traversal out of the project is a hard fail-closed block.
+        assert!(policy.check_path_access("../sec-design-rel-sibling/x.txt").is_err());
+
+        std::fs::remove_dir_all(&project).ok();
+        std::fs::remove_dir_all(std::env::temp_dir().join("sec-design-rel-sibling")).ok();
+    }
+
+    #[test]
+    fn relative_path_denied_without_project_scope_stays_unrestricted() {
+        // Rule 3: no allowed_paths, no project_path — relative paths are
+        // allowed (backward-compatible unrestricted mode).
+        let policy = SecurityPolicy::default();
+        assert!(policy.check_path_access("README.md").is_ok());
     }
 
     #[test]

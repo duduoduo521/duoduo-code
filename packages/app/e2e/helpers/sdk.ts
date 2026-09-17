@@ -244,6 +244,16 @@ export async function updateConfig(patch: Record<string, unknown>): Promise<void
   assertOk(res, "updateConfig")
 }
 
+// ─── Mock LLM introspection ─────────────────────────────────────
+
+/** Number of chat-completions calls the mock LLM has served so far. */
+export async function getMockCallCount(): Promise<number> {
+  const info = getRuntimeInfo()
+  const res = await fetch(`${info.mockLlmUrl}/debug/calls`)
+  assertOk(res, "getMockCallCount")
+  return ((await res.json()) as { count: number }).count
+}
+
 // ─── Health ─────────────────────────────────────────────────────
 
 /** Check backend health. */

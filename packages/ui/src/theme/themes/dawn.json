@@ -6,12 +6,12 @@
     "palette": {
       "neutral": "#f5f7fa",
       "ink": "#1a1d24",
-      "primary": "#2e6be6",
+      "primary": "#2a66e0",
       "accent": "#7c3aed",
-      "success": "#16a34a",
-      "warning": "#e8830c",
-      "error": "#dc2626",
-      "info": "#0891b2"
+      "success": "#15803d",
+      "warning": "#c2410c",
+      "error": "#d61f1f",
+      "info": "#0c7a99"
     }
   },
   "dark": {

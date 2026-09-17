@@ -651,7 +651,7 @@ export function SessionTurn(
                       >
                         {i18n.t("ui.sessionTurn.edit.cancel")}
                       </button>
-                      <span class="text-11-regular text-text-weakest">Enter 发送 · Shift+Enter 换行 · Esc 取消</span>
+                      <span class="text-11-regular text-text-weakest">{i18n.t("ui.sessionTurn.edit.hint")}</span>
                     </div>
                   </div>
                 }>

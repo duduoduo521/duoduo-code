@@ -312,7 +312,7 @@ export function DialogCustomProvider(props: Props) {
           })
           if (!test || !test.ok) {
             throw new Error(
-              test?.error ?? "模型连通性测试失败,请检查 baseURL / API Key 或代理设置",
+              test?.error ?? language.t("provider.custom.testFailed"),
             )
           }
           // Remember: stamp promptCaching onto every model entry.

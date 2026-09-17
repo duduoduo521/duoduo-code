@@ -16,6 +16,7 @@ import { useSync } from "@/context/sync"
 import { Identifier } from "@/utils/id"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import { buildRequestParts } from "./build-request-parts"
+import { t as i18nT } from "@/i18n/core"
 import { setCursorPosition } from "./editor-dom"
 import { formatServerError } from "@/utils/server-errors"
 import { isProjectTaskBusyError } from "./project-task-busy"
@@ -128,7 +129,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       await activateGear(cmd)
       showToast({
         variant: "success",
-        title: `已激活智械 ${cmd}`,
+        title: i18nT("dialog.gear.activate.success", { name: cmd }),
       })
     } catch (err) {
       setIdle()

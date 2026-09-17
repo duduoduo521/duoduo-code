@@ -1179,7 +1179,7 @@ pub fn normalize_native_pack(root: &Path) -> Result<NormalizedGear> {
                     break;
                 }
             }
-            found.ok_or_else(|| anyhow!("未能从源码仓库获取技能文件 (SKILL.md)，source_url={source_url}"))?
+            found.ok_or_else(|| anyhow!("[gear_source_error] 未能从源码仓库获取技能文件 (SKILL.md)，source_url={source_url}"))?
         } else if source_url.contains("modelscope.cn") {
             clone_skill_from_modelscope(&source_url, &dir).await?
         } else {
@@ -1263,7 +1263,7 @@ async fn download_text(url: &str) -> Result<String> {
         .await
         .map_err(|e| anyhow!("下载失败: {e}"))?;
     if !resp.status().is_success() {
-        anyhow::bail!("下载返回状态 {}", resp.status());
+        anyhow::bail!("[gear_source_error] 下载返回状态 {}", resp.status());
     }
     resp.text()
         .await
@@ -1293,9 +1293,9 @@ async fn clone_skill_from_modelscope(source_url: &str, dir: &Path) -> Result<Str
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
-        .map_err(|e| anyhow!("执行 git clone 失败: {e}"))?;
+        .map_err(|e| anyhow!("[gear_source_error] 执行 git clone 失败: {e}"))?;
     if !status.success() {
-        anyhow::bail!("克隆技能仓库失败: {clone_url}");
+        anyhow::bail!("[gear_source_error] 克隆技能仓库失败: {clone_url}");
     }
     for name in ["SKILL.md", "skill.md", "README.md", "readme.md"] {
         let p = dir.join(name);

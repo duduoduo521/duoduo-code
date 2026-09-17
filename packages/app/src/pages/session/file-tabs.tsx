@@ -69,7 +69,7 @@ export function FileTabContent(props: { tab: string }) {
       if (!res.data) return
       setSshPtyId(res.data.id)
       dialog.show(() => (
-        <Dialog title={language.t("remote.sshTerminal") || "SSH 终端"} size="x-large">
+        <Dialog title={language.t("remote.sshTerminal")} size="x-large">
           <div class="h-[70vh] w-full">
             <Show when={sshPtyId()}>
               <Terminal pty={{ id: sshPtyId()!, title: "SSH", titleNumber: 1 }} />
@@ -80,8 +80,8 @@ export function FileTabContent(props: { tab: string }) {
     } catch (e) {
       showToast({
         variant: "error",
-        title: language.t("remote.sshFailed") || "SSH 连接失败",
-        description: errorMessage(e, language.t("remote.sshFailed") || "SSH 连接失败"),
+        title: language.t("remote.sshFailed"),
+        description: errorMessage(e, language.t("remote.sshFailed")),
       })
     }
   }
@@ -430,32 +430,32 @@ export function FileTabContent(props: { tab: string }) {
                 </div>
               </Show>
               <Show when={isRemote()}>
-                <Tooltip value={language.t("remote.pull") || "从远端拉取"}>
+                <Tooltip value={language.t("remote.pull")}>
                   <IconButton
                     icon="arrow-down-to-line"
                     variant="ghost"
                     size="normal"
-                    aria-label={language.t("remote.pull") || "从远端拉取"}
+                    aria-label={language.t("remote.pull")}
                     disabled={remoteSyncStatus() !== undefined}
                     onClick={() => void syncRemote("pull", { sdk, language, globalSync, dialog })}
                   />
                 </Tooltip>
-                <Tooltip value={language.t("remote.sshTerminal") || "SSH 终端"}>
+                <Tooltip value={language.t("remote.sshTerminal")}>
                   <IconButton
                     icon="terminal"
                     variant="ghost"
                     size="normal"
-                    aria-label={language.t("remote.sshTerminal") || "SSH 终端"}
+                    aria-label={language.t("remote.sshTerminal")}
                     class="ml-auto"
                     onClick={openSshTerminal}
                   />
                 </Tooltip>
-                <Tooltip value={language.t("remote.push") || "推回远端"}>
+                <Tooltip value={language.t("remote.push")}>
                   <IconButton
                     icon="arrow-up"
                     variant="ghost"
                     size="normal"
-                    aria-label={language.t("remote.push") || "推回远端"}
+                    aria-label={language.t("remote.push")}
                     disabled={remoteSyncStatus() !== undefined}
                     onClick={() => void syncRemote("push", { sdk, language, globalSync, dialog })}
                   />

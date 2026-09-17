@@ -187,6 +187,7 @@ export const dict = {
   "provider.disconnect.toast.disconnected.title": "{{provider}} disconnected",
   "provider.disconnect.toast.disconnected.description": "{{provider}} models are no longer available.",
   "provider.custom.toast.updated.title": "{{provider}} updated",
+  "provider.custom.testFailed": "Model connectivity test failed. Check the baseURL / API key or proxy settings.",
   "provider.custom.toast.updated.description": "Configuration saved; models take effect immediately.",
 
   "model.tag.latest": "Latest",
@@ -239,19 +240,17 @@ export const dict = {
   "dialog.openProject.remote.saveCredentials": "Save Credentials",
   "dialog.openProject.remote.credentialUpdated": "SSH credentials updated.",
   "dialog.openProject.remote.editTitle": "Edit SSH Info",
-  "dialog.openProject.remote.browse": "Browse remote directory",
   "dialog.openProject.remote.browseTitle": "Browse remote directory",
   "dialog.openProject.remote.browseRequired": "Fill in host, port, username and the matching credentials before browsing.",
   "dialog.openProject.remote.connectTestFailed": "Cannot connect to the remote server",
   "dialog.openProject.remote.pathPlaceholder": "Select a folder",
-  "dialog.openProject.remote.goUp": "Go up",
   "dialog.openProject.remote.showFull": "Show full path",
-  "dialog.openProject.remote.go": "Go",
   "dialog.openProject.remote.empty": "No subdirectories",
   "dialog.openProject.remote.listError": "Failed to list remote directory.",
   "dialog.openProject.remote.selectHere": "Select this directory",
   "project.remote.openFailed.title": "Cannot open remote project",
   "project.remote.openFailed.description": "Could not reach the remote server. Returned to recent projects.",
+  "project.remote.openFailed.timeout": "Timed out opening the project: the backend was not ready in time. Check the duoduocode sidecar process.",
   "project.remote.opening": "Loading project",
 
   "common.search.placeholder": "Search",
@@ -329,16 +328,12 @@ export const dict = {
   "prompt.action.send": "Send",
   "prompt.action.stop": "Stop",
   "prompt.disclaimer": "AI-generated content for reference only",
-  "prompt.kg.indexing": "Building code knowledge graph…",
-  "prompt.kg.indexing.progress": "Building code knowledge graph… {{progress}}%",
-  "prompt.kg.indexing.files": "Building code knowledge graph… {{progress}}% ({{done}}/{{total}} files)",
+  "prompt.slash.gearDescription": "Activate gear {{name}}",
+  "prompt.tps": "Last turn: {{speed}} token/s",
   "titlebar.kg.indexing": "Indexing project “{{project}}”: {{done}}/{{total}}",
   "titlebar.kg.unknownProject": "Unnamed project",
   "titlebar.lsp.starting": "Starting language servers (LSP)…",
   "titlebar.lsp.failed": "Language server failed: {{servers}}",
-  "titlebar.lsp.retry": "Retry",
-  "prompt.kg.cancel": "Cancel",
-  "prompt.kg.canceling": "Canceling…",
 
   "session.error": "Session Error",
 
@@ -352,8 +347,6 @@ export const dict = {
   "prompt.toast.commandSendFailed.title": "Failed to send command",
   "prompt.toast.promptSendFailed.title": "Failed to send prompt",
   "prompt.toast.promptSendFailed.description": "Unable to retrieve session",
-  "prompt.toast.projectTaskBusy.title": "Project is busy",
-  "prompt.toast.projectTaskBusy.description": "A task is already running for this project. Please wait for it to finish or switch to another project.",
 
   "dialog.gear.title": "IntelGears",
   "dialog.gear.description": "{{enabled}} of {{total}} IntelGears enabled",
@@ -364,7 +357,6 @@ export const dict = {
   "dialog.gear.activation.command": "Manual /",
   "dialog.gear.activation.auto": "Auto",
   "dialog.gear.activation.global": "Global",
-  "dialog.gear.activation.progressive": "On-demand / Auto",
   "dialog.gear.activation.hint": "Cycle activation: manual / trigger → auto-call → global inject",
   "dialog.gear.tier.progressive": "Auto",
   "dialog.gear.tier.command": "Manual",
@@ -375,10 +367,6 @@ export const dict = {
 
   "dialog.lsp.empty": "LSPs auto-detected from file types",
 
-  "mcp.status.connected": "connected",
-  "mcp.status.failed": "failed",
-  "mcp.status.needs_auth": "needs auth",
-  "mcp.status.disabled": "disabled",
 
   "dialog.fork.empty": "No messages to fork from",
 
@@ -462,9 +450,7 @@ export const dict = {
   "context.stats.lastActivity": "Last Activity",
   "context.stats.notProvided": "Not provided",
 
-  "context.usage.tokens": "Tokens",
   "context.usage.capacity": "Context Capacity",
-  "context.usage.usage": "Usage",
   "context.usage.view": "View context usage",
 
   "language.en": "English",
@@ -566,10 +552,8 @@ export const dict = {
   "session.tab.context": "Context",
   "session.panel.reviewAndFiles": "Review and files",
   "session.review.filesChanged": "{{count}} Files Changed",
-  "session.review.change.one": "Change",
   "session.review.change.other": "Changes",
   "session.review.loadingChanges": "Loading changes...",
-  "session.review.noVcs": "No Git Version Control System detected, changes not displayed",
   "session.review.noVcs.createGit.title": "Initialize Git Repository",
   "session.review.noVcs.createGit.description":
     "Initialize a Git repository to track AI code changes, enabling review, diff, and undo operations",
@@ -579,12 +563,10 @@ export const dict = {
   "session.review.noUncommittedChanges": "No uncommitted changes yet",
 
   "session.files.selectToOpen": "Select a file to open",
-  "session.files.all": "All files",
   "session.files.empty": "No files",
 
   "session.messages.loadingEarlier": "Loading earlier messages...",
   "session.messages.loadEarlier": "Load earlier messages",
-  "session.messages.loading": "Loading messages...",
 
   "session.todo.collapse": "Collapse",
   "session.todo.expand": "Expand",
@@ -656,7 +638,6 @@ export const dict = {
   "common.key.pageDown": "Page Down",
   "common.key.insert": "Insert",
   "common.unknown": "unknown",
-  "common.copy": "Copy",
   "common.copied": "Copied",
   "common.copyFailed": "Copy failed",
 
@@ -704,7 +685,6 @@ export const dict = {
 
   "app.name.desktop": "DuoDuoCode",
 
-  "about.title": "About Us",
   "about.description": "AI-powered intelligent development tool",
   "about.website": "Website",
   "about.github": "GitHub",
@@ -724,7 +704,6 @@ export const dict = {
   "settings.tab.general": "General",
   "settings.tab.shortcuts": "Shortcuts",
   "settings.tab.logs": "Logs",
-  "settings.tab.market": "Marketplace",
   "settings.tab.gearMarket": "Gear Market",
   "settings.logs.title": "Log files",
   "settings.logs.description": "Diagnostic logs are written to the local log directory, rotated by size, with errors split into a separate file.",
@@ -801,9 +780,6 @@ export const dict = {
   "settings.general.row.lineWrapping.description": "Wrap long lines in the editor (Alt+Z to toggle)",
   "settings.general.row.tabWrapping.title": "Tab Wrapping",
   "settings.general.row.tabWrapping.description": "Wrap tab labels to multiple lines instead of scrolling",
-  "settings.general.row.cascadeQA.title": "Review (Code Review)",
-  "settings.general.row.cascadeQA.description":
-    "After each file write, run code review and auto-fix issues (Review mode). Increases correctness but uses more tokens.",
   "settings.general.row.syntaxCheck.title": "Syntax Check",
   "settings.general.row.syntaxCheck.description":
     "Gate file writes through the blackboard tree-sitter syntax check (L1). On by default; turning off removes the deterministic syntax gate (expert escape hatch only).",
@@ -831,9 +807,6 @@ export const dict = {
   "settings.loop.row.subAgentMaxFileReads.title": "Sub-agent Max File Reads",
   "settings.loop.row.subAgentMaxFileReads.description":
     "Max number of file reads for a single sub-agent. -1 means unlimited. Default 50.",
-  "settings.general.row.temperature.title": "Sampling Temperature",
-  "settings.general.row.temperature.description":
-    "LLM sampling temperature: 0.0 is fully deterministic (recommended for dev tasks — correctness and reproducibility), 1.0 is more random. Default 0.0.",
   "settings.general.row.thinking.title": "Thinking Mode",
   "settings.general.row.thinking.description":
     "Enable the model's thinking/reasoning mode (e.g. reasoning_effort). Supporting models gain stronger reasoning; unsupported models silently ignore it and degrade without affecting task execution. On by default.",
@@ -1000,7 +973,6 @@ export const dict = {
   "settings.storage.deleted": "Deleted {count} entries",
   "settings.storage.cleanupProjects": "Clean Up Project Records",
   "settings.storage.cleanupProjectsDesc": "Delete project records opened more than N days ago (0 = delete all). Projects currently open are kept.",
-  "settings.storage.cleanupProjectsCount": "project records will be deleted",
   "settings.storage.cleanupProjectsDeleted": "Cleaned up {count} project records",
   "settings.storage.cleanupProjectsNone": "No project records to delete (projects still open or in the left sidebar are kept).",
   "settings.storage.cleanupProjectsTip": "This permanently deletes the project records along with their conversation history (session / message) and memory data. Your project source files are not affected. This cannot be undone.",
@@ -1048,17 +1020,14 @@ export const dict = {
   "settings.gear.name": "Name",
   "settings.gear.gearNamePlaceholder": "my-gear",
   "settings.gear.source": "Source",
-  "settings.gear.pickZip": "Choose a zip package",
   "settings.gear.selectedPath": "Selected",
   "settings.gear.noPath": "Pick a folder first",
-  "settings.gear.installing": "Installing…",
   "settings.gear.delete": "Delete",
   "settings.gear.autoCall": "Skill auto-call",
   "settings.gear.autoCallHint": "When on, the model loads this skill on demand in relevant contexts (Agent Skills style); when off, trigger it manually via the /command.",
   "settings.gear.cancel": "Cancel",
   "settings.gear.confirmDelete": "Delete gear \"{{name}}\"? This cannot be undone.",
   "settings.gear.deleted": "Gear deleted",
-  "settings.gear.installedOk": "Gear installed",
   "settings.gear.mcpAdded": "Tool server added as a gear",
   "settings.gear.cap.instructions": "Instructions",
   "settings.gear.cap.mcp": "Tools",
@@ -1071,7 +1040,6 @@ export const dict = {
   "settings.gear.savePath": "Save",
   "settings.gear.resetPath": "Reset to default",
   "settings.gear.pathSaved": "Saved",
-  "settings.gear.pathError": "Failed to save",
   "common.saveFailed": "Save failed",
 
   "market.disclaimer": "Marketplace content is provided by third parties. Installing means you trust that source; assess license and data safety yourself.",
@@ -1095,9 +1063,6 @@ export const dict = {
   "market.openDetail": "Click to open the source page (ModelScope / upstream repo) for details.",
   "market.compliance.sourceHint": "Config is fetched from upstream and cached; force-refresh to re-validate.",
   "market.compliance.revalidate": "Re-validate config",
-  "market.pager.total": "{n} total",
-  "market.pager.prev": "Prev",
-  "market.pager.next": "Next",
   "market.loadingMore": "Loading more...",
   "market.noMore": "No more results",
   "market.loadMoreFailed": "Failed to load more",
@@ -1109,34 +1074,26 @@ export const dict = {
   "market.compliance.localCommand": "After install, starting this server runs a local command in the background: ",
   "market.detail.noDescription": "This server has no written introduction,",
   "market.detail.viewSource": "view the source",
+  "market.detail.title": "Gear details",
+  "market.detail.viewOnModelscope": "View on ModelScope ↗",
+  "gearStore.files": "Files",
 
   "gearStore.dialog.title": "Gear Marketplace",
   "gearStore.search": "Search gears...",
-  "gearStore.loading": "Loading...",
   "gearStore.empty": "No results. Try a different search or filter.",
   "gearStore.install": "Install",
   "gearStore.installing": "Installing...",
   "gearStore.installed": "Installed",
-  "gearStore.category.all": "All",
-  "gearStore.category.skill": "Instructions",
-  "gearStore.category.native": "Native",
-  "gearStore.category.plugin": "Plugins",
-  "gearStore.category.mcp": "Tools",
   "gearStore.installedOk": "Gear installed",
   "gearStore.fetchError": "Failed to fetch list. Please check your network and retry.",
   "gearStore.fetchTimeout": "Request timed out — the server did not respond in time. Please try again later.",
   "gearStore.refresh": "Refresh",
-  "gearStore.comingSoon": "Coming soon",
   "gearStore.unsupported": "Not supported",
   "gearStore.filter.all": "All",
   "gearStore.filter.mcp": "MCP",
   "gearStore.filter.skill": "Skill",
   "gearStore.filter.plugin": "Plugin",
   "gearStore.sources": "Sources: ModelScope Community",
-  "gearStore.activation": "Activation",
-  "gearStore.activation.command": "Command",
-  "gearStore.activation.auto": "Auto",
-  "gearStore.activation.global": "Global",
   "settings.graph.desc": "Manage per-project knowledge graph indexes: retention, listing and cleanup.",
   "settings.graph.retentionDays": "Index retention (days)",
   "settings.graph.retentionDaysDesc": "After a project is closed, its index is kept for the retention period (default 90 days), then auto-deleted. Reopening within that window restores it instantly.",
@@ -1441,7 +1398,6 @@ export const dict = {
 
   // ─── Gear Store ───
   "gearStore.title": "Gear Marketplace",
-  "gearStore.description": "Browse and install gear apps",
 
   // ─── Graph Kanban ───
   "graphKanban.title": "Graph Kanban",
@@ -1460,7 +1416,6 @@ export const dict = {
   "graphKanban.indexStatus.reindex": "Re-index",
   "graphKanban.indexStatus.startIndex": "Start Index",
   "graphKanban.indexStatus.cancel": "Cancel",
-  "graphKanban.indexStatus.refresh": "Refresh",
   "graphKanban.indexStatus.failed": "{{count}} files failed to index",
   "graphKanban.indexStatus.retryFile": "Retry",
   "graphKanban.nodeTypeDistribution": "Entity Type Distribution",
@@ -1474,14 +1429,12 @@ export const dict = {
 
   "remote.pull": "Pull from remote",
   "remote.push": "Push to remote",
-  "remote.syncing": "Syncing with remote…",
   "remote.pulling": "Pulling from remote…",
   "remote.pushing": "Pushing to remote…",
   "remote.pushSkippedTitle": "Pushed, but some files/directories could not be deleted on the remote",
   "remote.pushSkippedDesc":
     "The remote refused to delete the entries below (permission denied — e.g. a BT-panel locked .user.ini, or a site root not owned by your SSH user). Unlock server-side as root (chattr -i) or delete them manually, then push again:",
   "remote.sshTerminal": "SSH Terminal",
-  "remote.disconnect": "Disconnect remote",
   "remote.sshFailed": "SSH connection failed",
   "remote.pushSuccess": "Pushed to remote",
   "remote.pushSuccessDesc": "Local changes have been uploaded to the remote server.",

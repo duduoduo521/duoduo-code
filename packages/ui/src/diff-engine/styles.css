@@ -18,9 +18,34 @@
   --diffs-line-height: 24px;
   --diffs-tab-size: 2;
   --diffs-min-number-column-width: 4ch;
+
+  /* Diff palette — single source for every hardcoded color below.
+     Triplet form (r, g, b) because WebKitGTK lacks color-mix()/rgb(from)/
+     light-dark(); alpha stays literal at each call site. Themes may override
+     these variables to tint diff colors without touching this file. */
+  --diff-add-rgb: 18, 201, 5;          /* addition green  */
+  --diff-del-rgb: 252, 83, 58;         /* deletion red    */
+  --diff-muted-rgb: 0, 0, 0;           /* muted text (light) */
+  --diff-muted-alpha: 0.45;
+  --diff-select-rgb: 252, 243, 203;    /* selected/comment line wash */
+  --diff-select-accent: #e5a100;       /* selected line left bar */
+  --diff-select-fg: #1c1917;           /* line number text on wash */
+  --diff-find-rgb: 252, 243, 203;      /* find marks (scheme-invariant) */
+  --diff-find-current-rgb: 251, 221, 70;
+
   /* Horizontal scroll lives on the outer container so cross-line text
      selection isn't broken by per-line scroll containers. */
   overflow-x: auto;
+}
+
+[data-color-scheme="dark"] [data-diff],
+[data-diff][data-color-scheme="dark"],
+[data-color-scheme="dark"] [data-component="diff-viewer"],
+[data-component="diff-viewer"][data-color-scheme="dark"] {
+  --diff-muted-rgb: 255, 255, 255;
+  --diff-muted-alpha: 0.5;
+  --diff-select-rgb: 42, 42, 42;
+  --diff-select-fg: #fdfbfb;
 }
 
 [data-component="file-viewer"],
@@ -30,7 +55,27 @@
   --diffs-line-height: 24px;
   --diffs-tab-size: 2;
   --diffs-min-number-column-width: 4ch;
+
+  /* Same palette tokens as the diff viewer (see comment there). */
+  --diff-add-rgb: 18, 201, 5;
+  --diff-del-rgb: 252, 83, 58;
+  --diff-muted-rgb: 0, 0, 0;
+  --diff-muted-alpha: 0.45;
+  --diff-select-rgb: 252, 243, 203;
+  --diff-select-accent: #e5a100;
+  --diff-select-fg: #1c1917;
+
   overflow-x: auto;
+}
+
+[data-color-scheme="dark"] [data-file],
+[data-file][data-color-scheme="dark"],
+[data-color-scheme="dark"] [data-component="file-viewer"],
+[data-component="file-viewer"][data-color-scheme="dark"] {
+  --diff-muted-rgb: 255, 255, 255;
+  --diff-muted-alpha: 0.5;
+  --diff-select-rgb: 42, 42, 42;
+  --diff-select-fg: #fdfbfb;
 }
 
 /* ========================================================================= */
@@ -79,7 +124,7 @@
   min-width: var(--diffs-min-number-column-width, 4ch);
   padding: 0 8px;
   text-align: right;
-  color: rgba(0, 0, 0, 0.45);
+  color: rgba(var(--diff-muted-rgb), var(--diff-muted-alpha));
   background-color: var(--background-stronger);
   user-select: none;
   cursor: default;
@@ -103,7 +148,7 @@
   align-items: center;
   justify-content: center;
   user-select: none;
-  color: rgba(0, 0, 0, 0.45);
+  color: rgba(var(--diff-muted-rgb), var(--diff-muted-alpha));
   font-family: var(--diffs-font-family);
 }
 
@@ -128,35 +173,35 @@
 /* ========================================================================= */
 
 .diff-line-addition {
-  background-color: rgba(18, 201, 5, 0.08);
+  background-color: rgba(var(--diff-add-rgb), 0.08);
 }
 .diff-line-addition .diff-line-number {
-  background-color: rgba(18, 201, 5, 0.15);
+  background-color: rgba(var(--diff-add-rgb), 0.15);
 }
 
 .diff-line-deletion {
-  background-color: rgba(252, 83, 58, 0.08);
+  background-color: rgba(var(--diff-del-rgb), 0.08);
 }
 .diff-line-deletion .diff-line-number {
-  background-color: rgba(252, 83, 58, 0.15);
+  background-color: rgba(var(--diff-del-rgb), 0.15);
 }
 
 /* .diff-line-context: inherits base background — no override needed */
 
 .diff-hunk-header {
-  background-color: rgba(18, 201, 5, 0.06);
+  background-color: rgba(var(--diff-add-rgb), 0.06);
 }
 
 .diff-hunk-header-content {
   padding: 0 8px;
   font-family: var(--diffs-font-family);
   font-size: var(--diffs-font-size);
-  color: rgba(0, 0, 0, 0.45);
+  color: rgba(var(--diff-muted-rgb), var(--diff-muted-alpha));
   white-space: pre;
 }
 
 .diff-no-newline {
-  color: rgba(0, 0, 0, 0.45);
+  color: rgba(var(--diff-muted-rgb), var(--diff-muted-alpha));
   font-style: italic;
 }
 
@@ -166,25 +211,25 @@
 
 [data-color-scheme="dark"] [data-diff] .diff-line-addition,
 [data-diff][data-color-scheme="dark"] .diff-line-addition {
-  background-color: rgba(18, 201, 5, 0.12);
+  background-color: rgba(var(--diff-add-rgb), 0.12);
 }
 [data-color-scheme="dark"] [data-diff] .diff-line-addition .diff-line-number,
 [data-diff][data-color-scheme="dark"] .diff-line-addition .diff-line-number {
-  background-color: rgba(18, 201, 5, 0.2);
+  background-color: rgba(var(--diff-add-rgb), 0.2);
 }
 
 [data-color-scheme="dark"] [data-diff] .diff-line-deletion,
 [data-diff][data-color-scheme="dark"] .diff-line-deletion {
-  background-color: rgba(252, 83, 58, 0.12);
+  background-color: rgba(var(--diff-del-rgb), 0.12);
 }
 [data-color-scheme="dark"] [data-diff] .diff-line-deletion .diff-line-number,
 [data-diff][data-color-scheme="dark"] .diff-line-deletion .diff-line-number {
-  background-color: rgba(252, 83, 58, 0.2);
+  background-color: rgba(var(--diff-del-rgb), 0.2);
 }
 
 [data-color-scheme="dark"] [data-diff] .diff-hunk-header,
 [data-diff][data-color-scheme="dark"] .diff-hunk-header {
-  background-color: rgba(18, 201, 5, 0.15);
+  background-color: rgba(var(--diff-add-rgb), 0.15);
 }
 
 [data-color-scheme="dark"] [data-diff] .diff-line-number,
@@ -195,7 +240,7 @@
 [data-diff][data-color-scheme="dark"] .diff-indicator,
 [data-diff][data-color-scheme="dark"] .diff-hunk-header-content,
 [data-diff][data-color-scheme="dark"] .diff-no-newline {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--diff-muted-rgb), var(--diff-muted-alpha));
 }
 
 /* ========================================================================= */
@@ -205,13 +250,13 @@
 /* ---- Light mode ---- */
 
 .diff-row[data-selected-line] {
-  background-color: rgba(252, 243, 203, 0.65) !important;
-  box-shadow: inset 2px 0 0 #e5a100;
+  background-color: rgba(var(--diff-select-rgb), 0.65) !important;
+  box-shadow: inset 2px 0 0 var(--diff-select-accent);
 }
 
 .diff-row[data-selected-line] .diff-line-number {
-  background-color: rgba(252, 243, 203, 0.85) !important;
-  color: #1c1917 !important;
+  background-color: rgba(var(--diff-select-rgb), 0.85) !important;
+  color: var(--diff-select-fg) !important;
 }
 
 /* Soften word-diff emphasis when the line is selected */
@@ -225,14 +270,14 @@
 
 [data-color-scheme="dark"] [data-diff] .diff-row[data-selected-line],
 [data-diff][data-color-scheme="dark"] .diff-row[data-selected-line] {
-  background-color: rgba(42, 42, 42, 0.65) !important;
-  box-shadow: inset 2px 0 0 #e5a100;
+  background-color: rgba(var(--diff-select-rgb), 0.65) !important;
+  box-shadow: inset 2px 0 0 var(--diff-select-accent);
 }
 
 [data-color-scheme="dark"] [data-diff] .diff-row[data-selected-line] .diff-line-number,
 [data-diff][data-color-scheme="dark"] .diff-row[data-selected-line] .diff-line-number {
-  background-color: rgba(42, 42, 42, 0.85) !important;
-  color: #fdfbfb !important;
+  background-color: rgba(var(--diff-select-rgb), 0.85) !important;
+  color: var(--diff-select-fg) !important;
 }
 
 /* ========================================================================= */
@@ -240,23 +285,23 @@
 /* ========================================================================= */
 
 .diff-row[data-comment-selected]:not([data-selected-line]) {
-  box-shadow: inset 0 0 0 9999px rgba(252, 243, 203, 0.65);
+  box-shadow: inset 0 0 0 9999px rgba(var(--diff-select-rgb), 0.65);
 }
 
 .diff-row[data-comment-selected] .diff-line-number:not([data-selected-line]) {
-  box-shadow: inset 0 0 0 9999px rgba(252, 243, 203, 0.85);
-  color: #1c1917;
+  box-shadow: inset 0 0 0 9999px rgba(var(--diff-select-rgb), 0.85);
+  color: var(--diff-select-fg);
 }
 
 [data-color-scheme="dark"] [data-diff] .diff-row[data-comment-selected]:not([data-selected-line]),
 [data-diff][data-color-scheme="dark"] .diff-row[data-comment-selected]:not([data-selected-line]) {
-  box-shadow: inset 0 0 0 9999px rgba(42, 42, 42, 0.65);
+  box-shadow: inset 0 0 0 9999px rgba(var(--diff-select-rgb), 0.65);
 }
 
 [data-color-scheme="dark"] [data-diff] .diff-row[data-comment-selected] .diff-line-number:not([data-selected-line]),
 [data-diff][data-color-scheme="dark"] .diff-row[data-comment-selected] .diff-line-number:not([data-selected-line]) {
-  box-shadow: inset 0 0 0 9999px rgba(42, 42, 42, 0.85);
-  color: #fdfbfb;
+  box-shadow: inset 0 0 0 9999px rgba(var(--diff-select-rgb), 0.85);
+  color: var(--diff-select-fg);
 }
 
 /* ========================================================================= */
@@ -264,25 +309,25 @@
 /* ========================================================================= */
 
 [data-diff-span][data-diff-remove] {
-  background-color: rgba(252, 83, 58, 0.35);
+  background-color: rgba(var(--diff-del-rgb), 0.35);
   border-radius: 2px;
 }
 
 [data-diff-span][data-diff-add] {
-  background-color: rgba(18, 201, 5, 0.07);
+  background-color: rgba(var(--diff-add-rgb), 0.07);
   border-radius: 2px;
 }
 
 /* JS fallback highlight marks (for WebKitGTK where ::highlight is not supported) */
 
 mark[data-find-match] {
-  background-color: rgba(252, 243, 203, 0.35);
+  background-color: rgba(var(--diff-find-rgb), 0.35);
   color: inherit;
   border-radius: 1px;
 }
 
 mark[data-find-match-current] {
-  background-color: rgba(251, 221, 70, 0.55);
+  background-color: rgba(var(--diff-find-current-rgb), 0.55);
   color: inherit;
   border-radius: 1px;
 }
@@ -336,7 +381,7 @@ mark[data-find-match-current] {
   min-width: var(--diffs-min-number-column-width, 4ch);
   padding: 0 8px;
   text-align: right;
-  color: rgba(0, 0, 0, 0.45);
+  color: rgba(var(--diff-muted-rgb), var(--diff-muted-alpha));
   background-color: var(--background-stronger);
   user-select: none;
   cursor: default;
@@ -360,25 +405,25 @@ mark[data-find-match-current] {
 /* ========================================================================= */
 
 .file-row[data-selected-line] {
-  background-color: rgba(252, 243, 203, 0.65) !important;
-  box-shadow: inset 2px 0 0 #e5a100;
+  background-color: rgba(var(--diff-select-rgb), 0.65) !important;
+  box-shadow: inset 2px 0 0 var(--diff-select-accent);
 }
 
 .file-row[data-selected-line] .file-line-number {
-  background-color: rgba(252, 243, 203, 0.85) !important;
-  color: #1c1917 !important;
+  background-color: rgba(var(--diff-select-rgb), 0.85) !important;
+  color: var(--diff-select-fg) !important;
 }
 
 [data-color-scheme="dark"] [data-file] .file-row[data-selected-line],
 [data-file][data-color-scheme="dark"] .file-row[data-selected-line] {
-  background-color: rgba(42, 42, 42, 0.65) !important;
-  box-shadow: inset 2px 0 0 #e5a100;
+  background-color: rgba(var(--diff-select-rgb), 0.65) !important;
+  box-shadow: inset 2px 0 0 var(--diff-select-accent);
 }
 
 [data-color-scheme="dark"] [data-file] .file-row[data-selected-line] .file-line-number,
 [data-file][data-color-scheme="dark"] .file-row[data-selected-line] .file-line-number {
-  background-color: rgba(42, 42, 42, 0.85) !important;
-  color: #fdfbfb !important;
+  background-color: rgba(var(--diff-select-rgb), 0.85) !important;
+  color: var(--diff-select-fg) !important;
 }
 
 /* ========================================================================= */
@@ -387,7 +432,7 @@ mark[data-find-match-current] {
 
 [data-color-scheme="dark"] [data-file] .file-line-number,
 [data-file][data-color-scheme="dark"] .file-line-number {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--diff-muted-rgb), var(--diff-muted-alpha));
 }
 
 /* ========================================================================= */
@@ -404,21 +449,21 @@ mark[data-find-match-current] {
 /* ========================================================================= */
 
 .file-row[data-comment-selected]:not([data-selected-line]) {
-  box-shadow: inset 0 0 0 9999px rgba(252, 243, 203, 0.65);
+  box-shadow: inset 0 0 0 9999px rgba(var(--diff-select-rgb), 0.65);
 }
 
 .file-row[data-comment-selected] .file-line-number:not([data-selected-line]) {
-  box-shadow: inset 0 0 0 9999px rgba(252, 243, 203, 0.85);
-  color: #1c1917;
+  box-shadow: inset 0 0 0 9999px rgba(var(--diff-select-rgb), 0.85);
+  color: var(--diff-select-fg);
 }
 
 [data-color-scheme="dark"] [data-file] .file-row[data-comment-selected]:not([data-selected-line]),
 [data-file][data-color-scheme="dark"] .file-row[data-comment-selected]:not([data-selected-line]) {
-  box-shadow: inset 0 0 0 9999px rgba(42, 42, 42, 0.65);
+  box-shadow: inset 0 0 0 9999px rgba(var(--diff-select-rgb), 0.65);
 }
 
 [data-color-scheme="dark"] [data-file] .file-row[data-comment-selected] .file-line-number:not([data-selected-line]),
 [data-file][data-color-scheme="dark"] .file-row[data-comment-selected] .file-line-number:not([data-selected-line]) {
-  box-shadow: inset 0 0 0 9999px rgba(42, 42, 42, 0.85);
-  color: #fdfbfb;
+  box-shadow: inset 0 0 0 9999px rgba(var(--diff-select-rgb), 0.85);
+  color: var(--diff-select-fg);
 }

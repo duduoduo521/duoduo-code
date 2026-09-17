@@ -456,17 +456,14 @@ export function DialogMarket(props: {}) {
     return `git clone --depth 1 ${url.endsWith(".git") ? url : `${url}.git`}`
   }
 
-  /** Humanize raw transport/backend errors (e.g. "SmartLayer 500: market gear
-   * install: 克隆技能仓库失败: ...") into a short actionable message; unknown
-   * errors pass through unchanged. */
+  /** Humanize raw transport/backend errors into a short actionable message;
+   * unknown errors pass through unchanged.
+   *
+   * Backend contract: agent-executor tags source-fetch failures with the
+   * stable ASCII prefix `[gear_source_error]` (see intel_gear/host.rs) so the
+   * frontend never matches on localized prose. */
   function friendlyInstallError(msg: string): string {
-    if (
-      /SmartLayer 5\d\d/.test(msg) ||
-      msg.includes("克隆技能仓库失败") ||
-      msg.includes("未能从源码仓库获取技能文件") ||
-      msg.includes("执行 git clone 失败") ||
-      msg.includes("下载返回状态")
-    ) {
+    if (/\[gear_source_error\]/.test(msg) || /SmartLayer 5\d\d/.test(msg)) {
       return t("market.installRemoteError")
     }
     return msg
@@ -868,11 +865,11 @@ export function DialogMarket(props: {}) {
                     type="button"
                     class="flex size-7 items-center justify-center rounded-md text-16 text-text-base hover:bg-surface-raised-base"
                     onClick={() => setSelectedGear(null)}
-                    aria-label="返回"
+                    aria-label={t("ui.common.back")}
                   >
                     ←
                   </button>
-                  <span class="text-14-medium text-text-strong">智械详情</span>
+                  <span class="text-14-medium text-text-strong">{t("market.detail.title")}</span>
                 </div>
 
                 <div class="px-5 py-4 flex flex-col gap-4 flex-1 min-h-0 overflow-y-auto">
@@ -991,15 +988,15 @@ export function DialogMarket(props: {}) {
                         }}
                       >
                         {gearDetailUrl(gear)?.includes("modelscope.cn")
-                          ? "在 ModelScope 查看 ↗"
-                          : "查看来源 ↗"}
+                          ? t("market.detail.viewOnModelscope")
+                          : t("market.detail.viewSource")}
                       </Button>
                     </Show>
                   </div>
 
                   <Show when={gear.files?.length}>
                     <div class="flex flex-col gap-1">
-                      <span class="text-11-regular text-text-weaker">文件</span>
+                      <span class="text-11-regular text-text-weaker">{t("gearStore.files")}</span>
                       <For each={gear.files}>
                         {(f) => <span class="text-12-regular text-text-base font-mono truncate">{f}</span>}
                       </For>

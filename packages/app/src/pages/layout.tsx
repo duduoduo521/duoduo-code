@@ -1541,7 +1541,7 @@ export default function Layout(props: ParentProps) {
           showToast({
             variant: "error",
             title: language.t("project.remote.openFailed.title"),
-            description: "打开项目超时：后端未在规定时间内就绪，请检查 duoduocode 侧车进程。",
+            description: language.t("project.remote.openFailed.timeout"),
           })
         }
       }, 20000)

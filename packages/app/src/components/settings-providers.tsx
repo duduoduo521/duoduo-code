@@ -622,7 +622,7 @@ export const SettingsProviders: Component = () => {
             class="flex-1"
           />
           <Show when={filterText()}>
-            <IconButton icon="circle-x" variant="ghost" onClick={() => setFilterText("")} />
+            <IconButton icon="circle-x" variant="ghost" aria-label={language.t("ui.list.clearFilter")} onClick={() => setFilterText("")} />
           </Show>
         </div>
       }

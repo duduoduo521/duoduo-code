@@ -712,7 +712,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       id: `gear.${g.name}`,
       trigger: g.name,
       title: g.name,
-      description: g.description ?? `激活智械 ${g.name}`,
+      description: g.description ?? language.t("prompt.slash.gearDescription", { name: g.name }),
       type: "gear" as const,
       source: "gear" as const,
     }))
@@ -1724,7 +1724,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     </Show>
                     <Show when={tps() != null}>
                       <span class="shrink-0 text-11-regular text-text-comment tabular-nums select-none">
-                        上轮速度: {Math.round(tps()!)} token/s
+                        {language.t("prompt.tps", { speed: Math.round(tps()!) })}
                       </span>
                     </Show>
                   </Show>

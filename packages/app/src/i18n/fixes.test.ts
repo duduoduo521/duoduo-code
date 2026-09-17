@@ -5,13 +5,12 @@ import { dict as zh } from "./zh"
 // Keys introduced by the recent fixes:
 // - problem 2: showThinking setting row
 // - problem 5: message retry action label
-// - problem 8: project-busy (fail-fast 409) toast
+// (problem 8 projectTaskBusy toast keys removed: the 409 fail-fast path now
+//  queues the prompt instead of toasting, so the keys had no consumer left)
 const newKeys = [
   "settings.general.row.showThinking.title",
   "settings.general.row.showThinking.description",
   "ui.message.retryMessage",
-  "prompt.toast.projectTaskBusy.title",
-  "prompt.toast.projectTaskBusy.description",
 ] as const
 
 describe("i18n fixes coverage", () => {

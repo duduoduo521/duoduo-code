@@ -59,18 +59,17 @@ export function showSyncConflictDialog(
 ) {
   const { language, dialog, onPush, onPull } = deps
   dialog.show(() => (
-    <Dialog title={language.t("remote.conflictTitle") || "同步冲突"} size="normal">
+    <Dialog title={language.t("remote.conflictTitle")} size="normal">
       <div class="flex flex-col gap-4 px-[var(--dialog-gutter)] pb-5 pt-4">
         <p class="text-13-regular text-text-weak">
-          {language.t("remote.conflictDesc") ||
-            `检测到 ${conflicts.length} 个文件存在本地与远端冲突：`}
+          {language.t("remote.conflictDesc")}
         </p>
         <ul class="max-h-40 overflow-auto rounded-md border border-border-weak-base bg-background-base px-3 py-2 text-12-regular font-mono text-text-strong">
           <For each={conflicts}>{(c) => <li>{c}</li>}</For>
         </ul>
         <div class="flex items-center justify-end gap-2">
           <Button variant="ghost" size="large" onClick={() => dialog.close()}>
-            {language.t("remote.conflictCancel") || "取消"}
+            {language.t("remote.conflictCancel")}
           </Button>
           <Button
             variant="secondary"
@@ -80,7 +79,7 @@ export function showSyncConflictDialog(
               onPull()
             }}
           >
-            {language.t("remote.conflictPull") || "以远端为准拉取覆盖"}
+            {language.t("remote.conflictPull")}
           </Button>
           <Button
             variant="primary"
@@ -90,7 +89,7 @@ export function showSyncConflictDialog(
               onPush()
             }}
           >
-            {language.t("remote.conflictPush") || "以本地为准推回"}
+            {language.t("remote.conflictPush")}
           </Button>
         </div>
       </div>
@@ -147,7 +146,7 @@ export async function syncRemote(
       const list = skipped.slice(0, 5).join("\n") + (skipped.length > 5 ? `\n…` : "")
       showToast({
         variant: "error",
-        title: language.t("remote.pushSkippedTitle") || "已推回远端，但部分文件未能删除",
+        title: language.t("remote.pushSkippedTitle"),
         description:
           (language.t("remote.pushSkippedDesc") || "") + (list ? `\n${list}` : ""),
       })
@@ -155,8 +154,7 @@ export async function syncRemote(
     }
     showToast({
       variant: "success",
-      title: language.t(mode === "pull" ? "remote.pullSuccess" : "remote.pushSuccess") ||
-        (mode === "pull" ? "已从远端拉取" : "已推回远端"),
+      title: language.t(mode === "pull" ? "remote.pullSuccess" : "remote.pushSuccess"),
       description: language.t(mode === "pull" ? "remote.pullSuccessDesc" : "remote.pushSuccessDesc") || "",
     })
   } catch (e) {
@@ -165,9 +163,8 @@ export async function syncRemote(
     // Error instance. errorMessage() unwraps it (Bug 1).
     showToast({
       variant: "error",
-      title: language.t(mode === "pull" ? "remote.pullFailed" : "remote.pushFailed") ||
-        (mode === "pull" ? "拉取远端失败" : "推回远端失败"),
-      description: errorMessage(e, language.t("common.requestFailed") || "请求失败"),
+      title: language.t(mode === "pull" ? "remote.pullFailed" : "remote.pushFailed"),
+      description: errorMessage(e, language.t("common.requestFailed")),
     })
   } finally {
     setRemoteSyncState(undefined)

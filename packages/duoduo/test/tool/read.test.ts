@@ -126,14 +126,24 @@ describe("tool.read external_directory permission", () => {
     }),
   )
 
-  it.live("rejects reading absolute path outside project (SEC-02 fail-closed)", () =>
+  it.live("requests external_directory permission for absolute path outside project (SEC-02 fail-closed)", () =>
     Effect.gen(function* () {
       const outer = yield* tmpdirScoped()
       const dir = yield* tmpdirScoped({ git: true })
       yield* put(path.join(outer, "secret.txt"), "secret data")
 
-      const err = yield* fail(dir, { filePath: path.join(outer, "secret.txt") })
-      expect(err.message).toContain("resolves outside the project directory")
+      // 权限被拒 -> 读取必须失败（fail-closed）。实现走 ctx.ask 权限提示流，
+      // 拒绝时工具不得静默读出外部文件。
+      const err = yield* fail(dir, { filePath: path.join(outer, "secret.txt") }, {
+        ...ctx,
+        ask: () => Effect.fail(new Error("Permission denied: external_directory")),
+      })
+      expect(err.message).toContain("Permission denied")
+
+      // 权限被允许 -> 读取成功，且必须先请求 external_directory 权限
+      const { items, next } = asks()
+      yield* exec(dir, { filePath: path.join(outer, "secret.txt") }, next)
+      expect(items.some((item) => item.permission === "external_directory")).toBe(true)
     }),
   )
 
@@ -157,23 +167,39 @@ describe("tool.read external_directory permission", () => {
     )
   }
 
-  it.live("rejects reading external directory (SEC-02 fail-closed)", () =>
+  it.live("requests external_directory permission for external directory (SEC-02 fail-closed)", () =>
     Effect.gen(function* () {
       const outer = yield* tmpdirScoped()
       const dir = yield* tmpdirScoped({ git: true })
       yield* put(path.join(outer, "external", "a.txt"), "a")
 
-      const err = yield* fail(dir, { filePath: path.join(outer, "external") })
-      expect(err.message).toContain("resolves outside the project directory")
+      const err = yield* fail(dir, { filePath: path.join(outer, "external") }, {
+        ...ctx,
+        ask: () => Effect.fail(new Error("Permission denied: external_directory")),
+      })
+      expect(err.message).toContain("Permission denied")
+
+      const { items, next } = asks()
+      yield* exec(dir, { filePath: path.join(outer, "external") }, next)
+      expect(items.some((item) => item.permission === "external_directory")).toBe(true)
     }),
   )
 
-  it.live("rejects reading relative path outside project (SEC-02 fail-closed)", () =>
+  it.live("requests external_directory permission for relative path outside project (SEC-02 fail-closed)", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })
 
-      const err = yield* fail(dir, { filePath: "../outside.txt" })
-      expect(err.message).toContain("resolves outside the project directory")
+      const err = yield* fail(dir, { filePath: "../outside.txt" }, {
+        ...ctx,
+        ask: () => Effect.fail(new Error("Permission denied: external_directory")),
+      })
+      expect(err.message).toContain("Permission denied")
+
+      // 允许后继续执行：目标文件不存在时应报 File not found（而非静默成功）
+      const { items, next } = asks()
+      const allowed = yield* fail(dir, { filePath: "../outside.txt" }, next)
+      expect(items.some((item) => item.permission === "external_directory")).toBe(true)
+      expect(allowed.message).toContain("File not found")
     }),
   )
 

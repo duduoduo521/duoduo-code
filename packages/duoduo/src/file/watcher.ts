@@ -75,15 +75,22 @@ const watcher = lazy((): typeof import("@parcel/watcher") | undefined => {
     return createWrapper(binding) as typeof import("@parcel/watcher")
   } catch (error) {
     log.error("failed to load watcher binding", { error })
-    GlobalBus.emit("event", {
-      directory: Instance.directory,
-      project: Instance.project.id,
-      workspace: WorkspaceContext.workspaceID,
-      payload: {
-        type: Event.Unavailable.type,
-        properties: { reason: "native_binding_failed" },
-      },
-    })
+    // hasNativeBinding() 会在模块作用域被调用（如测试文件决定 skip 时），此时没有
+    // Instance 上下文，访问 Instance.* 会抛 "No context found for instance" 并炸掉
+    // 整个模块加载。降级为静默放弃通知——上下文可用时 watcher init 仍会正常工作。
+    try {
+      GlobalBus.emit("event", {
+        directory: Instance.directory,
+        project: Instance.project.id,
+        workspace: WorkspaceContext.workspaceID,
+        payload: {
+          type: Event.Unavailable.type,
+          properties: { reason: "native_binding_failed" },
+        },
+      })
+    } catch {
+      // 无 Instance 上下文（模块作用域探测）——无处通知，忽略
+    }
     return
   }
 })

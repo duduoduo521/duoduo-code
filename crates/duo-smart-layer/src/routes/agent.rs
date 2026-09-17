@@ -2588,27 +2588,34 @@ async fn run_loop_handler(
     };
     // Sub-agent loop limits (LoopConfig.sub_agent_*, -1 = unlimited). Applied
     // to `task` children via the executor and to G7 fan-out via ParallelContext.
-    let sub_agent_limits = {
-        let d = config_manager::model::LoopConfig::default();
-        agent_executor::SubAgentLimits::from_config(
-            loop_cfg
-                .as_ref()
-                .map(|l| l.sub_agent_max_rounds)
-                .unwrap_or(d.sub_agent_max_rounds),
-            loop_cfg
-                .as_ref()
-                .map(|l| l.sub_agent_timeout_secs)
-                .unwrap_or(d.sub_agent_timeout_secs),
-            loop_cfg
-                .as_ref()
-                .map(|l| l.sub_agent_max_total_tokens)
-                .unwrap_or(d.sub_agent_max_total_tokens),
-            loop_cfg
-                .as_ref()
-                .map(|l| l.sub_agent_max_file_reads)
-                .unwrap_or(d.sub_agent_max_file_reads),
-        )
+    // Linkage: when the main-loop step cap is disabled (`effective_max_steps < 0`
+    // = unlimited), the sub-agent round cap is unlimited too — an unlimited main
+    // loop whose sub-agents still stop at 100 rounds surfaces "reached the
+    // maximum rounds" notes to the model, which contradicts the user's -1.
+    let d = config_manager::model::LoopConfig::default();
+    let sub_agent_max_rounds = if effective_max_steps < 0 {
+        -1
+    } else {
+        loop_cfg
+            .as_ref()
+            .map(|l| l.sub_agent_max_rounds)
+            .unwrap_or(d.sub_agent_max_rounds)
     };
+    let sub_agent_limits = agent_executor::SubAgentLimits::from_config(
+        sub_agent_max_rounds,
+        loop_cfg
+            .as_ref()
+            .map(|l| l.sub_agent_timeout_secs)
+            .unwrap_or(d.sub_agent_timeout_secs),
+        loop_cfg
+            .as_ref()
+            .map(|l| l.sub_agent_max_total_tokens)
+            .unwrap_or(d.sub_agent_max_total_tokens),
+        loop_cfg
+            .as_ref()
+            .map(|l| l.sub_agent_max_file_reads)
+            .unwrap_or(d.sub_agent_max_file_reads),
+    );
     let tools_from_ts = req.tools.clone();
     let agent_name = req.agent_name.clone().unwrap_or_else(|| "code".to_string());
     let project_path = req
@@ -2827,29 +2834,43 @@ async fn run_loop_handler(
     // the path scope. `SecurityPolicy::check_path_access` gives `allowed_paths`
     // precedence over `project_path`, so the project dir is appended explicitly
     // to avoid locking the agent out of its own workspace.
-    let security_policy: Arc<agent_executor::SecurityPolicy> = match req
-        .allowed_paths
-        .as_ref()
-        .filter(|paths| !paths.is_empty())
-    {
-        Some(paths) => {
-            let mut scoped = (*state.security_policy).clone();
-            let mut list: Vec<String> = Vec::with_capacity(paths.len() + 1);
-            list.push(project_path.clone());
-            for p in paths {
-                if !p.is_empty() && !list.contains(p) {
-                    list.push(p.clone());
+    let security_policy: Arc<agent_executor::SecurityPolicy> = {
+        let mut scoped = (*state.security_policy).clone();
+        match req
+            .allowed_paths
+            .as_ref()
+            .filter(|paths| !paths.is_empty())
+        {
+            Some(paths) => {
+                let mut list: Vec<String> = Vec::with_capacity(paths.len() + 1);
+                list.push(project_path.clone());
+                for p in paths {
+                    if !p.is_empty() && !list.contains(p) {
+                        list.push(p.clone());
+                    }
                 }
+                tracing::info!(
+                    session_id = %session_id,
+                    allowed_paths = ?list,
+                    "run_loop: task-scoped sandbox active"
+                );
+                scoped.allowed_paths = list;
             }
-            tracing::info!(
-                session_id = %session_id,
-                allowed_paths = ?list,
-                "run_loop: task-scoped sandbox active"
-            );
-            scoped.allowed_paths = list;
-            Arc::new(scoped)
+            None => {}
         }
-        None => state.security_policy.clone(),
+        // Root-cause fix for the broken external-directory authorization chain:
+        // the process-global policy carries no project boundary on desktop, so
+        // `check_tool_permission` Layer 3 never produced `PermissionAsk` for
+        // out-of-project paths and Rust-native write/edit hard-failed with
+        // "Path traversal detected" without ever surfacing the TS
+        // external-directory prompt. Derive the boundary from the request's
+        // project_path (never an env var) so Layer 3 asks, and the delegation
+        // path below can surface the TS permission UI. "." (server-CLI
+        // fallback) keeps the unrestricted default.
+        if project_path != "." {
+            scoped.project_path = Some(std::path::PathBuf::from(&project_path));
+        }
+        Arc::new(scoped)
     };
     // The policy is consumed both inside the spawned loop (executor + parallel
     // context) and by the tool-permission gate below, so keep a dedicated clone
@@ -5708,6 +5729,41 @@ async fn run_loop_handler(
                             .await
                         {
                             Ok(output) => {
+                                // Rust bash reports out-of-project commands as a
+                                // successful "Blocked: ..." string. Surface the TS
+                                // external-directory permission prompt instead of
+                                // feeding that dead-end text to the model (TS bash
+                                // owns the ask flow for non-destructive external
+                                // access and hard-blocks destructive ones).
+                                if output.starts_with(
+                                    "Blocked: command touches paths outside the allowed directories",
+                                ) && tools_for_spawn.as_ref().is_some_and(|defs| {
+                                    defs.iter().any(|d| d.function.name == tool_name)
+                                }) {
+                                    tracing::info!(tool = %tool_name, "bash out-of-bounds blocked, delegating to TS for permission ask");
+                                    self_transition_part_to_pending(
+                                        &msg_store,
+                                        &part_id,
+                                        &assistant_msg_id,
+                                        &session_id_spawn,
+                                        &call_id,
+                                        &tool_name,
+                                        &tc.function.arguments,
+                                    );
+                                    let registry = state_clone.tool_registry.clone();
+                                    let sid = session_id_spawn.clone();
+                                    let cid = call_id.clone();
+                                    let ct = cancel_token.clone();
+                                    delegated_indices.push(tc_idx);
+                                    delegated_part_ids.push(part_id.clone());
+                                    tool_result_futs.push(Box::pin(async move {
+                                        tokio::select! {
+                                            result = registry.wait_for_tool_result(&sid, &cid) => result,
+                                            _ = ct.cancelled() => anyhow::bail!("cancelled while waiting for tool result"),
+                                        }
+                                    }));
+                                    continue;
+                                }
                                 // Rust executed the tool natively
                                 let truncated = agent_executor::truncate_output(&output, 50_000);
                                 tracing::info!(tool = %tool_name, "tool executed in Rust via AgenticLoopExecutor");
@@ -5947,6 +6003,43 @@ async fn run_loop_handler(
                                     ));
                                 }
                                 Err(e) => {
+                                    // Out-of-project failures (write/edit hitting a
+                                    // path outside the boundary that Layer 3 missed,
+                                    // e.g. symlink escapes found at canonicalize
+                                    // time) must reach the TS external-directory
+                                    // permission prompt — same as the PermissionAsk
+                                    // path — not a dead-end "Error: Path traversal
+                                    // detected" tool_result.
+                                    let e_msg = e.to_string();
+                                    if e_msg.contains("outside project directory")
+                                        && tools_for_spawn.as_ref().is_some_and(|defs| {
+                                            defs.iter().any(|d| d.function.name == entry.tool_name)
+                                        })
+                                    {
+                                        tracing::info!(tool = %entry.tool_name, error = %e_msg, "out-of-project tool failure, delegating to TS for permission ask");
+                                        self_transition_part_to_pending(
+                                            &msg_store,
+                                            &entry.part_id,
+                                            &assistant_msg_id,
+                                            &session_id_spawn,
+                                            &entry.call_id,
+                                            &entry.tool_name,
+                                            &entry.args_str,
+                                        );
+                                        let registry = state_clone.tool_registry.clone();
+                                        let sid = session_id_spawn.clone();
+                                        let cid = entry.call_id.clone();
+                                        let ct = cancel_token.clone();
+                                        delegated_indices.push(entry.tc_idx);
+                                        delegated_part_ids.push(entry.part_id.clone());
+                                        tool_result_futs.push(Box::pin(async move {
+                                            tokio::select! {
+                                                result = registry.wait_for_tool_result(&sid, &cid) => result,
+                                                _ = ct.cancelled() => anyhow::bail!("cancelled while waiting for tool result"),
+                                            }
+                                        }));
+                                        continue;
+                                    }
                                     tc_results[entry.tc_idx] = Some((
                                         entry.part_id.clone(),
                                         String::new(),

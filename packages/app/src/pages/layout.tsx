@@ -2827,11 +2827,15 @@ export default function Layout(props: ParentProps) {
   return (
     <div class="relative bg-background-base flex-1 min-h-0 min-w-0 flex flex-col select-none [&_input]:select-text [&_textarea]:select-text [&_[contenteditable]]:select-text">
       {autoselecting() ?? ""}
-      <Show when={layout.openingRemote()}>
+      <Show when={layout.openingRemote() || sidebarLocked()}>
         <Portal>
           <div class="fixed inset-0 z-[9998] bg-background-base flex flex-col items-center justify-center overflow-hidden">
-            {/* Mirror packages/desktop/index.html splash exactly so the logo
-                lands on the same spot as the boot splash with no jump. */}
+            {/* Full-window lock while a project is opening/loading (remote or
+                local boot) or switching: the whole UI — sidebar rail, panel,
+                file tree, workspace lists, context menus — is inert behind
+                this mask so no click can interleave with the open flow.
+                "failed" bootstrap intentionally does NOT lock (user must be
+                able to leave a project that failed to load). */}
             <img
               src="/logo-2000.png"
               alt="DuoDuo"

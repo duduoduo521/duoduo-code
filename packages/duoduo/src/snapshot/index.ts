@@ -10,6 +10,7 @@ import { AppFileSystem } from "@duoduo-ai/shared/filesystem"
 import { Hash } from "@duoduo-ai/shared/util/hash"
 import { Config } from "../config"
 import { Global } from "../global"
+import { isShellArtifactPath } from "@/util/shell-artifact"
 
 // Module-level, per-shadow-repo serialization locks. Shared across all Snapshot
 // Service instances so concurrent callers target the same shadow git repo are
@@ -534,7 +535,10 @@ export const layer: Layer.Layer<
 
           const tracked = diff.text.split("\0").filter(Boolean)
           const untracked = other.text.split("\0").filter(Boolean)
-          const all = Array.from(new Set([...tracked, ...untracked]))
+          // Exclude Windows shell redirection artifacts ($null / nul) — never user content.
+          const all = Array.from(new Set([...tracked, ...untracked])).filter(
+            (item) => !isShellArtifactPath(item),
+          )
           if (!all.length) return true
 
           // Resolve source-repo ignore rules against the exact candidate set.

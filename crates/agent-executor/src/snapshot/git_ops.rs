@@ -283,6 +283,14 @@ fn split_nul(output: &str) -> Vec<String> {
         .collect()
 }
 
+/// True for Windows shell redirection artifact paths (`$null`, `nul` as the
+/// file name in any directory, case-insensitive). Produced by a PowerShell-style
+/// `> $null` run under cmd.exe — never user content, excluded from staging.
+fn is_shell_artifact(path: &str) -> bool {
+    let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
+    name.eq_ignore_ascii_case("$null") || name.eq_ignore_ascii_case("nul")
+}
+
 /// List the staging candidates: worktree-vs-index modifications plus untracked
 /// files (P2-39: the TS `add()` candidate set).
 fn candidates(gitdir: &Path, worktree: &Path) -> Result<Vec<String>, String> {
@@ -327,6 +335,9 @@ fn candidates(gitdir: &Path, worktree: &Path) -> Result<Vec<String>, String> {
         .into_iter()
         .chain(split_nul(&other.stdout))
     {
+        if is_shell_artifact(&p) {
+            continue;
+        }
         if !all.contains(&p) {
             all.push(p);
         }

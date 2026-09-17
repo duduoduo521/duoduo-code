@@ -419,7 +419,7 @@ pub(crate) fn bash_tool() -> ToolDefinition {
     // — that mismatch made the model emit PowerShell-style `> $null`, which cmd
     // created as a literal file named `$null` in the project root).
     #[cfg(windows)]
-    let shell_note = "Shell: PowerShell on Windows (pwsh 7+ if installed, otherwise Windows PowerShell 5.1). Use PowerShell syntax: Get-ChildItem, Get-Content, Remove-Item, Test-Path, etc. Discard output with '| Out-Null' or '> $null'.";
+    let shell_note = "Shell: PowerShell on Windows (pwsh 7+ if installed, otherwise Windows PowerShell 5.1). Use PowerShell syntax: Get-ChildItem, Get-Content, Remove-Item, Test-Path, etc. Discard output with '| Out-Null' (never `> $null` — under cmd.exe it creates a literal file named `$null`).";
     #[cfg(not(windows))]
     let shell_note = "Shell: /bin/zsh on macOS, bash or /bin/sh on Linux. Use POSIX shell syntax.";
     ToolDefinition {

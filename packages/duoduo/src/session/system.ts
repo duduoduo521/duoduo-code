@@ -152,6 +152,7 @@ function buildEnvironmentLines(model: Provider.Model): string[] {
     `Here is some useful information about the environment you are running in:`,
     `Working directory: ${Instance.directory}`,
     `Workspace root folder: ${Instance.worktree}`,
+    `File operations outside the working directory (and any user-approved external directories) require user permission: write, edit, and file-touching bash commands on such paths will ask the user for approval. When access is denied, tell the user what you need instead of working around the denial.`,
     `Is directory a git repo: ${project.vcs === "git" ? "yes" : "no"}`,
     `Platform: ${process.platform}`,
     // NOTE: "Today's date" is intentionally NOT part of the environment block.

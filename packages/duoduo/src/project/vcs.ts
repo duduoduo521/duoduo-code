@@ -8,6 +8,7 @@ import { AppFileSystem } from "@duoduo-ai/shared/filesystem"
 import { FileWatcher } from "@/file/watcher"
 import { Git } from "@/git"
 import { Log } from "@/util"
+import { isShellArtifactPath } from "@/util/shell-artifact"
 import z from "zod"
 
 const log = Log.create({ service: "vcs" })
@@ -83,9 +84,12 @@ const files = Effect.fnUntraced(function* (
 
   // P1: Batch modified/deleted files into a single git diff call
   // instead of spawning git show per file (N spawns → 1 spawn).
+  // Exclude Windows shell redirection artifacts ($null / nul) — never user content.
+  const items = list.filter((item) => !isShellArtifactPath(item.file))
+
   const added: Git.Item[] = []
   const existing: Git.Item[] = []
-  for (const item of list) {
+  for (const item of items) {
     if (item.status === "added") {
       added.push(item)
     } else {

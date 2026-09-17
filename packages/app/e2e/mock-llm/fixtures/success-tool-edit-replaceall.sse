@@ -1,0 +1,12 @@
+# status: 200
+# 调用 edit 工具且 replaceAll=true——Rust 不支持 replaceAll，委派给 TS 执行
+# （真实修改 README.md，e2e 断言文件内容变化）
+data: {"id":"chatcmpl-mock-ra","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_mock_ra_001","type":"function","function":{"name":"edit","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-ra","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"filePath\":\"README.md\","}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-ra","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"oldString\":\"# E2E Test Project\",\"newString\":\"# E2E Test Project (edited)\",\"replaceAll\":true}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-ra","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":40,"completion_tokens":20,"total_tokens":60}}
+
+data: [DONE]

@@ -281,7 +281,7 @@ async fn session_get_returns_session() {
 
     // Get — response is Option<ExtendedSessionInfo>, which serializes as an object (not null)
     let req = Request::builder()
-        .uri(&format!("/session/{session_id}"))
+        .uri(format!("/session/{session_id}"))
         .body(Body::empty())
         .unwrap();
     let (status, body) = app.send(req).await;

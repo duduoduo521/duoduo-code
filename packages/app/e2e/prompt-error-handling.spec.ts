@@ -89,6 +89,21 @@ test.describe("Prompt error handling (full UI stack)", () => {
     await promptAndExpectError(page, "error-context-overflow", /context|overflow/i)
   })
 
+  test("HTTP 503 with an empty body retries, then surfaces the exhausted error", { tag: ["@core", "@error-path"] }, async ({ page }) => {
+    test.skip(!getRuntimeInfo().smartLayerAvailable, "Requires the Rust smart-layer sidecar")
+
+    // 503 is retryable (3× rate-limit backoff); an EMPTY body must not crash
+    // the error-message path (bug #7 regression).
+    await promptAndExpectError(page, "error-503-empty-body", /LLM API returned HTTP 503|failed after/i)
+  })
+
+  test("a numeric-only error body surfaces without crashing the error path", { tag: ["@core", "@error-path"] }, async ({ page }) => {
+    test.skip(!getRuntimeInfo().smartLayerAvailable, "Requires the Rust smart-layer sidecar")
+
+    // body is literally "400" (bug #11 regression: short-circuit parsing).
+    await promptAndExpectError(page, "error-status-only-number", /LLM API returned HTTP 400|failed after/i)
+  })
+
   test("truncated response (finish_reason=length) delivers partial text instead of an error", { tag: ["@core", "@error-path"] }, async ({ page }) => {
     test.skip(!getRuntimeInfo().smartLayerAvailable, "Requires the Rust smart-layer sidecar")
 

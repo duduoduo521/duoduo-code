@@ -412,13 +412,22 @@ impl DuoduoSessionClient {
 
 #[cfg(test)]
 mod tests {
+    // TEST_CRED_LOCK intentionally spans awaits: it serializes tests that
+    // mutate the process-global credential store, and each #[tokio::test]
+    // runs on its own single-thread runtime whose mock server is spawned
+    // locally, so the held lock cannot deadlock. Clippy cannot see that
+    // intent, hence the module-level allowance.
+    #![allow(clippy::await_holding_lock)]
+
     use super::*;
     use std::sync::{Arc, Mutex, MutexGuard};
+
+    type RecordedRequest = (String, String, String, String, String);
 
     /// Captures the most recent request seen by the mock server.
     #[derive(Clone, Default)]
     struct ReqLog {
-        inner: Arc<Mutex<Option<(String, String, String, String, String)>>>,
+        inner: Arc<Mutex<Option<RecordedRequest>>>,
     }
 
     impl ReqLog {

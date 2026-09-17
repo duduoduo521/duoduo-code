@@ -1,0 +1,12 @@
+# status: 200
+# 调用 todowrite 工具——Rust 无此 handler，委派给 TS 执行
+# （Todo.Service.update → DB + Bus "todo.updated" → 前端 todo 面板）
+data: {"id":"chatcmpl-mock-todo","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_mock_todo_001","type":"function","function":{"name":"todowrite","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-todo","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"todos\":["}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-todo","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"content\":\"Write the feature\",\"status\":\"in_progress\",\"priority\":\"high\"}]}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-todo","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":40,"completion_tokens":20,"total_tokens":60}}
+
+data: [DONE]

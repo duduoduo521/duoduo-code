@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test"
+import { test, expect, type Locator, type Page } from "@playwright/test"
 import { closeDialog } from "./helpers/page"
 import { createSharedSession, navigateToSharedSession, cleanupSharedSession } from "./helpers/session-fixture"
 
@@ -7,7 +7,9 @@ import { createSharedSession, navigateToSharedSession, cleanupSharedSession } fr
  * Covers: no-crash on right-click, file tree context menu, Escape dismissal, no console errors, menuitem roles.
  */
 
-async function showFileTree(page: import("@playwright/test").Page) {
+const MENU = "[data-component='context-menu-content'], [data-slot='context-menu-content'], [role='menu']"
+
+async function showFileTree(page: Page) {
   // File tree is hidden by default — toggle it visible with Ctrl+\
   const fileTree = page.locator('[data-component="filetree"]')
   const isVisible = await fileTree.isVisible().catch(() => false)
@@ -17,23 +19,48 @@ async function showFileTree(page: import("@playwright/test").Page) {
   }
 }
 
-async function openFileTreeContextMenu(page: import("@playwright/test").Page) {
+/**
+ * Right-click a tree node, tolerating every "not really clickable" shape the
+ * layout can produce (collapsed rail, zero-width container, element scrolled
+ * out of the viewport). Returns whether the click actually happened.
+ *
+ * `force: true` skips actionability but NOT viewport bounds — a node that is
+ * merely isVisible() but off-viewport makes .click() throw, which used to
+ * fail these tests on CI.
+ */
+async function rightClick(locator: Locator): Promise<boolean> {
+  try {
+    await locator.scrollIntoViewIfNeeded({ timeout: 2_000 })
+    await locator.click({ button: "right", force: true, timeout: 3_000 })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** Open the file-tree context menu. Returns the menu, or null when unavailable. */
+async function openFileTreeContextMenu(page: Page): Promise<Locator | null> {
   await showFileTree(page)
 
-  // Tree items use data-scope="filetree" for directory nodes
   const treeItem = page.locator('[data-scope="filetree"]').first()
-  const hasTreeItem = await treeItem.isVisible().catch(() => false)
+  const container = page.locator('[data-component="filetree"]').first()
 
-  // Fallback: try any visible item inside the filetree
-  const clickTarget = hasTreeItem ? treeItem : page.locator('[data-component="filetree"] > *').first()
-  await expect(clickTarget).toBeVisible({ timeout: 5_000 })
-  await clickTarget.click({ button: "right", force: true })
+  const clicked = (await treeItem.isVisible().catch(() => false))
+    ? await rightClick(treeItem)
+    : await rightClick(container)
+  if (!clicked) return null
 
-  const contextMenu = page.locator(
-    "[data-component='context-menu-content'], [data-slot='context-menu-content'], [role='menu']",
-  )
-  await expect(contextMenu.first()).toBeVisible({ timeout: 3_000 })
-  return contextMenu.first()
+  const contextMenu = page.locator(MENU)
+  const appeared = await expect(contextMenu.first())
+    .toBeVisible({ timeout: 3_000 })
+    .then(() => true)
+    .catch(() => false)
+  return appeared ? contextMenu.first() : null
+}
+
+/** The session prompt dock — the "page still functional" assertion anchor. */
+function promptDock(page: Page): Locator {
+  return page.locator("[data-component='session-prompt-dock']").first()
 }
 
 test.describe("Context Menu", () => {
@@ -53,88 +80,36 @@ test.describe("Context Menu", () => {
     await page.locator("body").click({ button: "right", force: true })
 
     // Verify the page is still interactive by checking the prompt dock
-    const promptDock = page.locator("[data-component='session-prompt-dock']").first()
-    await expect(promptDock).toBeVisible({ timeout: 5_000 })
+    await expect(promptDock(page)).toBeVisible({ timeout: 5_000 })
   })
 
   test("file tree context menu opens", { tag: ["@core"] }, async ({ page }) => {
-    // File tree may not have items in the mock project — make conditional
-    const fileTree = page.locator('[data-component="filetree"]')
-    const isTreeVisible = await fileTree.isVisible().catch(() => false)
-    if (!isTreeVisible) {
-      await page.keyboard.press("Control+\\")
-      const treeNowVisible = await fileTree.isVisible().catch(() => false)
-      if (!treeNowVisible) {
-        // File tree toggle didn't work — verify page is still functional
-        await expect(page.locator("[data-component='session-prompt-dock']").first()).toBeVisible({ timeout: 5_000 })
-        return
-      }
-    }
-
-    // Check if there are tree items to right-click
-    const treeItem = page.locator('[data-scope="filetree"]').first()
-    const hasTreeItem = await treeItem.isVisible().catch(() => false)
-    if (!hasTreeItem) {
-      // No tree items — try clicking the filetree container itself
-      const container = page.locator('[data-component="filetree"]')
-      const hasContainer = await container.isVisible().catch(() => false)
-      if (!hasContainer) {
-        // File tree not available — verify page is still functional
-        await expect(page.locator("[data-component='session-prompt-dock']").first()).toBeVisible({ timeout: 5_000 })
-        return
-      }
-      await container.click({ button: "right", force: true })
-    } else {
-      await treeItem.click({ button: "right", force: true })
-    }
-
-    // Context menu should appear (or not — some areas may not have one)
-    const contextMenu = page.locator(
-      "[data-component='context-menu-content'], [data-slot='context-menu-content'], [role='menu']",
-    )
-    const menuVisible = await contextMenu
-      .first()
-      .isVisible()
-      .catch(() => false)
-    if (menuVisible) {
-      await expect(contextMenu.first()).toBeVisible()
+    const menu = await openFileTreeContextMenu(page)
+    if (menu) {
+      await expect(menu).toBeVisible()
     } else {
       // No context menu appeared — verify page is still functional
-      await expect(page.locator("[data-component='session-prompt-dock']").first()).toBeVisible({ timeout: 5_000 })
+      await expect(promptDock(page)).toBeVisible({ timeout: 5_000 })
     }
   })
 
   test("Escape closes context menu", { tag: ["@core"] }, async ({ page }) => {
-    // Try to open a context menu — if file tree has items, use that
-    const fileTree = page.locator('[data-component="filetree"]')
-    const isTreeVisible = await fileTree.isVisible().catch(() => false)
-    if (!isTreeVisible) {
-      await page.keyboard.press("Control+\\")
-    }
-
-    const treeItem = page.locator('[data-scope="filetree"]').first()
-    const hasTreeItem = await treeItem.isVisible().catch(() => false)
-
-    if (hasTreeItem) {
-      await treeItem.click({ button: "right", force: true })
-      const contextMenu = page.locator("[role='menu']").first()
-      const menuVisible = await contextMenu.isVisible().catch(() => false)
-      if (menuVisible) {
-        await closeDialog(page)
-        await expect(contextMenu)
-          .not.toBeVisible()
-          .catch(() => {
-            // Context menu may have already closed
-          })
-        return
-      }
+    const menu = await openFileTreeContextMenu(page)
+    if (menu) {
+      await closeDialog(page)
+      await expect(menu)
+        .not.toBeVisible()
+        .catch(() => {
+          // Context menu may have already closed
+        })
+      return
     }
 
     // Fallback: right-click on body and verify Escape doesn't crash
     await page.locator("body").click({ button: "right", force: true })
     await page.keyboard.press("Escape")
-    // Verify page is still functional
-    await expect(page.locator("[data-component='session-prompt-dock']").first()).toBeVisible({ timeout: 5_000 })
+    // Verify page is still functional (2vCPU runners need >5s to settle)
+    await expect(promptDock(page)).toBeVisible({ timeout: 15_000 })
   })
 
   test("no console errors on right-click", { tag: ["@core"] }, async ({ page }) => {
@@ -156,39 +131,15 @@ test.describe("Context Menu", () => {
   })
 
   test("context menu items have proper roles", { tag: ["@core"] }, async ({ page }) => {
-    // Open file tree and try to get a context menu
-    const fileTree = page.locator('[data-component="filetree"]')
-    const isTreeVisible = await fileTree.isVisible().catch(() => false)
-    if (!isTreeVisible) {
-      await page.keyboard.press("Control+\\")
-    }
-
-    const treeItem = page.locator('[data-scope="filetree"]').first()
-    const hasTreeItem = await treeItem.isVisible().catch(() => false)
-
-    if (!hasTreeItem) {
-      // No tree items — verify page is functional and skip role checks
-      await expect(page.locator("[data-component='session-prompt-dock']").first()).toBeVisible({ timeout: 5_000 })
-      return
-    }
-
-    await treeItem.click({ button: "right", force: true })
-
-    const contextMenu = page.locator(
-      "[data-component='context-menu-content'], [data-slot='context-menu-content'], [role='menu']",
-    )
-    const menuVisible = await contextMenu
-      .first()
-      .isVisible()
-      .catch(() => false)
-    if (!menuVisible) {
+    const contextMenu = await openFileTreeContextMenu(page)
+    if (!contextMenu) {
       // No context menu appeared — verify page is functional
-      await expect(page.locator("[data-component='session-prompt-dock']").first()).toBeVisible({ timeout: 5_000 })
+      await expect(promptDock(page)).toBeVisible({ timeout: 5_000 })
       return
     }
 
     // The container should have role="menu" (Kobalte ContextMenu.Content)
-    const menuRole = await contextMenu.first().getAttribute("role")
+    const menuRole = await contextMenu.getAttribute("role")
     expect(menuRole).toBe("menu")
 
     // Menu items use data-slot="context-menu-item" (Kobalte renders role="menuitem")

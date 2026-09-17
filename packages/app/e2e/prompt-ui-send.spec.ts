@@ -82,6 +82,29 @@ test.describe("Prompt send via UI (real-time SSE path)", () => {
       .toContain("Hello, this is a mocked streaming reply.")
   })
 
+  test("markdown reply renders a highlighted code block with a copy button", { tag: ["@core", "@ui-send"] }, async ({ page }) => {
+    test.skip(!getRuntimeInfo().smartLayerAvailable, "Requires the Rust smart-layer sidecar (cargo build -p duo-smart-layer)")
+
+    const sessionId = await createSessionAndNavigate(page, "UI markdown render test")
+    sessionIds.push(sessionId)
+
+    await switchModel(page, "success-text-markdown")
+    await typeInPrompt(page, "Show me a snippet")
+    await submitPrompt(page)
+
+    // The markdown pipeline (marked + shiki + DOMPurify) renders the ts code
+    // block inside the dedicated wrapper, with a copy affordance.
+    const assistant = getLastAssistantMessage(page)
+    await expect(assistant).toBeVisible({ timeout: 60_000 })
+    const markdown = assistant.locator('[data-component="markdown"]')
+    await expect(markdown).toBeVisible({ timeout: 60_000 })
+    await expect(markdown.locator('[data-component="markdown-code"]')).toBeVisible()
+    await expect(markdown.locator("pre code")).toContainText("function add")
+    await expect(markdown.locator('[data-slot="markdown-copy-button"]')).toBeVisible()
+    // The prose around the code block survives sanitization.
+    await expect(markdown).toContainText("Here is a snippet")
+  })
+
   test("prompt remains usable for a follow-up after the first reply", { tag: ["@smoke", "@ui-send"] }, async ({ page }) => {
     test.skip(!getRuntimeInfo().smartLayerAvailable, "Requires the Rust smart-layer sidecar (cargo build -p duo-smart-layer)")
 

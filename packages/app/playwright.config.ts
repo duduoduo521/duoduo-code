@@ -8,9 +8,11 @@ const port = Number(process.env.PLAYWRIGHT_PORT ?? 3000)
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://127.0.0.1:${port}`
 const reuse = process.env.PLAYWRIGHT_REUSE_SERVER === "1"
 const ci = !!process.env.CI
-// CI runner 只有 2 vCPU，5 workers + vite + 后端会互相饿死（单测 boot 30~70s、
-// 主线程 BLOCKED 长达 17s），导致大面积 30s 超时。CI 降到 2 workers 并放宽超时。
-const workers = Number(process.env.PLAYWRIGHT_WORKERS ?? (ci ? 2 : 3)) || undefined
+// CI runner 只有 2 vCPU，多 workers + vite + 后端会互相饿死（单测 boot 30~70s、
+// 主线程 BLOCKED 长达 17s），导致大面积超时。现在套件含长流/长轮询的
+// prompt 全链路用例（对 CPU 饱和敏感），实测 2 workers 下这些用例在负载
+// 高峰批量超时而单跑全绿——固定 1 worker（PLAYWRIGHT_WORKERS 可覆盖）。
+const workers = Number(process.env.PLAYWRIGHT_WORKERS ?? 1) || undefined
 const reporter: NonNullable<Parameters<typeof defineConfig>[0]["reporter"]> = [
   ["html", { outputFolder: "e2e/playwright-report", open: "never" }],
   ["line"],

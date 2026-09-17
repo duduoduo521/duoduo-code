@@ -129,3 +129,26 @@ void Log.init({
 })
 
 initProjectors()
+
+// ─── Global teardown: release the ManagedRuntime ─────────────────────────────
+//
+// Without this, `bun test` hangs after the last test passes: the module-level
+// ManagedRuntime (src/effect/app-runtime.ts) is never disposed, and services
+// built inside it (EffectFlock retry timers, FileWatcher, Bus heartbeats, …)
+// keep real event-loop handles alive. The process then never exits — which is
+// exactly the SIGKILL the CI unit-test job died from.
+//
+// AppRuntime.dispose() closes the runtime scope, releasing those handles.
+// `ensureRuntimeHealth()` recreates the runtime on next use, so non-isolate
+// multi-file runs keep working. Raced against a timeout because a hung
+// disposer must never block bun's afterAll window.
+import { afterAll } from "bun:test"
+const { AppRuntime } = await import("../src/effect/app-runtime")
+
+afterAll(async () => {
+  await Promise.race([
+    AppRuntime.dispose().catch(() => {}),
+    new Promise((resolve) => setTimeout(resolve, 5_000)),
+  ])
+})
+

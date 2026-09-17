@@ -2836,27 +2836,24 @@ async fn run_loop_handler(
     // to avoid locking the agent out of its own workspace.
     let security_policy: Arc<agent_executor::SecurityPolicy> = {
         let mut scoped = (*state.security_policy).clone();
-        match req
+        if let Some(paths) = req
             .allowed_paths
             .as_ref()
             .filter(|paths| !paths.is_empty())
         {
-            Some(paths) => {
-                let mut list: Vec<String> = Vec::with_capacity(paths.len() + 1);
-                list.push(project_path.clone());
-                for p in paths {
-                    if !p.is_empty() && !list.contains(p) {
-                        list.push(p.clone());
-                    }
+            let mut list: Vec<String> = Vec::with_capacity(paths.len() + 1);
+            list.push(project_path.clone());
+            for p in paths {
+                if !p.is_empty() && !list.contains(p) {
+                    list.push(p.clone());
                 }
-                tracing::info!(
-                    session_id = %session_id,
-                    allowed_paths = ?list,
-                    "run_loop: task-scoped sandbox active"
-                );
-                scoped.allowed_paths = list;
             }
-            None => {}
+            tracing::info!(
+                session_id = %session_id,
+                allowed_paths = ?list,
+                "run_loop: task-scoped sandbox active"
+            );
+            scoped.allowed_paths = list;
         }
         // Root-cause fix for the broken external-directory authorization chain:
         // the process-global policy carries no project boundary on desktop, so
@@ -5877,13 +5874,19 @@ async fn run_loop_handler(
                             }
                             Err(e) => {
                                 // Guard: a tool that is not implemented in the Rust
-                                // executor would normally be delegated to the TS client.
-                                // But when no TS client is connected, delegating hangs
-                                // forever on `wait_for_tool_result`. So for an
-                                // unsupported-Rust tool we report a clear error and
-                                // continue the loop instead of stalling.
+                                // executor is normally delegated to the TS client —
+                                // the TS poll loop is connected and executes pending
+                                // parts, so any tool TS itself offers (present in the
+                                // tool definitions sent with THIS run_loop request)
+                                // can and must be delegated. Only when TS does not
+                                // offer the tool would delegating hang forever on
+                                // `wait_for_tool_result`; in that case report a clear
+                                // error and continue the loop instead of stalling.
                                 let e_msg = e.to_string();
-                                if e_msg.contains("not implemented in the Rust agent executor") {
+                                let ts_offers_tool = tools_for_spawn.as_ref().is_some_and(|defs| {
+                                    defs.iter().any(|d| d.function.name == tool_name)
+                                });
+                                if e_msg.contains("not implemented in the Rust agent executor") && !ts_offers_tool {
                                     tracing::warn!(tool = %tool_name, "tool unsupported in Rust executor (no TS delegate) — reporting error and continuing");
                                     let err_now_ms = chrono::Utc::now().timestamp_millis();
                                     let err_input: std::collections::HashMap<String, serde_json::Value> =
@@ -6011,10 +6014,17 @@ async fn run_loop_handler(
                                     // path — not a dead-end "Error: Path traversal
                                     // detected" tool_result.
                                     let e_msg = e.to_string();
-                                    if e_msg.contains("outside project directory")
-                                        && tools_for_spawn.as_ref().is_some_and(|defs| {
-                                            defs.iter().any(|d| d.function.name == entry.tool_name)
-                                        })
+                                    // Delegate to TS when TS offers the tool AND the
+                                    // failure is one TS can handle: an out-of-project
+                                    // path (external-directory permission ask) or a
+                                    // capability the Rust executor lacks (e.g. edit
+                                    // replaceAll — "not supported in Rust").
+                                    let ts_offers_tool = tools_for_spawn.as_ref().is_some_and(|defs| {
+                                        defs.iter().any(|d| d.function.name == entry.tool_name)
+                                    });
+                                    if (e_msg.contains("outside project directory")
+                                        || e_msg.contains("not supported in Rust"))
+                                        && ts_offers_tool
                                     {
                                         tracing::info!(tool = %entry.tool_name, error = %e_msg, "out-of-project tool failure, delegating to TS for permission ask");
                                         self_transition_part_to_pending(

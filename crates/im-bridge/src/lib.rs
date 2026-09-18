@@ -95,13 +95,14 @@ impl ImBridge {
             tokio::spawn(async move {
                 let mut retries: u32 = 0;
                 let max_retries: u32 = 5;
-                // IM-05: reset the retry counter once a session has been alive
-                // for >= 60s. This prevents a *permanently* disconnected adapter
-                // after a transient outage that spanned the first 5 quick retries:
-                // if the connection stabilizes for a minute, the consecutive-failure
-                // budget is replenished. Rapid consecutive failures (< 60s) still
-                // exhaust the budget and exit as before.
-                let session_start = Instant::now();
+                // IM-05: reset the retry counter once the CURRENT connection has
+                // been alive for >= 60s (per-attempt clock, NOT process uptime).
+                // Using the process-start clock here made the reset condition
+                // always-true after the first healthy minute, so `retries > 5`
+                // could never trip again and the breaker was permanently dead.
+                // With the per-attempt clock: a connection that stabilizes for a
+                // minute replenishes the consecutive-failure budget; rapid
+                // consecutive failures (< 60s each) still exhaust it and exit.
                 loop {
                     if *shutdown.read().await {
                         tracing::info!(adapter = "Feishu", "Adapter stop requested");
@@ -117,6 +118,7 @@ impl ImBridge {
                         Some(ack_ws.clone()),
                     );
 
+                    let attempt_start = Instant::now();
                     let handle = tokio::spawn(async move { ws_client.run().await });
                     match handle.await {
                         Ok(()) => {
@@ -131,7 +133,7 @@ impl ImBridge {
                                 return;
                             }
                             tracing::warn!(adapter = "Feishu", "Adapter exited, reconnecting...");
-                            if session_start.elapsed() >= Duration::from_secs(60) {
+                            if attempt_start.elapsed() >= Duration::from_secs(60) {
                                 retries = 0;
                             }
                             retries += 1;
@@ -158,7 +160,7 @@ impl ImBridge {
                             } else {
                                 tracing::error!(adapter = "Feishu", "Adapter task cancelled");
                             }
-                            if session_start.elapsed() >= Duration::from_secs(60) {
+                            if attempt_start.elapsed() >= Duration::from_secs(60) {
                                 retries = 0;
                             }
                             retries += 1;

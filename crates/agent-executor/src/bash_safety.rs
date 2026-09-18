@@ -373,6 +373,22 @@ pub fn classify(command: &str) -> Option<String> {
     if squeezed.contains(":(){:|:&};:") {
         return Some("fork bomb".to_string());
     }
+    // P0-3: a heredoc body is invisible to the stage scanner (its lines are
+    // plain text tokens, not commands) — feeding it to a shell executes
+    // unreviewed lines. Detect the operator shape: `<<`/`<<-` followed by a
+    // delimiter word (optionally quoted) that ends the line. An arithmetic
+    // left shift never matches (the line continues after the shifted value),
+    // and `<<<` (here-string) cannot match because of the `[^<]` guard.
+    static HEREDOC: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"(?m)(?:^|[^<])<<-?[ \t]*(?:[A-Za-z_][A-Za-z0-9_]*|'[^']*'|"[^"]*")[ \t]*(?:#.*)?\r?$"#)
+            .expect("invariant: static regex pattern is valid")
+    });
+    if HEREDOC.is_match(command) {
+        return Some(
+            "heredoc body cannot be scanned — write the payload to a temp file and run it instead"
+                .to_string(),
+        );
+    }
     static REDIRECT: LazyLock<Regex> =
         LazyLock::new(|| Regex::new(r">{1,2}\s*([^\s;|&<>]+)").expect("invariant: static regex pattern is valid"));
     for cap in REDIRECT.captures_iter(command) {
@@ -415,6 +431,16 @@ pub fn classify(command: &str) -> Option<String> {
             }
             if let Some(sig) = dangerous_args(&name, args) {
                 return Some(sig);
+            }
+
+            // P0-5: a DESTRUCTIVE command with an expanded (hidden) argument
+            // bypasses the spatial bound — the runtime path is invisible to
+            // the scan. Hard-block (unattended hard-deny, no ask), with the
+            // fix in the message.
+            if DESTRUCTIVE.contains(&name.as_str()) && args.iter().any(|a| a.dynamic) {
+                return Some(format!(
+                    "{name} with expanded (hidden) argument — expand the variable to a concrete path and re-run"
+                ));
             }
 
             // Downloading to a file: see [`OUTPUT_FLAGS`].
@@ -551,6 +577,149 @@ pub fn out_of_bounds_paths(
     found
 }
 
+// ─── P0-4: nested command payloads ─────────────────────────────────────────
+//
+// A shell `-c` literal payload or a `find -exec`/`xargs` sub-command is a full
+// command in its own right; the top-level scan must see it. Each nesting level
+// runs BOTH gates — [`blocked`] (capability) and [`out_of_bounds_paths`]
+// (spatial) — mirroring the TS `scanNestedCommands` in bash.ts. Depth-capped
+// (`bash -c "bash -c \"bash -c …\""` nesting must not recurse unbounded).
+
+/// Direct (level-1) payloads of `command`: shell `-c` literals, `find`
+/// `-exec`/`-execdir`/`-ok` sub-commands, `xargs` sub-commands.
+fn direct_payloads(command: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for pipeline in pipelines(command) {
+        for stage in pipeline {
+            let toks = tokenize(&stage);
+            if toks.is_empty() {
+                continue;
+            }
+            let (name, args_start) = match resolve_name(&toks) {
+                NameResolution::Resolved(name, args_start) => (name, args_start),
+                _ => continue,
+            };
+            let args = &toks[args_start.min(toks.len())..];
+            let payload: Option<String> = if SHELLS.contains(&name.as_str()) {
+                args.iter()
+                    .position(|a| a.text == "-c")
+                    .and_then(|i| args.get(i + 1))
+                    .filter(|p| !p.dynamic)
+                    .map(|p| unquote(&p.text))
+            } else if name == "find" {
+                args.iter()
+                    .position(|a| a.text == "-exec" || a.text == "-execdir" || a.text == "-ok")
+                    .and_then(|i| {
+                        let rest = &args[i + 1..];
+                        // The sub-command ends at the terminating `;` / `\;`.
+                        let end = rest
+                            .iter()
+                            .position(|a| a.text == ";" || a.text == "\\;")
+                            .unwrap_or(rest.len());
+                        let joined = rest[..end]
+                            .iter()
+                            .map(|a| a.text.clone())
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        if joined.is_empty() { None } else { Some(joined) }
+                    })
+            } else if name == "xargs" {
+                let joined = args
+                    .iter()
+                    .filter(|a| !a.text.starts_with('-'))
+                    .map(|a| a.text.clone())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                if joined.is_empty() { None } else { Some(joined) }
+            } else {
+                None
+            };
+            if let Some(inner) = payload {
+                let inner = inner.trim().to_string();
+                if !inner.is_empty() {
+                    out.push(inner);
+                }
+            }
+        }
+    }
+    out
+}
+
+fn nested_walk(
+    command: &str,
+    depth: usize,
+    cwd: &std::path::Path,
+    allowed: &[std::path::PathBuf],
+) -> Option<String> {
+    if depth > 3 {
+        return Some("nested command payload beyond depth 3".to_string());
+    }
+    for inner in direct_payloads(command) {
+        if let Some(reason) = blocked(&inner) {
+            return Some(format!("nested command: {reason}"));
+        }
+        if let Some(first) = out_of_bounds_paths(&inner, cwd, allowed).first() {
+            return Some(format!(
+                "nested command writes outside the allowed directories: {first}"
+            ));
+        }
+        if let Some(v) = nested_walk(&inner, depth + 1, cwd, allowed) {
+            return Some(v);
+        }
+    }
+    None
+}
+
+/// P0-4: run the capability AND spatial gates over every nested payload of
+/// `command`. Call this from `execute_bash` right after `blocked` and
+/// P1-16: Explore mode is read-only. A `bash` call can still mutate the
+/// worktree through redirections or in-place edits even though no write tool
+/// was named. Returns a rejection reason when the command carries a write
+/// form; ordinary read-only commands run normally.
+pub fn explore_bash_write_reason(command: &str) -> Option<String> {
+    // Reuse the full semantic classifier first (DESTRUCTIVE / heredoc / etc.).
+    if let Some(reason) = classify(command) {
+        return Some(reason);
+    }
+    // Explore runs non-interactive: bare DESTRUCTIVE / ALWAYS_BLOCK usage that
+    // would normally land on the permission gate has no user to ask — deny.
+    for seg in command.split(|c: char| c == ';' || c == '|' || c == '&' || c == '\n') {
+        if let Some(tok) = seg.split_whitespace().next() {
+            let name = base_name(tok);
+            if ALWAYS_BLOCK.contains(&name.as_str()) || DESTRUCTIVE.contains(&name.as_str()) {
+                return Some(format!(
+                    "{name} is a destructive command — Explore mode is read-only and non-interactive"
+                ));
+            }
+        }
+    }
+    static WRITE_FORM: LazyLock<Regex> = LazyLock::new(|| {
+        // Write forms: `> file` / `>> file` (fd-prefixed `2> x` and `>&1`
+        // excluded — those redirect stderr, not files), `sed -i`, tee/dd/
+        // truncate/shred (write by nature). `(?:^|[^\w-])` anchors command
+        // names at word starts, including the beginning of the line.
+        Regex::new(
+            r"(?:(?:^|[^\d>])>{1,2}\s*[^\s&]|(?:^|[^\w-])(?:sed[^\n]*\s-i(?:\s|$)|tee\s|dd\s|truncate\s|shred\s))",
+        )
+        .unwrap()
+    });
+    if WRITE_FORM.is_match(command) {
+        return Some(
+            "bash write form (redirection / in-place edit) — Explore mode is read-only; use a write tool outside Explore or drop the redirection".to_string(),
+        );
+    }
+    None
+}
+
+/// `out_of_bounds_paths`, with the same `cwd`/`allowed` arguments.
+pub fn nested_violation(
+    command: &str,
+    cwd: &std::path::Path,
+    allowed: &[std::path::PathBuf],
+) -> Option<String> {
+    nested_walk(command, 0, cwd, allowed)
+}
+
 /// Are we looking at a path that does not need joining onto `cwd`?
 ///
 /// `Path::is_absolute()` is false on Windows for a rooted-but-prefix-less
@@ -624,6 +793,107 @@ mod tests {
                 ts, rust,
                 "command {cmd:?}: ts ({ts}) and rust ({rust}) must agree"
             );
+        }
+    }
+
+    // ── P1-16: Explore bash write-form detection ──
+    #[test]
+    fn explore_bash_write_forms_are_blocked() {
+        assert!(explore_bash_write_reason("echo hi > /tmp/leak").is_some());
+        assert!(explore_bash_write_reason("echo hi >> /tmp/leak").is_some());
+        assert!(explore_bash_write_reason("sed -i 's/a/b/' src/main.rs").is_some());
+        assert!(explore_bash_write_reason("cat f | tee /tmp/out").is_some());
+        assert!(explore_bash_write_reason("rm -rf /").is_some()); // via classify
+    }
+
+    #[test]
+    fn explore_bash_read_forms_pass() {
+        assert!(explore_bash_write_reason("ls -la").is_none());
+        assert!(explore_bash_write_reason("grep -r TODO src").is_none());
+        assert!(explore_bash_write_reason("cat big.log 2>/dev/null | head").is_none());
+        assert!(explore_bash_write_reason("echo hi >&2").is_none());
+        assert!(explore_bash_write_reason("git log --oneline").is_none());
+    }
+
+    // ── P0-3 / P0-4 / P0-5: heredoc, nested payloads, dynamic destructive ──
+
+    #[test]
+    fn heredoc_is_blocked_and_arithmetic_shift_is_not() {
+        assert!(blocked("cat <<EOF\nline\nEOF").is_some());
+        assert!(blocked("cat <<- 'EOF'\nrm -rf /\nEOF").is_some());
+        assert!(blocked("echo $((1 << 2))").is_none());
+    }
+
+    #[test]
+    fn destructive_with_expanded_argument_is_blocked() {
+        assert!(blocked("rm -rf $TARGET").is_some());
+        assert!(blocked("dd if=$A of=$B").is_some());
+        // Non-destructive commands with expansions stay at the ask gate.
+        assert!(blocked("echo $HOME").is_none());
+        assert!(blocked("cat $SECRET").is_none());
+    }
+
+    mod nested {
+        use super::*;
+
+        fn roots() -> Vec<std::path::PathBuf> {
+            vec![std::path::PathBuf::from("/work/project-a")]
+        }
+
+        fn cwd() -> std::path::PathBuf {
+            std::path::PathBuf::from("/work/project-a")
+        }
+
+        #[test]
+        fn nested_sudo_payload_is_blocked() {
+            assert!(
+                nested_violation(
+                    "bash -c 'sudo apt-get install curl'",
+                    &cwd(),
+                    &roots()
+                )
+                .is_some()
+            );
+        }
+
+        #[test]
+        fn find_exec_nested_destructive_is_blocked() {
+            assert!(
+                nested_violation(
+                    "find . -type f -exec sh -c 'sudo rm -rf /' \\;",
+                    &cwd(),
+                    &roots()
+                )
+                .is_some()
+            );
+        }
+
+        #[test]
+        fn nested_spatial_escape_is_blocked() {
+            // The classifier allows `rm -rf /tmp/leak` (rm has no capability
+            // rule); the nested SPATIAL gate must catch the out-of-bounds path.
+            assert!(
+                nested_violation("bash -c 'rm -rf /tmp/leak'", &cwd(), &roots()).is_some()
+            );
+        }
+
+        #[test]
+        fn benign_nested_payload_is_allowed() {
+            assert!(nested_violation("bash -c 'echo hi'", &cwd(), &roots()).is_none());
+            assert!(nested_violation("find . -exec grep TODO {} \\;", &cwd(), &roots()).is_none());
+        }
+
+        #[test]
+        fn depth_cap_trips_at_four() {
+            // The cap is keyed on payload nesting depth (each `-c`/`-exec`
+            // level adds one). Verified directly: at depth 4 the walk refuses
+            // to classify further and reports the cap, even for a benign
+            // command.
+            assert_eq!(
+                nested_walk("echo x", 4, &cwd(), &roots()),
+                Some("nested command payload beyond depth 3".to_string())
+            );
+            assert!(nested_walk("echo x", 3, &cwd(), &roots()).is_none());
         }
     }
 

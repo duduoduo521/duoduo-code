@@ -144,6 +144,16 @@ function gearMcpToConfigMcp(raw: unknown): ConfigMCP.Info | undefined {
   if (r.kind === "stdio") {
     const commandStr = typeof r.command === "string" ? r.command.trim() : ""
     if (!commandStr) return undefined
+    // P0-6: gear mcp.json is remote-authored input (registry/CLI install).
+    // The stdio transport spawns the command directly, but a command carrying
+    // shell metacharacters must never be loadable from a gear pack without
+    // review — reject it and keep the gear's other tools unaffected.
+    if (/[;|&`$><\r\n]/.test(commandStr)) {
+      log.warn("gear mcp.json command rejected: shell metacharacters", {
+        command: commandStr,
+      })
+      return undefined
+    }
     const args = Array.isArray(r.args)
       ? (r.args.filter((a) => typeof a === "string") as string[])
       : []

@@ -28,7 +28,7 @@ import {
 } from "@/plugin/shared"
 import { PluginLoader } from "@/plugin/loader"
 import { PluginMeta } from "@/plugin/meta"
-import { installPlugin as installModulePlugin, patchPluginConfig, readPluginManifest } from "@/plugin/install"
+import { installPlugin as installModulePlugin, patchPluginConfig, readPluginManifest, verifyPluginSafety } from "@/plugin/install"
 import { hasTheme, upsertTheme } from "../context/theme"
 import { Global } from "@/global"
 import { Filesystem } from "@/util"
@@ -811,6 +811,21 @@ async function addPluginBySpec(state: RuntimeState | undefined, raw: string) {
   if (state.plugins_by_id.has(first.id)) {
     state.pending.delete(spec)
     return true
+  }
+
+  // P1-14: the add path previously bypassed verifyPluginSafety entirely —
+  // every other trust transition into the runtime runs the checksum/script
+  // gate, so must this one. No expectedIntegrity is available for ad-hoc
+  // specs, so this enforces the lifecycle-script refusal (allowScripts=false).
+  const safety = await verifyPluginSafety(spec, first.target, {
+    // `first.target` is already resolved by the loader — resolve() is only
+    // required by the InstallDeps shape and is never invoked here.
+    resolve: async () => first.target,
+    allowScripts: false,
+  })
+  if (!safety.ok) {
+    fail("refused to add tui plugin", { path: next, error: safety.error })
+    return false
   }
 
   const out = await addExternalPluginEntries(state, [first])

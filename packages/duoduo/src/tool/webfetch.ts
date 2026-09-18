@@ -1,41 +1,87 @@
 import { DuoduoError } from "@/util/error"
 import z from "zod"
-import { Effect } from "effect"
+import { Cause, Effect } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/unstable/http"
 import * as Tool from "./tool"
 import TurndownService from "turndown"
 import DESCRIPTION from "./webfetch.txt"
 import { isImageAttachment } from "@/util/media"
+import dns from "node:dns"
 
 const MAX_RESPONSE_SIZE = 5 * 1024 * 1024 // 5MB
 const DEFAULT_TIMEOUT = 30 * 1000 // 30 seconds
 const MAX_TIMEOUT = 120 * 1000 // 2 minutes
 
-/** Check if a hostname resolves to a private, link-local, loopback, or reserved IP address. */
-function isPrivateOrReservedHost(hostname: string): boolean {
-  // Loopback
-  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "0.0.0.0") {
-    return true
-  }
-  // Link-local (169.254.x.x, fe80::)
-  if (hostname.startsWith("169.254.") || hostname.startsWith("fe80:")) {
-    return true
-  }
-  // Private IPv4 ranges (10.x, 172.16-31.x, 192.168.x)
-  const parts = hostname.split(".")
+/** P2-14 (13-7): WHATWG URL returns bracketed IPv6 hosts ("[::1]") — strip. */
+function normalizeHost(hostname: string): string {
+  return hostname.startsWith("[") && hostname.endsWith("]")
+    ? hostname.slice(1, -1).toLowerCase()
+    : hostname.toLowerCase()
+}
+
+/** Check whether a concrete IP address falls in a private/reserved range. */
+function isPrivateIp(ip: string): boolean {
+  // IPv4 (dot-decimal) — after DNS resolution all forms collapse to this.
+  const parts = ip.split(".")
   if (parts.length === 4) {
     const nums = parts.map(Number)
-    if (nums.every((n) => !isNaN(n) && n >= 0 && n <= 255)) {
-      if (nums[0] === 10) return true
+    if (nums.every((n) => Number.isInteger(n) && n >= 0 && n <= 255)) {
+      if (nums[0] === 0 || nums[0] === 10 || nums[0] === 127) return true
+      if (nums[0] === 100 && nums[1] === 64) return true
+      if (nums[0] === 169 && nums[1] === 254) return true
       if (nums[0] === 172 && nums[1]! >= 16 && nums[1]! <= 31) return true
+      if (nums[0] === 192 && nums[1] === 0 && nums[2] === 0) return true
       if (nums[0] === 192 && nums[1] === 168) return true
+      return false
     }
   }
-  // Cloud metadata endpoints
-  if (hostname === "metadata.google.internal" || hostname === "metadata.azure.com") {
-    return true
+  // IPv6 prefixes: loopback, link-local, unique-local, IPv4-mapped.
+  const lower = ip.toLowerCase()
+  if (lower === "::" || lower === "::1") return true
+  if (lower.startsWith("fe80:") || lower.startsWith("fc") || lower.startsWith("fd")) return true
+  if (lower.startsWith("::ffff:")) {
+    const mapped = lower.slice("::ffff:".length)
+    if (mapped.includes(".")) return isPrivateIp(mapped)
   }
   return false
+}
+
+/**
+ * P2-14 (13-7): SSRF gate.
+ * 1. Literal hostname checks (fast path, includes bracketed IPv6 — the old
+ *    `hostname === "::1"` never matched "[::1]").
+ * 2. DNS resolution of the hostname and range-checking of EVERY resolved
+ *    address — this is what defeats DNS rebinding and exotic IPv4 encodings
+ *    (decimal/octal/hex forms), which pure string comparison cannot see.
+ */
+async function assertPublicHost(hostname: string): Promise<void> {
+  const host = normalizeHost(hostname)
+  // Cloud metadata endpoints (literal hostnames, no IP form).
+  if (host === "localhost" || host.endsWith(".localhost") || host === "metadata.google.internal" || host === "metadata.azure.com" || host.endsWith(".internal")) {
+    throw new DuoduoError({ message: "Requests to private or reserved hosts are not allowed", messageZh: "不允许请求私有或保留主机", cause: undefined })
+  }
+  // Literal IP fast path.
+  if (isPrivateIp(host)) {
+    throw new DuoduoError({ message: "Requests to private or reserved IP addresses are not allowed", messageZh: "不允许请求私有或保留 IP 地址", cause: undefined })
+  }
+  // A literal IP that is public needs no DNS check.
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(host) || host.includes(":")) return
+  // Resolve and check every address (covers rebinding + encoded IPv4).
+  // Resolution failure is NOT a hard block: proxied / custom-resolver setups
+  // can still reach the host even when this process cannot resolve it — let
+  // the real request fail naturally in that case.
+  const addresses = await dns.promises
+    .lookup(host, { all: true })
+    .catch(() => undefined)
+  if (!addresses || addresses.length === 0) {
+    console.warn(`[webfetch] could not resolve ${host} for SSRF check; proceeding`)
+    return
+  }
+  for (const { address } of addresses) {
+    if (isPrivateIp(address)) {
+      throw new DuoduoError({ message: "Requests to private or reserved IP addresses are not allowed", messageZh: "不允许请求私有或保留 IP 地址", cause: undefined })
+    }
+  }
 }
 
 const parameters = z.object({
@@ -62,11 +108,22 @@ export const WebFetchTool = Tool.define(
             throw new DuoduoError({ message: "URL must start with http:// or https://", messageZh: "URL 必须以 http:// 或 https:// 开头", cause: undefined })
           }
 
-          // SSRF protection: block requests to private/reserved IP ranges
-          const urlHost = new URL(params.url).hostname
-          if (isPrivateOrReservedHost(urlHost)) {
-            throw new DuoduoError({ message: "Requests to private or reserved IP addresses are not allowed", messageZh: "不允许请求私有或保留 IP 地址", cause: undefined })
-          }
+          // SSRF protection (P2-14 / 13-7): literal checks + DNS resolution of
+          // every address the host maps to (defeats rebinding & encodings).
+          yield* Effect.tryPromise(() =>
+            assertPublicHost(new URL(params.url).hostname),
+          ).pipe(
+            Effect.catchCause((c) =>
+              Effect.fail(
+                (() => {
+                  const err = Cause.squash(c)
+                  return err instanceof DuoduoError
+                    ? err
+                    : new DuoduoError({ message: "URL host check failed", messageZh: "URL 主机校验失败", cause: undefined })
+                })(),
+              ),
+            ),
+          )
 
           yield* ctx.ask({
             permission: "webfetch",

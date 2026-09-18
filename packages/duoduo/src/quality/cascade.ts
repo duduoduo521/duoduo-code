@@ -14,9 +14,18 @@ export class CascadeService extends Context.Service<CascadeService, CascadeInter
   "@duoduocode/Quality/Cascade",
 ) {}
 
+// P2-12: bound every LSP round-trip. Fixed value: longer means a wedged LSP
+// server stalls every write; shorter risks missing slow first-boot analysis.
+const LSP_STEP_TIMEOUT = "15 seconds" as const
+
 const verifyWithLSP = Effect.fn("CascadeQA.verifyWithLSP")(function* (input: CascadeInput) {
   const lsp = yield* LSP.Service
-  const diagnostics = yield* lsp.diagnostics()
+  const diagnostics = yield* lsp
+    .diagnostics()
+    .pipe(Effect.timeout(LSP_STEP_TIMEOUT), Effect.catch(() => Effect.succeed(undefined as any)))
+  if (diagnostics === undefined) {
+    return "timeout" as const
+  }
   // The diagnostics map is keyed by the LSP client's own normalization
   // (`Filesystem.normalizePath` in `lsp/client.ts` — win32 realpath with
   // backslashes). A hand-rolled `replace(/\\/g, "/")` produced forward-slash
@@ -37,27 +46,64 @@ export const cascadeLayer = Layer.effect(
           const lspOption = yield* Effect.serviceOption(LSP.Service)
           if (lspOption._tag === "None") {
             // No LSP available — pass through without deterministic checks.
-            // Deterministic checks (bracket balance / autoFix) were removed
-            // (see `loop汇总实施方案.md` P7.1); syntax correctness is the
-            // responsibility of the L1 tree-sitter gate. Returning the original
-            // content avoids silently rewriting files.
+            // P2-12: mark the verdict UNVERIFIED (fail-open, but visible) —
+            // `passed: true` used to be indistinguishable from a real check
+            // that found nothing.
+            cascadeLog.warn("cascade checks skipped: no LSP service", { file: input.filepath })
             return {
               passed: true,
               fixed: false,
               content: input.content,
-              issues: [],
+              issues: [
+                { severity: "info" as const, message: "质量校验未执行（LSP 服务不可用）——本次写入未经校验" },
+              ],
               retries: 0,
+              unchecked: true,
             } satisfies CascadeReport
           }
 
           // Ensure LSP server is aware of the file update for accurate diagnostics
 // @effect-diagnostics-next-line catchUnfailableEffect:off
-          yield* lspOption.value.touchFile(input.filepath, "document").pipe(Effect.catch(() => Effect.void))
+          const touched = yield* lspOption.value
+            .touchFile(input.filepath, "document")
+            .pipe(Effect.timeout(LSP_STEP_TIMEOUT), Effect.catch(() => Effect.succeed(false)))
+          if (touched === false) {
+            cascadeLog.warn("cascade checks skipped: LSP touchFile failed/timed out", { file: input.filepath })
+            return {
+              passed: true,
+              fixed: false,
+              content: input.content,
+              issues: [
+                { severity: "info" as const, message: "质量校验未执行（LSP 更新失败或超时）——本次写入未经校验" },
+              ],
+              retries: 0,
+              unchecked: true,
+            } satisfies CascadeReport
+          }
 
 // @effect-diagnostics-next-line catchUnfailableEffect:off
-          const diagnostics = yield* verifyWithLSP(input).pipe(Effect.catch(() => Effect.succeed([] as any[])))
+          const diagnostics = yield* verifyWithLSP(input).pipe(
+            Effect.catch(() => Effect.succeed("lsp-error" as const)),
+          )
 
-          const lspErrors = (diagnostics ?? []).filter((d: any) => d.severity === 1 || d.severity === "error")
+          if (diagnostics === "timeout" || diagnostics === "lsp-error") {
+            cascadeLog.warn("cascade checks skipped: diagnostics unavailable", {
+              file: input.filepath,
+              reason: diagnostics,
+            })
+            return {
+              passed: true,
+              fixed: false,
+              content: input.content,
+              issues: [
+                { severity: "info" as const, message: "质量校验未执行（诊断获取失败或超时）——本次写入未经校验" },
+              ],
+              retries: 0,
+              unchecked: true,
+            } satisfies CascadeReport
+          }
+
+          const lspErrors = (diagnostics as any[]).filter((d: any) => d.severity === 1 || d.severity === "error")
 
           const allIssues = lspErrors.map((e: any) => ({
             severity: "error" as const,

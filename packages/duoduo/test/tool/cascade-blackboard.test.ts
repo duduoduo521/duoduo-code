@@ -47,7 +47,7 @@ const passedReport = {
 }
 
 describe("cascade-blackboard.writeCascadeValidationResult", () => {
-  test("writes validation_result when the report failed", async () => {
+  test("writes cascade_block when the report failed", async () => {
     const blackboard = blackboardStub()
     clients = { blackboard }
     const { writeCascadeValidationResult } = await importCascade()
@@ -65,7 +65,9 @@ describe("cascade-blackboard.writeCascadeValidationResult", () => {
     const call = blackboard.write.mock.calls[0]![0] as WriteCall
     expect(call.promptId).toBe("p1")
     expect(call.agentId).toBe("system:cascade")
-    expect(call.key).toBe("validation_result")
+    // P1-4 (决策 2b): failures go to the dedicated `cascade_block` key so a
+    // concurrent validator's LWW `passed` cannot overwrite the failure.
+    expect(call.key).toBe("cascade_block")
 
     const payload = JSON.parse(call.value)
     expect(payload.status).toBe("failed")

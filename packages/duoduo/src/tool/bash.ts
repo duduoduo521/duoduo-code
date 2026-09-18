@@ -300,6 +300,11 @@ const DOWNLOADERS = new Set(["curl", "wget", "fetch", "aria2c", "httpie", "http"
 // a separate command and therefore invisible to any single-command scan — so
 // the first half is blocked instead.
 const OUTPUT_FLAGS = new Set(["-o", "-O", "--output", "--output-document"])
+// P0-3: heredoc bodies are invisible to the command scanner (see classifyCommand).
+const HEREDOC_REASON =
+  "heredoc body cannot be scanned — write the payload to a temp file (e.g. printf '%s\\n' line > /tmp/f) and run it instead"
+// P0-4: depth cap for nested `-c` / `-exec` payload recursion.
+const MAX_NESTED_DEPTH = 3
 // Node types whose runtime value is invisible statically (expansion happens in
 // the shell). raw_string (single quotes) is the opposite: NEVER expanded.
 const DYNAMIC_NODE_TYPES = new Set(["expansion", "simple_expansion", "command_substitution", "arithmetic_expansion"])
@@ -321,7 +326,7 @@ function isDynamicToken(t: Part, ps: boolean) {
 // Token walk for classification. Unlike parts() (permission-pattern oriented,
 // skips expansions and redirections), this keeps expansion nodes so hidden
 // payloads (`bash -c $V`) stay visible to the classifier.
-function commandTokens(node: Node, ps: boolean): Part[] {
+export function commandTokens(node: Node, ps: boolean): Part[] {
   if (ps) return parts(node)
   const out: Part[] = []
   for (let i = 0; i < node.childCount; i++) {
@@ -427,6 +432,15 @@ export function classifyCommand(root: Node, raw: string, ps: boolean): BashVerdi
   // ── Raw-text rules (grammar-independent; run even on partially-parsed input) ──
   const squeezed = raw.replace(/\s+/g, "")
   if (squeezed.includes(":(){:|:&};:")) return { blocked: true, reason: "fork bomb" }
+  // P0-3: a heredoc body is a text token, not a `command` node — the scanner
+  // below is blind to its lines, and feeding it to a shell executes them
+  // unreviewed. AST check first (authoritative), raw-text fallback for
+  // partially-parsed input. The delimiter must end the line, so an arithmetic
+  // left shift (`$((a << b))`) never matches.
+  if (root.descendantsOfType("heredoc_redirect").length > 0)
+    return { blocked: true, reason: HEREDOC_REASON }
+  if (/(^|[^<])<<-?[ \t]*(?:[A-Za-z_][A-Za-z0-9_]*|'[^']*'|"[^"]*")[ \t]*(?:#.*)?\r?$/m.test(raw))
+    return { blocked: true, reason: HEREDOC_REASON }
   for (const m of raw.matchAll(/>{1,2}\s*([^\s;|&<>]+)/g)) {
     const target = unquote(m[1]!)
     if (target.startsWith("/dev/") && !SAFE_DEV_TARGETS.has(target))
@@ -454,6 +468,15 @@ export function classifyCommand(root: Node, raw: string, ps: boolean): BashVerdi
 
     const sig = dangerousArgs(name, args)
     if (sig) return { blocked: true, reason: sig }
+
+    // P0-5: a DESTRUCTIVE command with an expanded (hidden) argument bypasses
+    // the spatial bound — the runtime path is invisible to the scan. Hard-block
+    // (unattended hard-deny, no ask), with the fix in the message.
+    if (DESTRUCTIVE.has(name) && args.some((a) => isDynamicToken(a, ps)))
+      return {
+        blocked: true,
+        reason: `${name} with expanded (hidden) argument — expand the variable to a concrete path and re-run`,
+      }
 
     // Downloading to a file: see OUTPUT_FLAGS.
     if (DOWNLOADERS.has(name) && args.some((a) => OUTPUT_FLAGS.has(unquote(a.text))))
@@ -508,6 +531,35 @@ export function classifyCommand(root: Node, raw: string, ps: boolean): BashVerdi
     }
   }
   return { blocked: false }
+}
+
+// P0-4: a shell `-c` literal payload or a `find -exec` / `xargs` sub-command
+// is a full command in its own right — the outer scan must also see it.
+// Returns the inner command string (unquoted for `-c`), or undefined when the
+// construct carries no statically visible payload (dynamic payloads are
+// already hard-blocked by classifyCommand's expanded-payload rule).
+export function innerPayloadOf(name: string, args: Part[]): string | undefined {
+  if (SHELLS.has(name)) {
+    const i = args.findIndex((a) => a.text === "-c")
+    const payload = i >= 0 ? args[i + 1] : undefined
+    if (!payload || isDynamicToken(payload, false)) return undefined
+    return unquote(payload.text)
+  }
+  if (name === "find") {
+    const i = args.findIndex((a) => a.text === "-exec" || a.text === "-execdir" || a.text === "-ok")
+    if (i < 0) return undefined
+    const rest = args.slice(i + 1).map((a) => a.text)
+    const end = rest.findIndex((t) => t === ";" || t === "\\;")
+    const sub = (end >= 0 ? rest.slice(0, end) : rest).join(" ").trim()
+    return sub || undefined
+  }
+  if (name === "xargs") {
+    const rest = args
+      .filter((a) => !a.text.startsWith("-"))
+      .map((a) => a.text)
+    return rest.length ? rest.join(" ") : undefined
+  }
+  return undefined
 }
 
 const ask = Effect.fn("BashTool.ask")(function* (ctx: Tool.Context, scan: Scan) {
@@ -655,6 +707,43 @@ export const BashTool = Tool.define(
       }
 
       return scan
+    })
+
+    // P0-4: recursively classify and spatially scan nested command payloads
+    // (`bash -c '…'`, `find -exec …`, `xargs …`). Each level runs the SAME two
+    // gates as the top level — classifyCommand (capability) and collect
+    // (spatial bound) — so `find . -exec sh -c 'rm -rf /' \;` cannot hide the
+    // destructive write from the spatial check. Depth-capped.
+    const scanNestedCommands = Effect.fn("BashTool.scanNested")(function* (
+      raw: string,
+      ps: boolean,
+      cwd: string,
+      shell: string,
+      depth: number,
+    ): Generator<Effect.Effect<any, any, any>, string | undefined, any> {
+      if (depth > MAX_NESTED_DEPTH) return "nested command payload beyond depth 3"
+      let inner: Node
+      try {
+        inner = yield* parse(raw, ps)
+      } catch {
+        return undefined
+      }
+      const verdict = classifyCommand(inner, raw, ps)
+      if (verdict.blocked) return verdict.reason
+      const scan = yield* collect(inner, cwd, ps, shell)
+      if (scan.destructive.size > 0)
+        return `nested command writes outside the allowed directories: ${Array.from(scan.destructive).join(", ")}`
+      for (const node of commands(inner)) {
+        const tokens = commandTokens(node, ps)
+        if (tokens.length === 0) continue
+        const { name, args, dynamicName } = resolveName(tokens)
+        if (dynamicName || !name) continue
+        const payload = innerPayloadOf(name, args)
+        if (payload === undefined) continue
+        const found = yield* scanNestedCommands(payload, ps, cwd, shell, depth + 1)
+        if (found) return found
+      }
+      return undefined
     })
 
     // Allow list: everything else is dropped, so host credentials never reach
@@ -934,6 +1023,22 @@ export const BashTool = Tool.define(
                     truncated: false,
                   },
                   output: `Blocked: command was classified as dangerous (${verdict.reason}) and was not executed. If you believe this is a false positive, please use a different approach.`,
+                }
+              }
+
+              // P0-4: nested payloads (shell -c / find -exec / xargs) go
+              // through the same capability + spatial gates as the top level.
+              const nestedReason = yield* scanNestedCommands(params.command, ps, cwd, shell, 0)
+              if (nestedReason) {
+                return {
+                  title: params.description,
+                  metadata: {
+                    output: `Blocked: ${nestedReason}`,
+                    exit: 1,
+                    description: params.description,
+                    truncated: false,
+                  },
+                  output: `Blocked: ${nestedReason}. If you believe this is a false positive, please use a different approach.`,
                 }
               }
 

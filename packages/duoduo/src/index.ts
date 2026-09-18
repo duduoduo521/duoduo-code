@@ -109,9 +109,26 @@ const cli = yargs(args)
     process.env.DUODUO = "1"
     process.env.DUODUO_PID = String(process.pid)
 
+    // P2-14 (13-8): redact credentials from argv before logging — `run -p
+    // <password>` otherwise lands in plaintext in the startup log file.
+    const rawArgs = process.argv.slice(2)
+    const redactedArgs: string[] = []
+    for (let i = 0; i < rawArgs.length; i++) {
+      const a = rawArgs[i]!
+      if (a === "--password" || a === "-p") {
+        redactedArgs.push(a, "***")
+        i++
+        continue
+      }
+      if (a.startsWith("--password=")) {
+        redactedArgs.push("--password=***")
+        continue
+      }
+      redactedArgs.push(a)
+    }
     Log.Default.info("duoduocode", {
       version: InstallationVersion,
-      args: process.argv.slice(2),
+      args: redactedArgs,
       process_role: processMetadata.processRole,
       run_id: processMetadata.runID,
     })

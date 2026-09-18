@@ -173,6 +173,9 @@ fn derive_encryption_key(data_dir: &Path) -> [u8; 32] {
         seed.to_vec()
     };
 
+    #[cfg(windows)]
+    restrict_windows_acl(&seed_path);
+
     let hk = Hkdf::<Sha512>::new(
         Some(b"duoduocode-ide-keyring-fallback-v1"),
         format!("{entropy}{:?}", seed).as_bytes(),
@@ -263,8 +266,42 @@ fn fallback_store(id: &str, secret: &str) -> anyhow::Result<()> {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&store_path, std::fs::Permissions::from_mode(0o600));
     }
+    #[cfg(windows)]
+    restrict_windows_acl(&store_path);
 
     Ok(())
+}
+
+/// P2-14 (13-10d): Windows equivalent of the unix 0o600 mode — restrict a
+/// credential file to the current user only (inheritance off, sole grant).
+/// Non-fatal by design: a failure only means the file keeps the (already
+/// user-scoped) profile-directory permissions; the owner is resolved via the
+/// `whoami` binary rather than an environment variable.
+#[cfg(windows)]
+fn restrict_windows_acl(path: &std::path::Path) {
+    let user = crate::platform::silent_command("whoami")
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+    if user.is_empty() {
+        tracing::warn!(path = %path.display(), "Failed to resolve current user for ACL restriction");
+        return;
+    }
+    let grant = format!("{user}:F");
+    let result = crate::platform::silent_command("icacls")
+        .arg(path)
+        .args(["/inheritance:r", "/grant:r", &grant])
+        .output();
+    match result {
+        Ok(out) if out.status.success() => {}
+        Ok(out) => tracing::warn!(
+            path = %path.display(),
+            code = out.status.code(),
+            "icacls ACL restriction failed (non-fatal)"
+        ),
+        Err(e) => tracing::warn!(path = %path.display(), error = %e, "Failed to run icacls (non-fatal)"),
+    }
 }
 
 fn fallback_load(id: &str) -> Option<String> {

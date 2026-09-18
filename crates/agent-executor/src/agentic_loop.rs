@@ -579,11 +579,11 @@ pub(crate) fn recall_memory_tool() -> ToolDefinition {
                         "type": "number",
                         "description": "Maximum number of memory entries to return (default 10)",
                         "default": 10
-                    },
-                    "project_path": {
-                        "type": "string",
-                        "description": "Optional project path to scope the recall to a single project"
                     }
+                    // P1-10: no `project_path` parameter — the server forces
+                    // the executor's project path (dispatch.rs); the scope is
+                    // not the model's choice.
+
                 },
                 "required": ["query"]
             }),
@@ -612,6 +612,18 @@ pub const MAX_TOOL_CONCURRENCY_HARD: usize = 16;
 pub const DEFAULT_TOOL_CONCURRENCY: usize = 4;
 
 const WRITE_TOOL_NAMES: &[&str] = &["edit_file", "write", "apply_patch", "submit_code"];
+
+/// P1-7: parse a tool-call arguments string. Returns Err with a model-facing
+/// message when the JSON is malformed (stream truncation etc.). Callers must
+/// NOT execute the tool on Err — they synthesize an error tool_result instead,
+/// so a corrupted call can never run with silently-empty arguments.
+pub fn parse_tool_arguments(tool_name: &str, raw: &str) -> Result<serde_json::Value, String> {
+    serde_json::from_str(raw).map_err(|e| {
+        format!(
+            "Blocked: arguments for tool '{tool_name}' are not valid JSON ({e}); the call was NOT executed. Re-issue the tool call with complete, valid JSON arguments."
+        )
+    })
+}
 
 /// 读额度预约守卫：进入作用域即占 1 个额度；
 /// 仅当读成功时调用 `commit()` 才保留额度，否则 `Drop` 自动回退。
@@ -1040,6 +1052,13 @@ pub struct AgenticLoopExecutor {
     /// Maximum concurrent subagents a single agent can spawn.
     /// Defaults to 3. Read from LlmConfig.max_concurrent_subagents.
     max_concurrent_subagents: u32,
+    /// P1-8: per-instance budget enforcing [`Self::max_concurrent_subagents`]
+    /// in `execute_task`. Rebuilt by `with_max_concurrent_subagents` so the
+    /// configured value is actually enforced. Per-INSTANCE on purpose: each
+    /// executor bounds its DIRECT children only; every child carries its own
+    /// budget for its own children — levels never share a semaphore, so a
+    /// parent waiting on a child cannot deadlock.
+    task_semaphore: Arc<tokio::sync::Semaphore>,
     /// 单轮工具并发度（可选）。None 时用 `DEFAULT_TOOL_CONCURRENCY`；
     /// 实装时经 `min(用户值, MAX_TOOL_CONCURRENCY_HARD).max(1)` 得到实际并发度。
     /// 语义独立于 `max_concurrent_subagents`（子 agent 数），二者正交。
@@ -1362,6 +1381,7 @@ impl AgenticLoopExecutor {
             session_manager: None,
             task_depth: 0,
             max_concurrent_subagents: 3,
+            task_semaphore: Arc::new(tokio::sync::Semaphore::new(3)),
             tool_concurrency: None,
             permission_rules: None,
             interactive: true,
@@ -1739,6 +1759,10 @@ impl AgenticLoopExecutor {
     /// Set the maximum concurrent subagents a single agent can spawn.
     pub fn with_max_concurrent_subagents(mut self, max: u32) -> Self {
         self.max_concurrent_subagents = max.max(1);
+        // P1-8: rebuild the per-instance budget so the configured value is
+        // actually enforced by `execute_task`.
+        self.task_semaphore =
+            Arc::new(tokio::sync::Semaphore::new(self.max_concurrent_subagents as usize));
         self
     }
 
@@ -3149,6 +3173,18 @@ the task normally.\n\
             ));
         }
 
+        // ── Concurrency budget (P1-8) ──
+        // Enforce the user-configured `max_concurrent_subagents` before the
+        // child session is even created: a queued task must not leave a
+        // session row behind while waiting. The permit is held for the whole
+        // child run (dropped with `_task_permit` at function exit).
+        let _task_permit = self
+            .task_semaphore
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|_| anyhow::anyhow!("task semaphore closed"))?;
+
         // ── Session manager check (if absent, fallback to TS) ──
         let session_manager = self
             .session_manager
@@ -3331,6 +3367,15 @@ the task normally.\n\
         files_read: Arc<std::sync::Mutex<Vec<String>>>,
         read_reservations: Arc<AtomicUsize>,
     ) -> anyhow::Result<String> {
+        // P1-7: a malformed-arguments sentinel (set by the round parser) must
+        // never reach a real tool — synthesize an error tool_result so the
+        // model can re-issue the call with valid JSON.
+        if let Some(raw) = arguments.get("__duoduo_invalid_arguments") {
+            return Ok(format!(
+                "Blocked: arguments for tool '{tool_name}' are not valid JSON; the call was NOT executed. Raw payload: {}. Re-issue the tool call with complete, valid JSON arguments.",
+                raw.as_str().unwrap_or("<binary>")
+            ));
+        }
         let tool_span = tracing::info_span!("tool_execution", tool_name = %tool_name);
         async {
             // ── Unified permission gate (zero-risk: no-op when `permission_rules` is None) ──
@@ -4016,6 +4061,14 @@ the task normally.\n\
                     && WRITE_TOOL_NAMES.contains(&entry.tool_name.as_str())
                 {
                     Ok("[Explore mode is read-only] Write tools (edit_file/write/apply_patch) are not permitted in explore mode. Use read-only tools (read_file, list_dir, grep, bash).".to_string())
+                } else if tool_set == LoopToolSet::Explore
+                    && entry.tool_name == "bash"
+                    && let Some(cmd) = entry.arguments.get("command").and_then(|v| v.as_str())
+                    && let Some(reason) = crate::bash_safety::explore_bash_write_reason(cmd)
+                {
+                    // P1-16: bash reaches the filesystem without a write-tool
+                    // name — hard-block its write forms in Explore too.
+                    Ok(format!("[Explore mode is read-only] Blocked: {reason}"))
                 } else if feature_flags::tool_dedup() {
                     let key = (entry.tool_name.clone(), entry.arguments.clone());
                     if let Some(cached) = dedup_cache.get(&key) {
@@ -4199,9 +4252,19 @@ the task normally.\n\
                     }
                     let fr = fr.clone();
                     let rr = rr.clone();
-                    let r = self
-                        .execute_tool(&entry.tool_name, &entry.arguments, fr, rr)
-                        .await;
+                    // P1-16: Explore bash write forms are hard-blocked in the
+                    // parallel branch too (same gate as the serial branch).
+                    let r = if tool_set == LoopToolSet::Explore
+                        && entry.tool_name == "bash"
+                        && let Some(cmd) = entry.arguments.get("command").and_then(|v| v.as_str())
+                        && let Some(reason) =
+                            crate::bash_safety::explore_bash_write_reason(cmd)
+                    {
+                        Ok(format!("[Explore mode is read-only] Blocked: {reason}"))
+                    } else {
+                        self.execute_tool(&entry.tool_name, &entry.arguments, fr, rr)
+                            .await
+                    };
                     // 首次失败时设标记，令其他桶/同桶后续在检查点处提前跳过。
                     if fail_fast && r.is_err() {
                         error_flag.store(true, Ordering::Release);
@@ -5311,6 +5374,22 @@ the task normally.\n\
             ));
         }
 
+        // 3b. Nested payloads (P0-4): shell `-c` literals and `find -exec` /
+        //     `xargs` sub-commands are full commands — run the capability AND
+        //     spatial gates over every nesting level (depth ≤ 3), mirroring the
+        //     TS `scanNestedCommands`.
+        if let Some(reason) =
+            crate::bash_safety::nested_violation(command, &self.project_path, &allowed)
+        {
+            tracing::warn!(
+                target: "bash_audit",
+                command = %command,
+                reason = %reason,
+                "bash command blocked: nested payload violation"
+            );
+            return Ok(format!("Blocked: {reason}."));
+        }
+
         // 4. Timeout (default 30s, max 120s)
         let timeout = std::time::Duration::from_secs(timeout_secs.unwrap_or(30).min(120));
 
@@ -5626,8 +5705,14 @@ the task normally.\n\
                 // Check if any tool call is submit_code — if so, prioritize it
                 for tc in tool_calls_data {
                     if tc.function.name == "submit_code" {
-                        let arguments: serde_json::Value =
-                            serde_json::from_str(&tc.function.arguments).unwrap_or(json!({}));
+                        // P1-7: malformed arguments must never degrade to an
+                        // empty submission.
+                        let arguments = match parse_tool_arguments("submit_code", &tc.function.arguments) {
+                            Ok(v) => v,
+                            Err(msg) => {
+                                return Ok(LoopRoundResult::CodeSubmitted { content: msg });
+                            }
+                        };
                         let content = arguments
                             .get("content")
                             .and_then(|v| v.as_str())
@@ -5641,8 +5726,15 @@ the task normally.\n\
                 let calls: Vec<ToolCallEntry> = tool_calls_data
                     .iter()
                     .map(|tc| {
-                        let arguments: serde_json::Value =
-                            serde_json::from_str(&tc.function.arguments).unwrap_or(json!({}));
+                        // P1-7: unparseable arguments are wrapped in a sentinel
+                        // object; `execute_tool` refuses to execute anything
+                        // carrying it and synthesizes an error tool_result, so
+                        // a truncated call can never run with empty arguments.
+                        let arguments =
+                            parse_tool_arguments(&tc.function.name, &tc.function.arguments)
+                                .unwrap_or_else(|_| {
+                                    json!({ "__duoduo_invalid_arguments": tc.function.arguments })
+                                });
                         ToolCallEntry {
                             tool_name: tc.function.name.clone(),
                             arguments,

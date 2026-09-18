@@ -777,6 +777,11 @@ export const layer: Layer.Layer<
             Effect.retry(
               SessionRetry.policy({
                 parse,
+                // P2-2: the Rust inner loop already retries every HTTP attempt
+                // 3× with its own backoff; 1 initial + 2 outer retries bounds
+                // the worst case at 9 real requests (was 18) without losing
+                // resilience against transient rate limits.
+                maxAttempts: 2,
                 set: (info) =>
                   status.set(ctx.sessionID, {
                     type: "retry",

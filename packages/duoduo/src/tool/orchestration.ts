@@ -112,6 +112,30 @@ export function ensureWriteAllowedByOrchestration(ctx: Tool.Context, filePath: s
 // @effect-diagnostics-next-line unnecessaryFailYieldableError:off
       return yield* Effect.fail(new DuoduoError({ message: String(`Validation is required before writing ${relPath}. Ask a validator agent to write blackboard validation_result={"status":"passed","files":["${relPath}"],"checkedAt":...}.`), messageZh: String(`写入 ${relPath} 前需要校验。请让校验智能体写入黑板 validation_result={"status":"passed","files":["${relPath}"],"checkedAt":...}.`), cause: undefined }))
     }
+
+    // P1-4 (决策 2b): a cascade failure blocks the write until validation is
+    // re-passed AFTER the failure. `cascade_block` is a dedicated key written
+    // by cascade-blackboard.ts — the LWW `validation_result` alone would let a
+    // concurrent validator's `passed` overwrite the failure and silently
+    // unblock the write. Both sides carry checkedAt, so ordering decides:
+    // block.active iff block.checkedAt > validation.checkedAt (a validation
+    // re-pass with a newer timestamp supersedes the block — no delete needed).
+    const blockRead = yield* Effect.tryPromise({
+      try: () => clients.blackboard.read({ promptId: promptID, key: "cascade_block", agentId: ctx.agent }),
+      catch: () => new DuoduoError({ message: "failed to read cascade_block", messageZh: "读取 cascade_block 失败", cause: undefined }),
+    }).pipe(Effect.catch(() => Effect.succeed(null)))
+    const block = parseJsonObject<ValidationResult>(blockRead?.content)
+    if (
+      block?.status === "failed" &&
+      (block.files ?? []).some((file) => pathMatches(relPath, toWorktreeRel(file)))
+    ) {
+      const blockAt = block.checkedAt ?? 0
+      const passedAt = validation?.checkedAt ?? 0
+      if (blockAt > passedAt) {
+// @effect-diagnostics-next-line unnecessaryFailYieldableError:off
+        return yield* Effect.fail(new DuoduoError({ message: String(`Cascade verification failed for ${relPath} at ${new Date(blockAt).toISOString()} and has not been re-validated since. Ask a validator agent to re-check and write blackboard validation_result={"status":"passed","files":["${relPath}"],"checkedAt":...}.`), messageZh: String(`${relPath} 的级联校验于 ${new Date(blockAt).toISOString()} 失败且此后未重新校验通过。请让校验智能体复查并写入黑板 validation_result={"status":"passed","files":["${relPath}"],"checkedAt":...}.`), cause: undefined }))
+      }
+    }
   })
 }
 

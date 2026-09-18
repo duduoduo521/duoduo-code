@@ -31,12 +31,60 @@ async function pullGears(url: string): Promise<string[]> {
   return AppRuntime.runPromise(Discovery.Service.use((disc) => disc.pull(url)))
 }
 
-// Copy a Discovery-cached dir into the local gear store (idempotent).
+// Copy a Discovery-cached dir into the local gear store.
+// P1-12: rm-then-cp left the store broken when cp failed mid-way (old version
+// already deleted, new one partially copied). Stage into a tmp dir first, then
+// swap atomically; on Windows the rename to an existing dir fails, so rm the
+// old one immediately before the rename (tiny window) with bounded retries.
 async function installFromCacheDir(cacheDir: string, name: string): Promise<string> {
   const dest = path.join(GEAR_STORE, name)
-  await fs.rm(dest, { recursive: true, force: true })
-  await fs.cp(cacheDir, dest, { recursive: true })
+  const tmp = `${dest}.tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+  await fs.cp(cacheDir, tmp, { recursive: true })
+  try {
+    await fs.rm(dest, { recursive: true, force: true })
+    let renamed = false
+    for (let attempt = 0; attempt < 3 && !renamed; attempt++) {
+      try {
+        await fs.rename(tmp, dest)
+        renamed = true
+      } catch (e) {
+        if (attempt === 2) throw e
+        await new Promise((r) => setTimeout(r, 200))
+      }
+    }
+  } catch (e) {
+    // Preserve the staged copy for diagnosis instead of leaving nothing.
+    const broken = `${dest}.broken-${Date.now()}`
+    await fs.rename(tmp, broken).catch(() => {})
+    throw new Error(
+      `Gear install failed during final swap; the partially-installed copy was preserved at ${broken}: ${e instanceof Error ? e.message : String(e)}`,
+    )
+  }
   return dest
+}
+
+// P1-12: remove a gear from the local store. The gear's MCP servers are
+// loaded from `<GEAR_STORE>/<name>/tools/mcp.json` at sidecar load, so
+// deleting the directory fully removes the gear (nothing else is persisted:
+// gear install writes no plugin-config entries, npm packages, or metadata).
+async function uninstallGear(name: string): Promise<boolean> {
+  const dest = path.join(GEAR_STORE, name)
+  if (!(await Filesystem.exists(dest))) return false
+  await fs.rm(dest, { recursive: true, force: true })
+  // Best-effort: drop stale tmp/broken artifacts from interrupted installs.
+  for (const suffix of [".tmp-", ".broken-"]) {
+    try {
+      const entries = await fs.readdir(GEAR_STORE, { withFileTypes: true })
+      for (const e of entries) {
+        if (e.isDirectory() && e.name.startsWith(`${name}${suffix}`)) {
+          await fs.rm(path.join(GEAR_STORE, e.name), { recursive: true, force: true })
+        }
+      }
+    } catch {
+      // best-effort only
+    }
+  }
+  return true
 }
 
 async function listInstalled(): Promise<string[]> {
@@ -158,6 +206,42 @@ const GearInstallCommand = cmd({
             prompts.outro("Done")
             return
           }
+          // P0-6②: informed consent before the pack lands in the store —
+          // show the file list and, if present, the command the gear's
+          // tools/mcp.json will execute. The gear's MCP tools are spawned
+          // when the sidecar loads, so consent must happen at install time.
+          const files: string[] = []
+          const walk = async (dir: string): Promise<void> => {
+            for (const e of await fs.readdir(dir, { withFileTypes: true })) {
+              const full = path.join(dir, e.name)
+              if (e.isDirectory()) await walk(full)
+              else files.push(path.relative(match, full))
+            }
+          }
+          await walk(match)
+          let commandNote = "(no tools/mcp.json — no command execution)"
+          const mcpJsonPath = path.join(match, "tools", "mcp.json")
+          if (await Filesystem.exists(mcpJsonPath)) {
+            try {
+              const raw = JSON.parse(await fs.readFile(mcpJsonPath, "utf8")) as Record<string, unknown>
+              commandNote =
+                raw.kind === "stdio" && typeof raw.command === "string"
+                  ? `command: ${raw.command}${Array.isArray(raw.args) ? " " + raw.args.join(" ") : ""}`
+                  : raw.kind === "sse" && typeof raw.url === "string"
+                    ? `url: ${raw.url}`
+                    : "(unrecognized tools/mcp.json)"
+            } catch {
+              commandNote = "(invalid tools/mcp.json)"
+            }
+          }
+          prompts.log.info(`Files:\n  ${files.join("\n  ")}`)
+          prompts.log.info(commandNote)
+          const ok = await prompts.confirm({ message: "Install this gear?" })
+          if (prompts.isCancel(ok) || !ok) {
+            spinner.stop("Install cancelled")
+            prompts.outro("Done")
+            return
+          }
           spinner.start(`Installing ${name} ...`)
           const dest = await installFromCacheDir(match, name)
           spinner.stop(`Installed ${name}`)
@@ -168,6 +252,44 @@ const GearInstallCommand = cmd({
           prompts.log.error(error instanceof Error ? error.message : String(error))
           prompts.outro("Done")
         }
+      },
+    })
+  },
+})
+
+const GearUninstallCommand = cmd({
+  command: "uninstall <name>",
+  aliases: ["remove", "rm"],
+  describe: "uninstall a locally installed 智械 gear <name>",
+  builder: (yargs) =>
+    yargs.positional("name", {
+      type: "string",
+      describe: "gear name (as shown by `duoduo gear list`)",
+      demandOption: true,
+    }),
+  async handler(args) {
+    await Instance.provide({
+      directory: process.cwd(),
+      async fn() {
+        const name = args.name
+        if (!name) {
+          prompts.log.error("usage: duoduo gear uninstall <name>")
+          return
+        }
+        UI.empty()
+        prompts.intro(`Uninstall 智械: ${name}`)
+        try {
+          await ensureStore()
+          const removed = await uninstallGear(name)
+          if (removed) {
+            prompts.log.success(`Gear uninstalled: ${name}`)
+          } else {
+            prompts.log.warn(`Gear "${name}" is not installed`)
+          }
+        } catch (error) {
+          prompts.log.error(error instanceof Error ? error.message : String(error))
+        }
+        prompts.outro("Done")
       },
     })
   },
@@ -250,6 +372,7 @@ export const GearCommand = cmd({
       .command(GearSearchCommand)
       .command(GearListCommand)
       .command(GearInstallCommand)
+      .command(GearUninstallCommand)
       .command(GearCreateCommand)
       .demandCommand(),
   async handler() {},

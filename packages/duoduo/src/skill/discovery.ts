@@ -50,6 +50,23 @@ interface NormalizedEntry {
   marker: string
 }
 
+// P0-6: registry-supplied names/paths are UNTRUSTED input (index.json comes
+// from a remote registry). Reject anything that could escape the cache dir —
+// absolute paths, Windows drive letters, ".." segments — before it reaches
+// path.join/download.
+const SAFE_ENTRY_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
+
+function isSafeEntryName(name: string): boolean {
+  return SAFE_ENTRY_NAME.test(name)
+}
+
+function isSafeRelPath(p: string): boolean {
+  if (p.length === 0) return false
+  const n = p.replaceAll("\\", "/")
+  if (n.startsWith("/") || /^[A-Za-z]:/.test(n)) return false
+  return !n.split("/").some((seg) => seg === "..")
+}
+
 export interface Interface {
   readonly pull: (url: string) => Effect.Effect<string[], unknown, unknown>
 }
@@ -141,7 +158,20 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | Path.Pat
         const normalized: NormalizedEntry[] = []
         if (data.entries && data.entries.length > 0) {
           for (const gear of data.entries) {
-            const files = gear.files && gear.files.length > 0 ? [...gear.files] : ["manifest.toml", "instructions.md"]
+            if (!isSafeEntryName(gear.name)) {
+              log.warn("gear entry has unsafe name, skipped", { url: index, name: gear.name })
+              continue
+            }
+            const rawFiles = gear.files && gear.files.length > 0 ? [...gear.files] : ["manifest.toml", "instructions.md"]
+            const files = rawFiles.filter((f) => {
+              if (isSafeRelPath(f)) return true
+              log.warn("gear file path unsafe, skipped", { url: index, gear: gear.name, file: f })
+              return false
+            })
+            if (files.length === 0) {
+              log.warn("gear entry has no safe files, skipped", { url: index, name: gear.name })
+              continue
+            }
             // A gear is valid if it ships a manifest.toml (智械 marker) — otherwise
             // it degrades to an instructions-only pack keyed on instructions.md.
             const marker = files.includes("manifest.toml")
@@ -153,11 +183,24 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | Path.Pat
           }
         } else if (data.skills && data.skills.length > 0) {
           for (const skill of data.skills) {
+            if (!isSafeEntryName(skill.name)) {
+              log.warn("skill entry has unsafe name, skipped", { url: index, name: skill.name })
+              continue
+            }
             if (!skill.files.includes("SKILL.md")) {
               log.warn("skill entry missing SKILL.md", { url: index, skill: skill.name })
               continue
             }
-            normalized.push({ name: skill.name, dir: skill.name, files: [...skill.files], marker: "SKILL.md" })
+            const files = skill.files.filter((f) => {
+              if (isSafeRelPath(f)) return true
+              log.warn("skill file path unsafe, skipped", { url: index, skill: skill.name, file: f })
+              return false
+            })
+            if (!files.includes("SKILL.md")) {
+              log.warn("skill entry lost SKILL.md after path check, skipped", { url: index, skill: skill.name })
+              continue
+            }
+            normalized.push({ name: skill.name, dir: skill.name, files, marker: "SKILL.md" })
           }
         }
 

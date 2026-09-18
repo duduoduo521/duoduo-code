@@ -41,16 +41,32 @@ export const ErrorMiddleware: ErrorHandler = (err, c) => {
     return c.json(new NamedError.Unknown({ message: err.message }).toObject(), { status: 400 })
   }
   if (err instanceof HTTPException) return err.getResponse()
-  const message = err instanceof Error && err.stack ? err.stack : err.toString()
+  // P2-14 (13-9): never leak an internal stack trace in the response body —
+  // any unclassified error is reachable by local web pages (CORS-reflecting
+  // loopback origin). The full error object is already written to the server
+  // log above; the client only needs the message.
+  const message = err instanceof Error && err.message ? err.message : String(err)
   return c.json(new NamedError.Unknown({ message }).toObject(), {
     status: 500,
   })
 }
 
 export const AuthMiddleware: MiddlewareHandler = async (c, next) => {
-  // Allow CORS preflight requests to succeed without auth.
-  // Browser clients sending Authorization headers will preflight with OPTIONS.
-  if (c.req.method === "OPTIONS") return next()
+  // P2-14 (13-10a): allow CORS preflight to bypass auth ONLY for origins the
+  // CORS layer would accept anyway — loopback dev UIs or the configured app
+  // host. The old unconditional `OPTIONS → next()` let any local web page
+  // probe the API preflight-free. Unknown origins fall through to normal
+  // auth (no behavior change when no password is configured).
+  if (c.req.method === "OPTIONS") {
+    const origin = c.req.header("origin") ?? ""
+    if (
+      origin === "" ||
+      /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin) ||
+      (typeof APP_CORS_HOST === "string" && APP_CORS_HOST.length > 0 && origin.endsWith(APP_CORS_HOST))
+    ) {
+      return next()
+    }
+  }
   const password = Flag.DUODUO_SERVER_PASSWORD
   if (!password) return next()
   const username = Flag.DUODUO_SERVER_USERNAME ?? "duoduo"

@@ -29,26 +29,19 @@ declare const DUODUO_LIBC: string | undefined
 const log = Log.create({ service: "file.watcher" })
 const SUBSCRIBE_TIMEOUT_MS = 10_000
 
-// Extensions that should trigger KG incremental sync.
+// Extensions that should trigger KG incremental sync. P2-9 (6-1): MUST stay
+// identical to the Rust full-index whitelist `SUPPORTED_EXTENSIONS` in
+// crates/knowledge-graph-store/src/indexer.rs — any extension the full index
+// knows about but this set omits would go stale in the graph after every
+// incremental edit until the next full re-index.
 const KG_SOURCE_EXTENSIONS = new Set([
-  "rs",
-  "ts",
-  "tsx",
-  "js",
-  "jsx",
-  "py",
-  "go",
-  "java",
-  "c",
-  "h",
-  "cpp",
-  "cs",
-  "rb",
-  "php",
-  "swift",
-  "kt",
-  "scala",
-  "lua",
+  "rs", "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "go", "java", "c", "h",
+  "cpp", "cc", "cxx", "hpp", "hh", "hxx", "cs", "rb", "php", "swift", "kt",
+  "kts", "scala", "lua", "zig",
+  // OPT-17 扩展：标记/契约/脚本语言（正则兜底）
+  "html", "htm", "css", "scss", "less", "sql", "sh", "bash",
+  // OPT-17 扩展：需 tree-sitter grammar 的语言
+  "dart", "ex", "exs", "vue", "svelte", "proto", "graphql", "gql",
 ])
 
 export const Event = {
@@ -404,6 +397,16 @@ export const layer = Layer.effect(
               ...cfgIgnores,
               ...protecteds(Instance.directory),
             ])
+          } else {
+            // P2-9 (6-3): KG incremental sync rides on these file events.
+            // With the experimental native watcher off, fall back to the
+            // stable polling path so event delivery (and KG updates) continue
+            // instead of silently stopping.
+            yield* poll(Instance.directory, [
+              ...FileIgnore.PATTERNS,
+              ...cfgIgnores,
+              ...protecteds(Instance.directory),
+            ]).pipe(Effect.catchCause(pollFailed(Instance.directory)))
           }
 
           if (Instance.project.vcs === "git") {

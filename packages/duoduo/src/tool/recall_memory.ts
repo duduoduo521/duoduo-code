@@ -1,6 +1,7 @@
 import { Effect } from "effect"
 import z from "zod"
 import * as Tool from "./tool"
+import { Instance } from "@/project/instance"
 import { createSmartLayerClients } from "@/smart-layer"
 import type { MemorySearchResult } from "@/smart-layer/memory"
 
@@ -37,7 +38,8 @@ const parameters = z.object({
     .string()
     .describe("Natural-language description of what to recall (e.g. 'how we fixed the auth timeout')"),
   top_k: z.number().int().positive().optional().default(10).describe("Maximum number of memory entries to return"),
-  project_path: z.string().optional().describe("Optional project path to scope the recall to a single project"),
+  // P1-10: no `project_path` parameter — the project scope is a server-side
+  // fact (the executor's project path), not a model choice.
 })
 
 type Args = z.infer<typeof parameters>
@@ -83,9 +85,11 @@ export const RecallMemoryTool = Tool.define(
           }
 
           // `null` marks an unreachable/failing service so it can be told apart
-          // from a successful search that simply found nothing.
+          // from a successful search that simply found nothing. P1-10: the
+          // project scope is Instance.directory — never a model-supplied value
+          // (a missing scope searches across ALL projects on the Rust side).
           const entries: MemorySearchResult[] | null = yield* Effect.tryPromise(() =>
-            clients.memory.search(args.query, topK, undefined, undefined, args.project_path),
+            clients.memory.search(args.query, topK, undefined, undefined, Instance.directory),
           ).pipe(Effect.catch(() => Effect.succeed(null)))
 
           if (entries === null) {

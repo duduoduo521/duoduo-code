@@ -579,7 +579,12 @@ async fn schedule(
     let context_builder_for_sb = context_builder.clone();
     let prompt_for_sb = prompt.clone();
     let pp_for_sb = project_path.clone();
-    let assembled_result = tokio::task::spawn_blocking(move || {
+    // P2-11: bound the blocking assembly at 25s (fixed value, below the TS
+    // client's 30s abort). Timeout maps to Err → the existing warn branch
+    // below degrades to a context-free prompt instead of awaiting forever.
+    let assembled_result = tokio::time::timeout(
+        std::time::Duration::from_secs(25),
+        tokio::task::spawn_blocking(move || {
         if pp_for_sb.is_some() {
             context_builder_for_sb.assemble_with_project(
                 &prompt_for_sb,
@@ -589,8 +594,10 @@ async fn schedule(
         } else {
             context_builder_for_sb.assemble(&prompt_for_sb, budget)
         }
-    })
-    .await?;
+    }),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("memory context assembly timed out (25s)"))??;
     match assembled_result {
         Ok(assembled) => {
             if !assembled.assembled_context.is_empty() {
@@ -2142,10 +2149,12 @@ fn extract_text_from_parts(parts: &[session_manager::message_store::PartRow]) ->
                     texts.push(t.text);
                 }
             }
-            duo_types::PartData::Reasoning(r)
-                if !r.text.is_empty() => {
-                    texts.push(r.text);
-                }
+            // P1-3: ReasoningPart is deliberately NOT re-fed into the model
+            // context. Reasoning models re-derive thinking each turn; replaying
+            // old reasoning content re-bills it as input tokens every request
+            // (and it is not a structured `reasoning_content` field, so
+            // providers ignore its semantics). The reasoning UI keeps reading
+            // persisted parts — only this request-construction path changes.
             _ => {}
         }
     }
@@ -2820,6 +2829,10 @@ async fn run_loop_handler(
     let model_spawn = model.clone();
     let config_provider = effective_provider.clone();
     let max_retry_spawn = config.max_retry_attempts;
+    // [LLM-05/P1-1] Configured fallback models for the main run loop's LLM
+    // calls (chat_stream and sub-agents already had them; the main loop was
+    // the only caller without degradation).
+    let fallback_models_spawn: Vec<String> = config.fallback_models.clone().unwrap_or_default();
     let req_messages = req.messages.clone();
     let tools_for_spawn = tools_from_ts.clone();
     let _permission_rules_for_spawn = permission_rules.clone();
@@ -3036,6 +3049,16 @@ async fn run_loop_handler(
         // [LLM-05] Plumb the configured fallback model list so the loop (and its
         // sub-agents) can degrade to a backup model when the primary is unavailable.
         .with_fallback_models(config.fallback_models.clone().unwrap_or_default())
+        // P1-8: wire the user-configured sub-agent concurrency into this run's
+        // executor — `execute_task` enforces it via its per-instance semaphore.
+        // Clamped to 1..10, consistent with the settings UI input range.
+        .with_max_concurrent_subagents(
+            config
+                .max_concurrent_subagents
+                .unwrap_or(3)
+                .clamp(1, 10)
+                .max(1),
+        )
         .with_phase(req.initial_phase.unwrap_or(duo_types::renderer::TaskPhase::Execute))
         .with_temperature(req.temperature);
 
@@ -4467,12 +4490,17 @@ async fn run_loop_handler(
                 session_id: session_id_spawn.clone(),
                 step: steps,
             });
-            let stream_result = agent_executor::call_llm_stream(
+            // P1-1: cross-model fallback — when the primary model is
+            // unavailable (network unreachable / retryable errors exhausted),
+            // degrade to the configured backup models instead of killing the
+            // user's session. Mirrors chat_stream (:940) and sub-agents.
+            let stream_result = agent_executor::call_llm_stream_with_fallback(
                 &api_url_spawn,
                 api_key_spawn.as_deref(),
                 &llm_req,
                 cancel_token.clone(),
                 max_retry_spawn.unwrap_or(timeouts::MAX_ATTEMPTS),
+                &fallback_models_spawn,
             )
             .await;
 
@@ -4655,8 +4683,19 @@ async fn run_loop_handler(
                         session_id: session_id_spawn.clone(),
                         message: "context_overflow".to_string(),
                     });
+                    // Overflow discards the partial round entirely: compaction
+                    // will retry the whole turn, so persisting partial text
+                    // would only duplicate it into the retried context.
+                    break;
                 }
-                break;
+                // P1-2: non-overflow mid-stream failure — fall through to the
+                // DB-write block below, which persists the accumulated output
+                // as finish="error". Partial tool_calls are dropped first:
+                // they have no results and would corrupt the next request.
+                tool_calls.clear();
+                if full_text.is_empty() && reasoning_text.is_empty() {
+                    break;
+                }
             }
 
             // ── Write assistant message to DB ──
@@ -4688,6 +4727,10 @@ async fn run_loop_handler(
                             "name": "MessageAbortedError",
                             "data": { "message": "Interrupted by user" },
                         }))
+                    } else if let Some(err_msg) = last_error.as_ref() {
+                        // P1-2: the partial output below is persisted with the
+                        // failure reason attached (finish="error").
+                        Some(serde_json::json!({ "message": err_msg }))
                     } else {
                         None
                     },
@@ -4785,6 +4828,9 @@ async fn run_loop_handler(
                     variant: None,
                     finish: if cancelled_now {
                         Some("cancelled".to_string())
+                    } else if last_error.is_some() {
+                        // P1-2: salvaged partial output from a failed round.
+                        Some("error".to_string())
                     } else if tool_calls.is_empty() {
                         Some("stop".to_string())
                     } else {
@@ -4810,6 +4856,7 @@ async fn run_loop_handler(
             let auto_close = tool_calls.is_empty()
                 && !force_text_only
                 && !round_truncated
+                && last_error.is_none()
                 && completion_decision(confirm_rounds, &full_text) == CompletionDecision::AutoClose;
 
             // ── Write deferred StepStartPart (now that assistant message exists) ──
@@ -4936,6 +4983,14 @@ async fn run_loop_handler(
                 agent_executor::LlmMessage::assistant_with_tool_calls(&full_text, &tool_calls)
             };
             messages.push(assistant_msg);
+
+            // P1-2: a salvaged error round terminates the turn here — the
+            // partial output is persisted (finish="error"); completion /
+            // truncation-resume / doom-loop logic must not run on a failed
+            // round.
+            if last_error.is_some() {
+                break;
+            }
 
             // ── Truncation resume (plan B) ──
             // If the provider cut the response off (finish_reason length/max_tokens),
@@ -5408,8 +5463,20 @@ async fn run_loop_handler(
                 if is_write_tool {
                     ctx_dirty = true;
                 }
-                let args: serde_json::Value = serde_json::from_str(&tc.function.arguments)
-                    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+                // P1-7: malformed arguments never reach execution — synthesize
+                // an error tool_result (same shape as the expand_call branch
+                // above) so the model can re-issue the call with valid JSON.
+                let args: serde_json::Value =
+                    match agent_executor::agentic_loop::parse_tool_arguments(
+                        &tool_name,
+                        &tc.function.arguments,
+                    ) {
+                        Ok(v) => v,
+                        Err(result) => {
+                            messages.push(agent_executor::LlmMessage::tool_result(&tc.id, &result));
+                            continue;
+                        }
+                    };
 
                 // Insert pending tool part into DB
                 let part_id = new_part_id();
@@ -5504,6 +5571,98 @@ async fn run_loop_handler(
                     call_id: call_id.clone(),
                     part_id: part_id.clone(),
                 });
+
+                // ── Decision D (main-loop single write path) ──
+                // Write-class tools are ALWAYS delegated to TS, so cascade QA,
+                // permission.ask and snapshot tracking apply to every write.
+                // Sub-agent loops (G7 parallel / task children) keep their
+                // native blackboard-locked write path — they have no TS
+                // delegation channel and this registry is shared with them.
+                // Must sit BEFORE the permission check and the PARALLEL_SAFE
+                // batch collection, or the batch path would execute writes
+                // natively and bypass the cascade.
+                if matches!(
+                    tool_name.as_str(),
+                    "edit_file" | "edit" | "write" | "write_file" | "apply_patch"
+                ) {
+                    let offered = tools_for_spawn.as_ref().is_some_and(|defs| {
+                        defs.iter().any(|d| d.function.name == tool_name)
+                    });
+                    if !offered {
+                        // Hallucinated write tool (e.g. apply_patch on a
+                        // non-gpt model): report decisively instead of
+                        // executing natively without cascade or hanging on TS.
+                        let err_now_ms = chrono::Utc::now().timestamp_millis();
+                        let err_input: std::collections::HashMap<String, serde_json::Value> =
+                            serde_json::from_str(&tc.function.arguments).unwrap_or_default();
+                        let err_part = duo_types::PartData::Tool(duo_types::ToolPartData {
+                            base: duo_types::PartBase {
+                                id: part_id.clone(),
+                                session_id: session_id_spawn.clone(),
+                                message_id: assistant_msg_id.clone(),
+                            },
+                            call_id: call_id.clone(),
+                            tool: tool_name.clone(),
+                            state: duo_types::ToolState::Error {
+                                input: err_input,
+                                error: "Unsupported tool in this context".to_string(),
+                                metadata: None,
+                                time: duo_types::ToolTimeCompleted {
+                                    start: err_now_ms as f64,
+                                    end: err_now_ms as f64,
+                                    compacted: None,
+                                },
+                            },
+                            metadata: None,
+                        });
+                        let _ = msg_store.update_part(
+                            &part_id,
+                            &serde_json::to_string(&err_part).unwrap_or_default(),
+                        );
+                        bus.emit(agent_executor::LoopStreamEvent::ToolError {
+                            session_id: session_id_spawn.clone(),
+                            call_id: call_id.clone(),
+                            part_id: part_id.clone(),
+                            error: "Unsupported tool in this context".to_string(),
+                        });
+                        messages.push(agent_executor::LlmMessage::tool_result(
+                            &tc.id,
+                            &format!(
+                                "Error: tool '{}' does not exist in this session's toolset. Use one of the tools provided to you.",
+                                tool_name
+                            ),
+                        ));
+                        continue;
+                    }
+                    tracing::info!(
+                        tool = %tool_name,
+                        "write tool delegated to TS (single write path)"
+                    );
+                    // Transition back to Pending so the TS poll loop can
+                    // detect and execute it (same as the Ask path).
+                    self_transition_part_to_pending(
+                        &msg_store,
+                        &part_id,
+                        &assistant_msg_id,
+                        &session_id_spawn,
+                        &call_id,
+                        &tool_name,
+                        &tc.function.arguments,
+                    );
+                    let registry = state_clone.tool_registry.clone();
+                    let sid = session_id_spawn.clone();
+                    let cid = call_id.clone();
+                    let ct = cancel_token.clone();
+                    delegated_indices.push(tc_idx);
+                    delegated_part_ids.push(part_id.clone());
+                    tool_result_futs.push(Box::pin(async move {
+                        tokio::select! {
+                            result = registry.wait_for_tool_result(&sid, &cid) => result,
+                            _ = ct.cancelled() => anyhow::bail!("cancelled while waiting for tool result"),
+                        }
+                    }));
+                    continue;
+                }
 
                 // ── Unified tool execution: permission check → Rust execute → TS fallback ──
                 // Step 1: Check permission (validation + permission + sandbox)

@@ -24,6 +24,8 @@ import { SkillTool } from "../../tool/skill"
 import { BashTool } from "../../tool/bash"
 import { TodoWriteTool } from "../../tool/todo"
 import { Locale } from "../../util"
+import { Log } from "../../util"
+import { errorMessage } from "../../util/error"
 import { AppRuntime } from "@/effect/app-runtime"
 import { writeStdout } from "../../util/stdio"
 
@@ -601,7 +603,12 @@ export const RunCommand = cmd({
         process.exit(1)
       }
       const looping = loop().catch((e) => {
-        console.error(e)
+        // P2-15: message-only — the old `console.error(e)` dumped the raw
+        // stack to stderr (bypassing the message-only handler used elsewhere)
+        // and polluted the `--format json` pipe when stderr was merged via
+        // 2>&1. Full detail goes to the log file; the user sees one line.
+        Log.Default.error("run loop failed", { error: errorMessage(e) })
+        console.error(`error: ${errorMessage(e)} (check the log file for details)`)
         process.exit(1)
       })
 

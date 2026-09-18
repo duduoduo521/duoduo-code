@@ -12,6 +12,7 @@
 import { Effect, Layer, Context } from "effect"
 import { createSmartLayerClients } from "@/smart-layer"
 import { Log } from "@/util"
+import { Instance } from "@/project/instance"
 import type { MessageV2 } from "./message-v2"
 
 const log = Log.create({ service: "session.completion" })
@@ -102,11 +103,15 @@ export const layer = Layer.effect(
             toolErrors,
           })
 
-          // Extract project path from assistant messages for per-project memory isolation
+          // Extract project path from assistant messages for per-project memory isolation.
+          // P1-10: fall back to the Instance worktree — without a fallback a
+          // missing assistant message leaves `projectPath` undefined, and the
+          // Rust store lands the memory under '' (`OR project_path = ''`),
+          // making it visible from EVERY project.
           const assistantMsg = messages.find(
             (m): m is MessageV2.WithParts & { info: MessageV2.Assistant } => m.info.role === "assistant",
           )
-          const projectPath = assistantMsg?.info.path?.cwd
+          const projectPath = assistantMsg?.info.path?.cwd ?? Instance.directory
 
           // Release project task lock and send notifications in parallel
           // with memory storage — these operations are independent.

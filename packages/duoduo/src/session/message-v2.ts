@@ -925,12 +925,10 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
                   })
                 }
               }
-              if (part.type === "reasoning")
-                assistantMessage.parts.push({
-                  type: "reasoning",
-                  text: part.text,
-                  ...(differentModel ? {} : { providerMetadata: part.metadata }),
-                })
+              // P1-3: reasoning parts are NOT replayed into the model context —
+              // reasoning models re-derive thinking each turn; replaying it
+              // re-bills the text as input tokens on every request. The UI
+              // still reads the persisted part.
             }
             result.push(assistantMessage)
           } else {
@@ -1038,13 +1036,8 @@ export const toModelMessagesEffect = Effect.fnUntraced(function* (
               ...(differentModel ? {} : { callProviderMetadata: providerMeta(part.metadata) }),
             })
         }
-        if (part.type === "reasoning") {
-          assistantMessage.parts.push({
-            type: "reasoning",
-            text: part.text,
-            ...(differentModel ? {} : { providerMetadata: part.metadata }),
-          })
-        }
+        // P1-3: reasoning parts are NOT replayed into the model context (same
+        // rationale as the abort-recovery branch above).
       }
       if (assistantMessage.parts.length > 0) {
         result.push(assistantMessage)

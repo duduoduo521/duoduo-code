@@ -1,5 +1,5 @@
 {
-  "note": "Shared bash hard-block test vectors. Single source of truth for TS (packages/duoduo/src/tool/bash.ts classifyCommand) and Rust (crates/agent-executor/src/bash_safety.rs blocked). 'ts' = verdict of classifyCommand alone, 'rust' = combined verdict of the legacy regex list + semantic overlay. Both columns MUST be identical (bash_safety.rs asserts it). IMPORTANT: these vectors only cover the CLASSIFIER (the capability boundary). The second gate — the spatial boundary (`out_of_bounds_paths` / the destructive-target check in BashTool.collect) — is not exercised here, which is why `rm -rf /` reads 'allow': deleting inside the project is legitimate, and deleting outside it is stopped by the spatial gate, not by the classifier.",
+  "note": "Shared bash hard-block test vectors. Single source of truth for TS (packages/duoduo/src/tool/bash.ts classifyCommand) and Rust (crates/agent-executor/src/bash_safety.rs blocked). 'ts' = verdict of classifyCommand alone, 'rust' = combined verdict of the legacy regex list + semantic overlay. Both columns MUST be identical (bash_safety.rs asserts it). IMPORTANT: these vectors only cover the CLASSIFIER (the capability boundary). The second gate — the spatial boundary (`out_of_bounds_paths` / the destructive-target check in BashTool.collect) — is not exercised here, which is why `rm -rf /` reads 'allow': deleting inside the project is legitimate, and deleting outside it is stopped by the spatial gate, not by the classifier. P0-4 nested-payload recursion (shell -c / find -exec / xargs) is covered by dedicated tests (bash_safety.rs nested tests; test/tool/bash-safety.test.ts nested walk), not by this file — the classifier itself is not recursive.",
   "vectors": [
     { "command": "rm -rf /tmp/x", "ts": "allow", "rust": "allow", "note": "rm has no classifier rule; out-of-project targets are stopped by the spatial gate" },
     { "command": "r m -rf /", "ts": "allow", "rust": "allow", "note": "whitespace-split name still normalizes to rm (same spatial gate)" },
@@ -59,6 +59,12 @@
     { "command": "export PATH=/tmp/bin:$PATH", "ts": "allow", "rust": "allow", "note": "P5 aligned: PATH assignment goes to ask gate (real injection still caught by classify)" },
     { "command": "ls foo 2>&1", "ts": "allow", "rust": "allow", "note": "2>&1 is a plain stderr redirect, not a dangerous one (dangerous redirects are still caught by the REDIRECT rule)" },
     { "command": "find . -name '*.tmp' -delete", "ts": "allow", "rust": "allow", "note": "find -delete has no classifier rule; its search root is stopped by the spatial gate like rm" },
-    { "command": "echo hi 2>&1 > /dev/sda", "ts": "block", "rust": "block", "note": "raw-device redirect is still caught after dropping the 2>&1 pattern" }
+    { "command": "echo hi 2>&1 > /dev/sda", "ts": "block", "rust": "block", "note": "raw-device redirect is still caught after dropping the 2>&1 pattern" },
+
+    { "command": "cat <<EOF\nline\nEOF", "ts": "block", "rust": "block", "note": "P0-3: heredoc body is invisible to the stage scanner" },
+    { "command": "cat <<- 'EOF'\nrm -rf /\nEOF", "ts": "block", "rust": "block", "note": "P0-3: quoted heredoc delimiter" },
+    { "command": "echo $((1 << 2))", "ts": "allow", "rust": "allow", "note": "P0-3: arithmetic left shift is not a heredoc" },
+    { "command": "rm -rf $TARGET", "ts": "block", "rust": "block", "note": "P0-5: destructive command with expanded (hidden) argument" },
+    { "command": "echo $HOME", "ts": "allow", "rust": "allow", "note": "P0-5: non-destructive command with expansion stays at the ask gate" }
   ]
 }

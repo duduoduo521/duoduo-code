@@ -8,7 +8,9 @@ import { MessageV2 } from "../session/message-v2"
 import { Agent } from "../agent/agent"
 import type { SessionPrompt } from "../session/prompt"
 import { Config } from "../config"
-import { Effect } from "effect"
+import { getCascadeQA } from "@/session/cascade-qa-registry"
+import { NotFoundError } from "@/storage"
+import { Cause, Effect } from "effect"
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): void
@@ -80,8 +82,32 @@ export const TaskTool = Tool.define(
 
       const taskID = params.task_id
       const session = taskID
-        ? yield* sessions.get(SessionID.make(taskID)).pipe(Effect.catchCause(() => Effect.void))
+        ? yield* sessions.get(SessionID.make(taskID)).pipe(
+            // P1-9: only "not found" may be swallowed (→ falls through to
+            // create below). Any other failure (DB transient, etc.) must not
+            // silently degrade into creating a brand-new session — that turned
+            // a recoverable resume into silent data forking.
+            Effect.catchCause((c) => {
+              const err = Cause.squash(c)
+              if (NotFoundError.isInstance(err)) return Effect.void
+              return Effect.die(err)
+            }),
+          )
         : undefined
+
+      // P1-9: a resumable task session must belong to THIS parent session.
+      // Without this check, a hallucinated or injected task_id resumes and
+      // writes into any other session the model can name.
+      if (session && session.parentID !== ctx.sessionID) {
+// @effect-diagnostics-next-line unnecessaryFailYieldableError:off
+        return yield* Effect.fail(
+          new DuoduoError({
+            message: `task_id ${params.task_id} does not belong to this session`,
+            messageZh: `task_id ${params.task_id} 不属于当前会话`,
+            cause: undefined,
+          }),
+        )
+      }
       const nextSession =
         session ??
         (yield* sessions.create({
@@ -158,6 +184,12 @@ export const TaskTool = Tool.define(
                 providerID: model.providerID,
               },
               agent: next.name,
+              // [P0-2] Sub-sessions inherit the parent's cascade QA state so
+              // "per-session 级联" also covers batch task writes (global
+              // default is read inside getCascadeQA when the parent has no
+              // explicit per-session override — behavior identical to
+              // "inherit global").
+              cascadeQA: getCascadeQA(ctx.sessionID),
               tools: {
                 ...(canTodo ? {} : { todowrite: false }),
                 ...(canTask ? {} : { task: false }),

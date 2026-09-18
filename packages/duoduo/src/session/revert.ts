@@ -10,6 +10,57 @@ import { SessionID, MessageID, PartID } from "./schema"
 import { SessionRunState } from "./run-state"
 import { SessionSummary } from "./summary"
 import { DuoduoError } from "@/util/error"
+import { Instance } from "@/project/instance"
+import { createSmartLayerClients } from "@/smart-layer"
+import { LANGUAGE_EXTENSIONS } from "@/lsp/language"
+import path from "path"
+
+/**
+ * P1-5: after a revert, two auxilliary indexes are now stale relative to the
+ * restored worktree:
+ *  1. the knowledge graph still holds entities from the rolled-back content;
+ *  2. project memory still holds cascade QA verdicts for content that no
+ *     longer exists (a stale "passed" could later suppress a needed check).
+ * KG entries self-heal on the next file change, but we refresh eagerly since
+ * we already know the exact file set (same updateFile entry the watcher uses).
+ * Cascade memory cannot be deleted via the existing search API, so we write a
+ * marker memory that supersedes the invalidated verdicts (marker-not-delete,
+ * per the decision in 缺陷调查.md 10-1).
+ */
+function refreshAuxIndexesAfterRevert(files: string[]) {
+  if (files.length === 0) return
+  const clients = createSmartLayerClients()
+  if (!clients) return
+  const directory = Instance.directory
+  for (const file of files) {
+    void (async () => {
+      try {
+        const abs = path.isAbsolute(file) ? file : path.join(directory, file)
+        const content = await import("fs/promises").then((fs) => fs.readFile(abs, "utf-8"))
+        const rel = path.relative(directory, abs).split(path.sep).join("/")
+        const language = LANGUAGE_EXTENSIONS[path.extname(file)] ?? "plaintext"
+        await clients.graph?.updateFile(rel, content, language, directory)
+      } catch (e) {
+        log.warn("post-revert KG refresh failed (self-heals on next file change)", {
+          file,
+          error: String(e),
+        })
+      }
+    })()
+  }
+  clients.memory
+    ?.store(
+      `Reverted worktree changes affecting ${files.length} file(s): ${files.slice(0, 20).join(", ")}. All prior cascade QA verdicts for these files are INVALIDATED — re-verify before relying on them.`,
+      "episode",
+      {
+        memoryType: "cascade_invalidation",
+        tags: ["cascade", "invalidated"],
+        projectPath: directory,
+        metadata: { files },
+      },
+    )
+    .catch(() => {})
+}
 
 const log = Log.create({ service: "session.revert" })
 
@@ -104,6 +155,21 @@ export const layer = Layer.effect(
       const diffs = yield* summary.computeDiff({ messages: range })
       yield* storage.write(["session_diff", input.sessionID], diffs).pipe(Effect.ignore)
       yield* bus.publish(Session.Event.Diff, { sessionID: input.sessionID, diff: diffs })
+      // P1-5: collect the exact file set whose on-disk content the revert
+      // changed — `patches` carry `files[]` directly; the restore path (when
+      // `rev.snapshot` is set) is covered by parsing `rev.diff` (a git diff
+      // text, `diff --git a/<file> b/<file>` headers). Refresh KG + invalidate
+      // cascade verdicts for them (fire-and-forget, never fails the revert).
+      {
+        const affected = new Set<string>()
+        for (const p of patches) for (const f of p.files) affected.add(f)
+        if (rev.diff) {
+          for (const m of rev.diff.matchAll(/^diff --git a\/(.+?) b\//gm)) {
+            if (m[1]) affected.add(m[1])
+          }
+        }
+        refreshAuxIndexesAfterRevert([...affected])
+      }
       yield* sessions.setRevert({
         sessionID: input.sessionID,
         revert: rev,

@@ -1642,10 +1642,15 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
       const execStart = Date.now()
       const toolResult: string = yield* Effect.gen(function* (): Generator<Effect.Effect<any, any, any>, string, any> {
-        // Try TS-side tool registry
+        // Try TS-side tool registry. Resolve with the session's ACTUAL model
+        // (P0-1): the tool table must match what was advertised for this run —
+        // a hardcoded "default" modelID flipped usePatch off, so a delegated
+        // apply_patch (gpt-* runs) resolved to "not found".
+        const lastInfo = Option.isSome(lastUserMsg) ? lastUserMsg.value.info : undefined
+        const sessionModel = lastInfo?.role === "user" ? lastInfo.model : undefined
         const toolDefs = yield* registry.tools({
-          modelID: ModelID.make("default"),
-          providerID: "default" as ProviderID,
+          modelID: sessionModel?.modelID ?? ModelID.make("default"),
+          providerID: (sessionModel?.providerID ?? "default") as ProviderID,
           agent: (yield* agents.get("code")) ?? { name: "code" },
         })
         const toolDef = toolDefs.find((t) => t.id === toolName)
@@ -1692,6 +1697,24 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         const mcpTools = yield* mcp.tools()
         const mcpTool = mcpTools[toolName]
         if (mcpTool?.execute) {
+          // P1-13: MCP tools previously executed with NO permission.ask — the
+          // permission rules were delivered to the Rust gate (native tools)
+          // but this delegated execution path never consulted them, so any
+          // MCP/Gear tool ran without approval. Ask with the same ruleset the
+          // TS-branch ctx.ask uses; allow-rules short-circuit silently and
+          // unattended/auto-answer modes resolve the prompt without a popup
+          // (decision 3: "allow all commands" stays popup-free).
+          yield* permission
+            .ask({
+              sessionID,
+              permission: "mcp",
+              patterns: [toolName],
+              metadata: { tool: toolName, mcp: true },
+              always: [],
+              tool: { messageID: part.messageID, callID },
+              ruleset: permissionRuleset,
+            })
+            .pipe(Effect.orDie)
 // @effect-diagnostics-next-line preferSchemaOverJson:off
           const args = raw ? (JSON.parse(raw) as Record<string, unknown>) : partInput
           const result = yield* Effect.promise(() =>

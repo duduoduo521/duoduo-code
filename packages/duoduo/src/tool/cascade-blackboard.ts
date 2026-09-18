@@ -19,7 +19,13 @@ export function writeCascadeValidationResult(input: {
         clients.blackboard.write({
           promptId: input.promptID!,
           agentId: "system:cascade",
-          key: "validation_result",
+          // P1-4 (决策 2b): failures go to a DEDICATED key. The gate on
+          // `validation_result` is LWW — a concurrent validator writing
+          // `passed` could silently overwrite this failure and unblock the
+          // write. With a separate key, the gate (orchestration.ts) compares
+          // checkedAt ordering: a validation `passed` written AFTER this
+          // failure supersedes the block; until then the write stays blocked.
+          key: "cascade_block",
           value: JSON.stringify(
             {
               status: "failed",
@@ -34,7 +40,7 @@ export function writeCascadeValidationResult(input: {
             2,
           ),
         }),
-      catch: () => new DuoduoError({ message: "failed to write cascade validation_result", messageZh: "写入 cascade validation_result 失败", cause: undefined }),
+      catch: () => new DuoduoError({ message: "failed to write cascade_block", messageZh: "写入 cascade_block 失败", cause: undefined }),
     }).pipe(Effect.catch(() => Effect.void))
   })
 }

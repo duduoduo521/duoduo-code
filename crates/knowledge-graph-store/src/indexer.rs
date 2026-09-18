@@ -2518,6 +2518,15 @@ impl ProjectIndexer {
             return Ok((0, 0));
         }
 
+        // P2-9 (6-2): the 1MB cap previously only guarded the full-collection
+        // path — `update_file` fed arbitrarily large content straight into
+        // AST extraction. Apply the same budget here (skipped files stay
+        // consistent with the full index, which skips them too).
+        if content.len() as u64 > MAX_FILE_SIZE_BYTES {
+            debug!(path = file_path, size = content.len(), "Skipping oversized file indexing (>1MB)");
+            return Ok((0, 0));
+        }
+
         // Detect language
         let language = match ast_engine::parser::detect_language(file_path) {
             Some(lang) => lang,
@@ -3824,8 +3833,24 @@ impl ProjectIndexer {
         // Remove old entities for this file
         self.remove_file_internal(file_path, project_id)?;
 
-        // Re-index
-        self.index_file_content(file_path, content, project_id)
+        // Re-index. P2-9 (6-4): this is a delete-then-index sequence — if
+        // indexing fails, the file's graph data is GONE (the old entries were
+        // already removed). Retry once; on persistent failure log an ERROR
+        // marked `kg_file_stale` so operators can spot the inconsistency (the
+        // graph self-heals on the file's next change).
+        match self.index_file_content(file_path, content, project_id) {
+            Ok(result) => Ok(result),
+            Err(first) => {
+                warn!(path = file_path, error = %first, "kg_file_stale: re-index failed after remove; retrying once");
+                match self.index_file_content(file_path, content, project_id) {
+                    Ok(result) => Ok(result),
+                    Err(second) => {
+                        tracing::error!(path = file_path, error = %second, "kg_file_stale: graph data for this file was removed and could not be rebuilt — it will self-heal on the file's next modification");
+                        Err(second)
+                    }
+                }
+            }
+        }
     }
 
     pub fn update_file_with_snapshot(

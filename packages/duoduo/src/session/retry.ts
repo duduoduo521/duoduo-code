@@ -9,7 +9,11 @@ export type Err = ReturnType<NamedError["toObject"]>
 export const RETRY_INITIAL_DELAY = 2000
 export const RETRY_BACKOFF_FACTOR = 2
 export const RETRY_MAX_DELAY_NO_HEADERS = 30_000 // 30 seconds
-export const RETRY_MAX_DELAY = 2_147_483_647 // max 32-bit signed integer for setTimeout
+// P2-2: hard cap on any single retry delay (retry-after hints included).
+// The old value was 2^31-1 ms (~24.86 days) — a gateway sending an absurd
+// `Retry-After` would schedule a retry for weeks later. 60s covers real
+// rate-limit windows; beyond that the error surfaces to the user instead.
+export const RETRY_MAX_DELAY = 60_000
 export const RETRY_MAX_ATTEMPTS = 5 // Maximum retry attempts before giving up
 
 function cap(ms: number) {

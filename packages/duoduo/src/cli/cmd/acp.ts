@@ -57,8 +57,21 @@ export const AcpCommand = cmd({
 
       log.info("setup connection")
       process.stdin.resume()
+      // P2-15: SIGINT/SIGTERM handling, same shape as serve.ts — Ctrl+C must
+      // reach the graceful `server.stop()` in the finally block instead of
+      // hard-killing the process. SIGTERM is POSIX-only (Windows never
+      // delivers it); registering it there is harmless and covers service
+      // managers sending SIGTERM.
+      const shutdown = () => {
+        outputController?.close()
+        resolveStdinEnd()
+      }
+      process.on("SIGINT", shutdown)
+      process.on("SIGTERM", shutdown)
+      let resolveStdinEnd!: () => void
       try {
         await new Promise<void>((resolve, reject) => {
+          resolveStdinEnd = resolve
           process.stdin.on("end", () => {
             outputController?.close()
             resolve()
@@ -69,6 +82,8 @@ export const AcpCommand = cmd({
           })
         })
       } finally {
+        process.off("SIGINT", shutdown)
+        process.off("SIGTERM", shutdown)
         await server.stop()
       }
     })

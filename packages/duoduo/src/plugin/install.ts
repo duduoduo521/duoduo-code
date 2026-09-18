@@ -126,7 +126,7 @@ type SafetyResult =
  * This runs after `resolve` but before the package is written into plugin
  * config, so a compromised/malicious package is never activated.
  */
-async function verifyPluginSafety(
+export async function verifyPluginSafety(
   spec: string,
   target: string,
   dep: InstallDeps,
@@ -136,6 +136,20 @@ async function verifyPluginSafety(
   const root = info?.isDirectory() ? filePath : path.dirname(filePath)
 
   const checksum = await checksumPackage(root).catch(() => "")
+
+  // P1-14: fail closed when the caller DECLARED an integrity to verify but the
+  // checksum could not be computed (IO error, unreadable files). The old
+  // `expectedIntegrity && checksum` short-circuit silently skipped verification
+  // in exactly the situation verification matters.
+  if (dep.expectedIntegrity && !checksum) {
+    return {
+      ok: false,
+      code: "integrity_mismatch",
+      error: new Error(
+        `Plugin "${spec}" integrity could not be verified: checksum computation failed. Install refused (fail-closed).`,
+      ),
+    }
+  }
 
   if (dep.expectedIntegrity && checksum) {
     if (checksum.toLowerCase() !== dep.expectedIntegrity.toLowerCase()) {

@@ -46,7 +46,14 @@ async fn context_structured_handler(
     let graph = state.graph.clone();
     let debug = req.debug;
 
-    let result = tokio::task::spawn_blocking(move || -> anyhow::Result<serde_json::Value> {
+    let result = tokio::time::timeout(
+        // P2-11: bound the whole pipeline at 25s (fixed value, deliberately
+        // below the TS client's 30s abort so the server answers BEFORE the
+        // client times out — the caller degrades to context-free instead of
+        // hanging). The blocking task cannot be cancelled; the timeout only
+        // releases the awaiting handler.
+        std::time::Duration::from_secs(25),
+        tokio::task::spawn_blocking(move || -> anyhow::Result<serde_json::Value> {
         // 1. StructuredAssembler: 4-Phase file scan → HashMap<String, NarrativeElement>
         let assembler = context_builder::StructuredAssembler::new(memory, Some(graph));
         let elements = assembler.assemble(
@@ -96,7 +103,9 @@ async fn context_structured_handler(
             Ok(serde_json::json!({ "rendered": rendered }))
         }
     })
-    .await??;
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!("structured context assembly timed out (25s)"))???;
 
     Ok(Json(result))
 }

@@ -48,6 +48,14 @@ export class CascadeReport extends Schema.Class<CascadeReport>("CascadeReport")(
       reason: Schema.String,
     }),
   ),
+  /**
+   * P2-12: `true` when the deterministic checks could NOT run (no LSP server,
+   * LSP failure or timeout). The report still passes (fail-open — blocking
+   * writes on infrastructure failures would stall unattended runs), but the
+   * `passed` verdict is explicitly UNVERIFIED instead of silently looking like
+   * a real check that found nothing.
+   */
+  unchecked: Schema.optional(Schema.Boolean),
 }) {}
 
 export * as Types from "./types"

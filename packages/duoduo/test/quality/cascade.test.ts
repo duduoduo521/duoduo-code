@@ -85,7 +85,11 @@ describe("quality.cascade (testEffect)", () => {
       const result = yield* svc.verify(defaultInput)
       expect(result.passed).toBe(true)
       expect(result.fixed).toBe(false)
-      expect(result.issues).toEqual([])
+      // P2-12: the verdict is now explicitly UNVERIFIED — fail-open but
+      // visible instead of silently looking like a passing check.
+      expect(result.unchecked).toBe(true)
+      expect(result.issues).toHaveLength(1)
+      expect(result.issues[0]?.severity).toBe("info")
       expect(result.retries).toBe(0)
       expect(result.content).toBe(defaultInput.content)
     }),
@@ -111,7 +115,9 @@ describe("quality.cascade", () => {
     const result = await runVerify(defaultInput)
     expect(result.passed).toBe(true)
     expect(result.fixed).toBe(false)
-    expect(result.issues).toEqual([])
+    // P2-12: fail-open but explicitly marked unchecked + an info issue.
+    expect(result.unchecked).toBe(true)
+    expect(result.issues).toHaveLength(1)
     expect(result.retries).toBe(0)
     expect(result.content).toBe(defaultInput.content)
   })
@@ -323,8 +329,11 @@ describe("quality.cascade", () => {
     })
 
     const result = await runVerify(defaultInput, lsp)
+    // P2-12: fail-open but explicitly UNVERIFIED, with a visible info issue.
     expect(result.passed).toBe(true)
-    expect(result.issues).toEqual([])
+    expect(result.unchecked).toBe(true)
+    expect(result.issues).toHaveLength(1)
+    expect(result.issues[0]?.severity).toBe("info")
   })
 
   test("returns passed when touchFile fails", async () => {
@@ -335,7 +344,8 @@ describe("quality.cascade", () => {
 
     const result = await runVerify(defaultInput, lsp)
     expect(result.passed).toBe(true)
-    expect(result.issues).toEqual([])
+    expect(result.unchecked).toBe(true)
+    expect(result.issues).toHaveLength(1)
   })
 
   test("returns passed when both touchFile and diagnostics fail", async () => {
@@ -346,7 +356,8 @@ describe("quality.cascade", () => {
 
     const result = await runVerify(defaultInput, lsp)
     expect(result.passed).toBe(true)
-    expect(result.issues).toEqual([])
+    expect(result.unchecked).toBe(true)
+    expect(result.issues).toHaveLength(1)
   })
 
   // ─── Edge cases ───

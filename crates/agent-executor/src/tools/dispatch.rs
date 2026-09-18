@@ -780,10 +780,12 @@ pub fn recall_memory_handler<'a>(
             .or_else(|| args.get("limit").and_then(|v| v.as_u64()))
             .map(|n| (n as usize).clamp(1, 50))
             .unwrap_or(10);
-        let project_path = args
-            .get("project_path")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
+        // P1-10: the project scope is a server-side fact, not a model choice —
+        // force the executor's project path (same pattern as glob_handler).
+        // A model-supplied or omitted project_path previously scoped the query
+        // to '' (see store.rs `OR project_path = ''`), which returns memories
+        // from ALL projects.
+        let project_path = Some(exec.project_path().to_string_lossy().to_string());
         let req = MemorySearchRequest {
             query: query.clone(),
             limit,

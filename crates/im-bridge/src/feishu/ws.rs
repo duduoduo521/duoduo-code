@@ -230,6 +230,27 @@ pub(crate) enum DataFrameOutcome {
     ParseError,
 }
 
+/// P1-16: sliding-window counter for parse errors (60s window, threshold 10).
+/// Both values are fixed behaviors, not configuration: they only govern log
+/// escalation, never control flow.
+static PARSE_ERROR_WINDOW: LazyLock<Mutex<(std::time::Instant, u32)>> =
+    LazyLock::new(|| Mutex::new((std::time::Instant::now(), 0)));
+
+fn parse_error_tick() {
+    let mut w = duo_utils::sync::lock(&PARSE_ERROR_WINDOW);
+    if w.0.elapsed() > std::time::Duration::from_secs(60) {
+        *w = (std::time::Instant::now(), 0);
+    }
+    w.1 += 1;
+    if w.1 == 10 {
+        tracing::error!(
+            count = w.1,
+            window_secs = 60,
+            "Feishu parse errors spiking: ≥10 unparseable frames in the last minute (each acked to stop redelivery) — check provider payload format"
+        );
+    }
+}
+
 /// Resolve a data frame into a parsed event, handling single/multi-frame
 /// reassembly and JSON parse errors. Pure core of `handle_data_frame`.
 pub(crate) fn resolve_data_frame(
@@ -578,6 +599,33 @@ impl EventDedup {
     fn evict_older_than(&mut self, cutoff: Instant) {
         self.seen.retain(|_, created| *created > cutoff);
     }
+}
+
+/// P1-11: per-chat serialization gates. Every spawned business handler takes
+/// its chat's mutex before running, so messages in one chat execute strictly
+/// in arrival order (previously they raced: a later message could finish
+/// first) and a burst cannot interleave prompt launches within a chat.
+/// Cross-chat remains fully parallel. Entries are tiny Arc'd mutexes, lazily
+/// created; the map grows with distinct chats seen (bounded by usage).
+static CHAT_SERIAL: LazyLock<Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Best-effort chat-id extraction for per-chat serialization / panic replies.
+/// Covers the payload shapes Feishu sends for IM events and card callbacks.
+fn extract_chat_id(event: &serde_json::Value) -> Option<String> {
+    for ptr in [
+        "/event/chat_id",
+        "/event/message/chat_id",
+        "/event/open_chat_id",
+        "/chat_id",
+    ] {
+        if let Some(v) = event.pointer(ptr).and_then(|v| v.as_str())
+            && !v.is_empty()
+        {
+            return Some(v.to_string());
+        }
+    }
+    None
 }
 
 /// Extract the Feishu event id used for deduplication.
@@ -1041,8 +1089,16 @@ impl FeishuWsClient {
             }
             DataFrameOutcome::Pending => None,
             DataFrameOutcome::ParseError => {
-                tracing::error!(message_id = %message_id, "Failed to parse event JSON");
-                None
+                // P1-16: ACK the frame even though it cannot be parsed. A
+                // malformed frame is permanently malformed — withholding the
+                // ACK makes Feishu redeliver it forever (at-least-once), which
+                // produces an infinite error loop instead of losing one
+                // unprocessable frame. A sliding-window counter escalates to a
+                // single aggregated error when parse failures spike (bad
+                // provider payload / protocol drift).
+                parse_error_tick();
+                tracing::error!(message_id = %message_id, "Failed to parse event JSON (acked to stop redelivery)");
+                Some(build_ack_frame(frame, 0))
             }
             DataFrameOutcome::Event(event) => {
                 tracing::debug!(
@@ -1081,12 +1137,52 @@ impl FeishuWsClient {
                 let is_card_action = is_card_action_event(&event);
                 let dispatcher = self.dispatcher.clone();
                 tokio::spawn(async move {
-                    if is_card_action {
-                        dispatcher.handle_card_action(&event).await;
-                    } else if msg_type == MESSAGE_TYPE_EVENT {
-                        dispatcher.handle_event(&event).await;
-                    } else {
-                        dispatcher.handle_card_action(&event).await;
+                    // P1-11: serialize per chat before running the business
+                    // handler (order guarantee within a chat), then isolate
+                    // panics — a panicking handler used to vanish after the
+                    // ACK was already sent, silently dropping the message.
+                    let chat_key = extract_chat_id(&event)
+                        .unwrap_or_else(|| format!("frame-{}", message_id));
+                    let gate = {
+                        let mut m = duo_utils::sync::lock(&CHAT_SERIAL);
+                        m.entry(chat_key.clone())
+                            .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+                            .clone()
+                    };
+                    let _gate = gate.lock().await;
+                    let chat_for_panic = chat_key.clone();
+                    let api_for_panic = dispatcher.api.clone();
+                    let inner = tokio::spawn(async move {
+                        if is_card_action {
+                            dispatcher.handle_card_action(&event).await;
+                        } else if msg_type == MESSAGE_TYPE_EVENT {
+                            dispatcher.handle_event(&event).await;
+                        } else {
+                            dispatcher.handle_card_action(&event).await;
+                        }
+                    });
+                    match inner.await {
+                        Ok(()) => {}
+                        Err(join_err) if join_err.is_panic() => {
+                            tracing::error!(
+                                chat_id = %chat_for_panic,
+                                panic = %join_err,
+                                "Feishu event handler panicked (event was already acked) — notifying the chat"
+                            );
+                            if let Err(send_err) = api_for_panic
+                                .send_text_message(
+                                    &chat_for_panic,
+                                    "⚠️ 处理该消息时发生内部错误，请重试。",
+                                )
+                                .await
+                            {
+                                tracing::warn!(
+                                    error = %send_err,
+                                    "Failed to deliver the panic notice to the chat"
+                                );
+                            }
+                        }
+                        Err(_) => {}
                     }
                 });
                 // ACK immediately after successful decode, mirroring the

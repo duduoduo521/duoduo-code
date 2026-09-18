@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { readFileSync } from "fs"
-import { classifyCommand, parse } from "../../src/tool/bash"
+import { classifyCommand, commandTokens, innerPayloadOf, parse } from "../../src/tool/bash"
 
 // Shared vector file — the SAME file is consumed by the Rust side
 // (crates/agent-executor/src/bash_safety.rs shared_vectors_parity test), so
@@ -44,5 +44,63 @@ describe("bash-safety shared vectors (TS classifyCommand)", () => {
     for (const vector of fixture.vectors) {
       expect(vector.ts).toBe(vector.rust)
     }
+  })
+})
+
+// P0-4: nested payload recursion (shell -c / find -exec / xargs). Mirrors the
+// walk in BashTool.scanNestedCommands minus the spatial gate (that part is
+// pinned by the Rust nested_violation tests + the E2E self-heal scenario).
+describe("P0-4 nested payload recursion (capability level)", () => {
+  const walk = async (raw: string, depth = 0): Promise<string | undefined> => {
+    if (depth > 3) return "nested command payload beyond depth 3"
+    const root = await runPromise(parse(raw, false))
+    const verdict = classifyCommand(root, raw, false)
+    if (verdict.blocked) return verdict.reason
+    for (const node of root.descendantsOfType("command")) {
+      const tokens = commandTokens(node, false)
+      if (tokens.length === 0) continue
+      const { name, args, dynamicName } = (() => {
+        // resolveName is module-internal; re-derive the name from the first
+        // word and pass the rest as args — sufficient for these payloads.
+        const words = tokens.map((t) => t.text)
+        return { name: words[0] ?? "", args: tokens.slice(1), dynamicName: false }
+      })()
+      const payload = innerPayloadOf(name, args)
+      if (payload === undefined) continue
+      const found = await walk(payload, depth + 1)
+      if (found) return found
+    }
+    return undefined
+  }
+
+  test("nested -c payload with sudo is blocked", async () => {
+    expect(await walk("bash -c 'sudo apt-get install curl'")).toBeDefined()
+  })
+
+  test("find -exec sh -c nested destructive is blocked", async () => {
+    expect(await walk("find . -type f -exec sh -c 'sudo rm -rf /' \\;")).toBeDefined()
+  })
+
+  test("benign nested payload is allowed", async () => {
+    expect(await walk("bash -c 'echo hi'")).toBeUndefined()
+    expect(await walk("find . -exec grep TODO {} \\;")).toBeUndefined()
+  })
+
+  test("innerPayloadOf extracts -c literal payload", () => {
+    expect(
+      innerPayloadOf("bash", [
+        { type: "word", text: "-c" },
+        { type: "raw_string", text: "'sudo rm -rf /'" },
+      ]),
+    ).toBe("sudo rm -rf /")
+  })
+
+  test("innerPayloadOf ignores dynamic -c payload (blocked by classifier)", () => {
+    expect(
+      innerPayloadOf("bash", [
+        { type: "word", text: "-c" },
+        { type: "simple_expansion", text: "$V" },
+      ]),
+    ).toBeUndefined()
   })
 })

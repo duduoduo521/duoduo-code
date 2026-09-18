@@ -45,12 +45,46 @@ fn mask_api_key(key: &str) -> String {
 /// unit-tested with two bare `Mutex<HashMap>`s, without constructing an
 /// `AppState` (which requires heavy async subsystem initialization).
 fn reset_conversation_context(
-    pending_prompts: &std::sync::Mutex<std::collections::HashMap<String, String>>,
+    pending_prompts: &std::sync::Mutex<std::collections::HashMap<String, std::collections::VecDeque<String>>>,
     sessions: &std::sync::Mutex<std::collections::HashMap<String, String>>,
     chat_id: &str,
 ) -> Option<String> {
     duo_utils::sync::lock(pending_prompts).remove(chat_id);
     duo_utils::sync::lock(sessions).remove(chat_id)
+}
+
+/// Max parked prompts per chat (P1-15). Fixed value: beyond this the OLDEST
+/// parked prompt is dropped, keeping the newest context relevant.
+const PENDING_PROMPTS_CAP: usize = 5;
+
+/// Park a prompt for a chat (queue, bounded — drops the oldest when full).
+fn feishu_pending_prompt_push(chat_id: &str, prompt: &str) {
+    let mut map = feishu_state().pending_prompts.lock_recover();
+    let q = map.entry(chat_id.to_string()).or_default();
+    if q.len() >= PENDING_PROMPTS_CAP {
+        q.pop_front();
+    }
+    q.push_back(prompt.to_string());
+}
+
+/// Pop the oldest parked prompt for a chat.
+fn feishu_pending_prompt_pop(chat_id: &str) -> Option<String> {
+    feishu_state()
+        .pending_prompts
+        .lock_recover()
+        .get_mut(chat_id)
+        .and_then(|q| q.pop_front())
+}
+
+/// Put a popped prompt back at the FRONT (only used when launching it failed,
+/// so it is retried by the next selection/consume — never silently lost).
+fn feishu_pending_prompt_unpop(chat_id: &str, prompt: &str) {
+    let mut map = feishu_state().pending_prompts.lock_recover();
+    let q = map.entry(chat_id.to_string()).or_default();
+    q.push_front(prompt.to_string());
+    while q.len() > PENDING_PROMPTS_CAP {
+        q.pop_back();
+    }
 }
 
 struct FeishuProjectToken {
@@ -161,8 +195,11 @@ struct FeishuState {
     project_bindings: Mutex<HashMap<String, String>>,
     /// Project-selection token -> token metadata.
     project_tokens: Mutex<HashMap<String, FeishuProjectToken>>,
-    /// chat_id -> prompt parked while awaiting project / model selection.
-    pending_prompts: Mutex<HashMap<String, String>>,
+    /// chat_id -> prompts parked while awaiting project / model selection.
+    /// P1-15: a VecDeque (bounded) instead of a single slot — the old
+    /// unconditional `insert` silently discarded every parked message but the
+    /// latest one.
+    pending_prompts: Mutex<HashMap<String, std::collections::VecDeque<String>>>,
     /// chat_id -> duoduo session id.
     sessions: Mutex<HashMap<String, String>>,
 }
@@ -296,9 +333,7 @@ fn display_path(path: &str) -> String {
                 .cloned()
         };
         let Some(project_path) = project_path else {
-            feishu_state().pending_prompts
-                .lock_recover()
-                .insert(chat_id.to_string(), prompt.to_string());
+            feishu_pending_prompt_push(chat_id, prompt);
             return Ok(format!(
                 "📁 {}，我已暂存这条消息，请在下方的项目选择卡片中点选。",
                 im_bridge::bridge::NEEDS_PROJECT_MARKER
@@ -313,9 +348,7 @@ fn display_path(path: &str) -> String {
         // the task can start.
         let model = client.get_global_model().await.ok().flatten();
         let Some(model) = model else {
-            feishu_state().pending_prompts
-                .lock_recover()
-                .insert(chat_id.to_string(), prompt.to_string());
+            feishu_pending_prompt_push(chat_id, prompt);
             return Ok(format!(
                 "🤖 {}，我已暂存这条消息，请在下方的模型选择卡片中点选。",
                 im_bridge::bridge::NEEDS_MODEL_MARKER
@@ -338,16 +371,48 @@ fn display_path(path: &str) -> String {
         // exactly like typing into the AI input box — they land in the same
         // ongoing conversation and render as normal user bubbles.
         let title = format!("飞书会话·{}", Self::display_path(&project_path));
+        // P1-15: atomic per-chat claim. The old check-then-get spanned an
+        // await (create_session), so two messages more than 5s apart could
+        // BOTH pass the rate gate and create two sessions for one chat —
+        // splitting the conversation. The first claimer inserts a placeholder
+        // under the same lock that reads, creates, then publishes the real id;
+        // the loser polls briefly for the published id.
+        const CREATING: &str = "__creating__";
         let mut session_id = {
-            let existing = duo_utils::sync::lock(&feishu_state().sessions).get(chat_id).cloned();
-            match existing {
-                Some(sid) => sid,
-                None => {
-                    let sid = client.create_session(&project_path, &title).await?;
-                    feishu_state().sessions
-                        .lock_recover()
-                        .insert(chat_id.to_string(), sid.clone());
-                    sid
+            let state = feishu_state();
+            loop {
+                let claim = {
+                    let mut m = duo_utils::sync::lock(&state.sessions);
+                    match m.get(chat_id).cloned() {
+                        Some(sid) if sid == CREATING => None,
+                        Some(sid) => Some(sid),
+                        None => {
+                            m.insert(chat_id.to_string(), CREATING.to_string());
+                            Some(String::new())
+                        }
+                    }
+                };
+                match claim {
+                    Some(sid) if sid.is_empty() => {
+                        match client.create_session(&project_path, &title).await {
+                            Ok(sid) => {
+                                duo_utils::sync::lock(&state.sessions)
+                                    .insert(chat_id.to_string(), sid.clone());
+                                break sid;
+                            }
+                            Err(e) => {
+                                // Release the placeholder so a later message
+                                // can claim and retry — never leave it stuck.
+                                let mut m = duo_utils::sync::lock(&state.sessions);
+                                if m.get(chat_id).map(|s| s == CREATING).unwrap_or(false) {
+                                    m.remove(chat_id);
+                                }
+                                return Err(e);
+                            }
+                        }
+                    }
+                    Some(sid) => break sid,
+                    None => tokio::time::sleep(Duration::from_millis(300)).await,
                 }
             }
         };
@@ -436,11 +501,32 @@ fn display_path(path: &str) -> String {
                             "Feishu reply fetch returned empty; skipping push"
                         );
                     }
+                    // P1-15: a failed fetch used to abandon the reply after a
+                    // single warn — the agent's answer was permanently lost to
+                    // the chat. Retry 3×5s (fixed values, same cadence as the
+                    // pending-ACK timer) before giving up with an error log.
                     Err(e) => {
-                        tracing::warn!(
-                            error = %e,
+                        let mut last = e;
+                        for attempt in 0..3u32 {
+                            tokio::time::sleep(Duration::from_secs(5)).await;
+                            match client_for_reply.fetch_assistant_reply(&session_id_reply).await {
+                                Ok(reply) if !reply.trim().is_empty() => {
+                                    let _ = sse_tx.send(SseEvent::FeishuReply {
+                                        chat_id: chat_id_reply,
+                                        text: reply,
+                                    });
+                                    last = anyhow::anyhow!("recovered");
+                                    break;
+                                }
+                                Ok(_) => break,
+                                Err(e2) => last = e2,
+                            }
+                            let _ = attempt;
+                        }
+                        tracing::error!(
+                            error = %last,
                             session_id = %session_id_reply,
-                            "Failed to fetch Feishu reply"
+                            "Failed to fetch Feishu reply after 3 retries — agent answer not delivered"
                         );
                     }
                 }
@@ -479,9 +565,7 @@ impl SmartLayerBridge for SmartLayerBridgeImpl {
             return self.start_feishu_prompt(chat_id, text).await;
         }
 
-        feishu_state().pending_prompts
-            .lock_recover()
-            .insert(chat_id.to_string(), text.to_string());
+        feishu_pending_prompt_push(chat_id, text);
         Ok(format!(
             "📁 {}。我已暂存这条消息，请在下方的项目选择卡片中点选。",
             im_bridge::bridge::NEEDS_PROJECT_MARKER
@@ -512,14 +596,27 @@ impl SmartLayerBridge for SmartLayerBridgeImpl {
             .await
             .insert(path.to_string(), chat_id.to_string());
 
-        let pending_prompt = { duo_utils::sync::lock(&feishu_state().pending_prompts).remove(chat_id) };
+        let pending_prompt = feishu_pending_prompt_pop(chat_id);
         if let Some(prompt) = pending_prompt {
-            let started = self.start_feishu_prompt(chat_id, &prompt).await?;
-            Ok(format!(
-                "✅ 已绑定项目: {}\n\n{}",
-                Self::display_path(path),
-                started
-            ))
+            // P1-15: on launch failure, put the parked prompt back at the
+            // front of the queue — the next selection / message retries it
+            // instead of silently losing it (the token was already consumed
+            // and the binding already written, so a hard `?` lost it forever).
+            match self.start_feishu_prompt(chat_id, &prompt).await {
+                Ok(started) => Ok(format!(
+                    "✅ 已绑定项目: {}\n\n{}",
+                    Self::display_path(path),
+                    started
+                )),
+                Err(e) => {
+                    feishu_pending_prompt_unpop(chat_id, &prompt);
+                    Ok(format!(
+                        "✅ 已绑定项目: {}\n\n⚠️ 暂存任务启动失败（已保留，稍后重试）：{}",
+                        Self::display_path(path),
+                        e
+                    ))
+                }
+            }
         } else {
             Ok(format!("✅ 已绑定项目: {}", Self::display_path(path)))
         }
@@ -556,6 +653,30 @@ impl SmartLayerBridge for SmartLayerBridgeImpl {
                 self.handle_feishu_project(&action.chat_id, None).await
             }
             CardActionPlan::SelectModel { provider, model_id } => {
+                // P0-7: whitelist check — the (provider, model) pair must come
+                // from the same source the model-selection card was built from
+                // (`/provider` list for the bound project). A stale or forged
+                // card value is rejected BEFORE it can overwrite the shared
+                // global config (an invalid model would break every session's
+                // LLM requests with no auto-recovery).
+                let available = match self.list_models(&action.chat_id).await {
+                    Ok(m) => m,
+                    Err(e) => {
+                        return Ok(format!(
+                            "⚠️ 无法校验模型选择（{}）。请确认已绑定项目后重试。",
+                            e
+                        ));
+                    }
+                };
+                let valid = available
+                    .iter()
+                    .any(|m| m.provider_id == provider && m.model_id == model_id);
+                if !valid {
+                    return Ok(format!(
+                        "⚠️ 模型不可用: {}/{} 不在当前可选列表中，请重新点击「切换模型」选择。",
+                        provider, model_id
+                    ));
+                }
                 // Persist the selection into the shared global config (single
                 // source of truth for desktop + every Feishu chat). Await the
                 // write so the task launch below reads the freshly-saved model
@@ -568,21 +689,25 @@ impl SmartLayerBridge for SmartLayerBridgeImpl {
                     .map_err(|e| anyhow::anyhow!("保存模型选择失败: {}", e))?;
 
                 // If a prompt was stashed while waiting for the model, run it now.
-                let pending = feishu_state()
-                    .pending_prompts
-                    .lock_recover()
-                    .remove(&action.chat_id);
+                let pending = feishu_pending_prompt_pop(&action.chat_id);
                 let reply = match pending {
-                    Some(prompt) => match self.start_feishu_prompt(&action.chat_id, &prompt).await {
-                        Ok(started) => format!(
-                            "✅ 已选择模型: {}/{}\n\n{}",
-                            provider, model_id, started
-                        ),
-                        Err(e) => format!(
-                            "✅ 已选择模型: {}/{}\n\n⚠️ 任务启动失败: {}",
-                            provider, model_id, e
-                        ),
-                    },
+                    Some(prompt) => {
+                        // P1-15: on launch failure, put the parked prompt back
+                        // at the front of the queue instead of losing it.
+                        match self.start_feishu_prompt(&action.chat_id, &prompt).await {
+                            Ok(started) => format!(
+                                "✅ 已选择模型: {}/{}\n\n{}",
+                                provider, model_id, started
+                            ),
+                            Err(e) => {
+                                feishu_pending_prompt_unpop(&action.chat_id, &prompt);
+                                format!(
+                                    "✅ 已选择模型: {}/{}\n\n⚠️ 暂存任务启动失败（已保留，稍后重试）：{}",
+                                    provider, model_id, e
+                                )
+                            }
+                        }
+                    }
                     None => format!(
                         "✅ 已选择模型: {}/{}。直接发送消息即可执行任务。",
                         provider, model_id
@@ -1020,7 +1145,7 @@ mod tests {
     /// Builds two bare `Mutex<HashMap>`s standing in for the per-chat state
     /// without any `AppState` (which is impossible to construct in a unit test).
     fn fresh_state() -> (
-        std::sync::Mutex<std::collections::HashMap<String, String>>,
+        std::sync::Mutex<std::collections::HashMap<String, std::collections::VecDeque<String>>>,
         std::sync::Mutex<std::collections::HashMap<String, String>>,
     ) {
         (
@@ -1029,10 +1154,19 @@ mod tests {
         )
     }
 
+    /// P1-15: test helper — park a prompt through the same bounded-queue
+    /// semantics the production code uses.
+    fn park(pending: &std::sync::Mutex<std::collections::HashMap<String, std::collections::VecDeque<String>>>, chat: &str, prompt: &str) {
+        duo_utils::sync::lock(pending)
+            .entry(chat.to_string())
+            .or_default()
+            .push_back(prompt.to_string());
+    }
+
     #[test]
     fn reset_conversation_context_clears_pending_and_session() {
         let (pending, sessions) = fresh_state();
-        duo_utils::sync::lock(&pending).insert("chatA".into(), "帮我重构登录".into());
+        park(&pending, "chatA", "帮我重构登录");
         duo_utils::sync::lock(&sessions).insert("chatA".into(), "sess-123".into());
 
         let old = reset_conversation_context(
@@ -1051,8 +1185,8 @@ mod tests {
     #[test]
     fn reset_conversation_context_is_targeted_per_chat() {
         let (pending, sessions) = fresh_state();
-        duo_utils::sync::lock(&pending).insert("chatA".into(), "A 的待办".into());
-        duo_utils::sync::lock(&pending).insert("chatB".into(), "B 的待办".into());
+        park(&pending, "chatA", "A 的待办");
+        park(&pending, "chatB", "B 的待办");
         duo_utils::sync::lock(&sessions).insert("chatA".into(), "sess-A".into());
         duo_utils::sync::lock(&sessions).insert("chatB".into(), "sess-B".into());
 
@@ -1068,7 +1202,9 @@ mod tests {
         assert!(duo_utils::sync::lock(&sessions).get("chatA").is_none());
         // chatB untouched
         assert_eq!(
-            duo_utils::sync::lock(&pending).get("chatB").map(|s| s.as_str()),
+            duo_utils::sync::lock(&pending)
+                .get("chatB")
+                .and_then(|q| q.front().map(|s| s.as_str())),
             Some("B 的待办")
         );
         assert_eq!(
@@ -1098,10 +1234,7 @@ mod tests {
     #[test]
     fn reset_conversation_context_drops_abandoned_prompt() {
         let (pending, sessions) = fresh_state();
-        pending
-            .lock()
-            .unwrap()
-            .insert("chatA".into(), "用户已放弃的旧指令".into());
+        park(&pending, "chatA", "用户已放弃的旧指令");
 
         reset_conversation_context(&pending, &sessions, "chatA");
 

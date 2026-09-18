@@ -443,6 +443,16 @@ fn is_retryable_error(status: reqwest::StatusCode, body: &[u8]) -> bool {
 
     // 4xx (non-429/408): only retry for specific transient quota/overload patterns
     // that some providers incorrectly return as 4xx.
+    //
+    // P2-1: HTTP 402 Payment Required is a HARD billing failure (OpenAI's
+    // insufficient_quota arrives as 402). Retrying burns requests with zero
+    // chance of success. Transient quota providers (Xunfei) surface their
+    // retryable quota errors via 429 or body keywords on non-402 codes, which
+    // are unaffected by this gate.
+    if code == 402 {
+        return false;
+    }
+
     if let Ok(text) = std::str::from_utf8(body) {
         let lower = text.to_lowercase();
         // Context window overflow errors — these are deterministic: the same
@@ -822,7 +832,21 @@ pub async fn call_llm(
                         .to_string()
                 });
 
-            let error_msg = format!("LLM API returned HTTP {}: {}", status.as_u16(), detail);
+            // P2-1: status-specific user guidance — a bare status code gives
+            // the user no path to fix the underlying problem (bad key vs.
+            // empty balance vs. no model access). The detail is appended so
+            // no information is lost.
+            let status_num = status.as_u16();
+            let guidance = match status_num {
+                401 => "——API Key 无效或已过期，请在设置中重新配置",
+                402 => "——账户余额不足，请前往服务商充值",
+                403 => "——无权访问该模型，请检查 Key 权限或模型名称",
+                _ => "",
+            };
+            let error_msg = format!(
+                "LLM API returned HTTP {}{}: {}",
+                status_num, guidance, detail
+            );
 
             // Capture the upstream Retry-After hint (if any) on every retryable
             // HTTP response. Only overwrite when present, so a later 5xx without a
@@ -830,7 +854,10 @@ pub async fn call_llm(
             // the most recent explicit hint).
             if is_retryable_error(status, &body_bytes)
                 && let Some(delay) = retry_after {
-                    last_retry_after_ms = Some(delay);
+                    // P2-2: cap the hint handed to TS at 60s — an absurd
+                    // upstream `Retry-After` must not schedule a days-later
+                    // retry on the TS side (which caps at the same value).
+                    last_retry_after_ms = Some(delay.min(60_000));
                 }
 
             let (budget, delay) = retry_policy(Some(status), attempt, max_attempts, retry_after);
@@ -1010,8 +1037,13 @@ fn should_fallback_model(err: &unified_error::UnifiedError) -> bool {
             if *retryable {
                 return true;
             }
-            matches!(status_code, Some(404))
-                || (matches!(status_code, Some(400) | Some(403)) && lower.contains("model"))
+            // P2-3: a 400/403 from the PRIMARY model often means THAT model
+            // cannot serve the request (e.g. tools incompatible, no access) —
+            // exactly the situation a fallback exists for. The old
+            // message-contains-"model" requirement broke the chain for the
+            // most common fallback trigger. cancelled / context overflow are
+            // still excluded above (switching models cannot fix either).
+            matches!(status_code, Some(400) | Some(403) | Some(404))
         }
         _ => false,
     }
@@ -1306,7 +1338,8 @@ pub async fn call_llm_stream(
                 // the most recent explicit hint).
                 if is_retryable_error(status, &body_bytes)
                     && let Some(delay) = retry_after {
-                        last_retry_after_ms = Some(delay);
+                        // P2-2: cap at 60s (see the call_llm twin comment).
+                        last_retry_after_ms = Some(delay.min(60_000));
                     }
 
                 let (budget, delay) = retry_policy(Some(status), attempt, max_attempts, retry_after);
@@ -1760,7 +1793,16 @@ fn spawn_sse_parser(
 
         // If we reach here, the stream ended without a `[DONE]` marker.
         // This can happen with some providers. Emit Done with whatever we have.
-        if !total_content.is_empty() || !buffer.is_empty() {
+        // P1-6 (3-1): the guard must also cover tool-calls-only and
+        // reasoning-only streams — a tool_calls-only response leaves
+        // `total_content` AND `buffer` empty, which previously discarded the
+        // accumulated tool calls + finish_reason and failed the whole round.
+        if !total_content.is_empty()
+            || !buffer.is_empty()
+            || !total_reasoning_content.is_empty()
+            || tool_calls_accumulator.iter().any(|t| t.is_some())
+            || finish_reason.is_some()
+        {
             // Process any remaining lines in the buffer (in case the last line didn't end with \n)
             // This is a best-effort attempt to parse any remaining data lines.
             for line in buffer.lines() {

@@ -94,9 +94,15 @@ test.describe("Prompt send via UI (real-time SSE path)", () => {
 
     // The markdown pipeline (marked + shiki + DOMPurify) renders the ts code
     // block inside the dedicated wrapper, with a copy affordance.
+    //
+    // Scope to the FIRST markdown block: the run loop's completion-confirm
+    // flow appends extra text parts (confirm replies + the synthetic
+    // auto-close note) to the same assistant message, so the assistant
+    // content legitimately contains several [data-component="markdown"]
+    // elements — a bare locator here trips Playwright strict mode.
     const assistant = getLastAssistantMessage(page)
     await expect(assistant).toBeVisible({ timeout: 60_000 })
-    const markdown = assistant.locator('[data-component="markdown"]')
+    const markdown = assistant.locator('[data-component="markdown"]').first()
     await expect(markdown).toBeVisible({ timeout: 60_000 })
     await expect(markdown.locator('[data-component="markdown-code"]')).toBeVisible()
     await expect(markdown.locator("pre code")).toContainText("function add")

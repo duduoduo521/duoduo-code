@@ -16,6 +16,16 @@
  *
  * All other `#` lines (comments) are stripped from the response.
  *
+ * Placeholder substitution (applied to the fixture body before serving):
+ *   `{{EXTERNAL_PATH}}`    — an absolute path OUTSIDE the e2e project
+ *                            directory on the CURRENT platform (Windows:
+ *                            `C:/Windows/System32/drivers/etc/hosts`;
+ *                            POSIX: `/etc/hosts`). A path hardcoded for one
+ *                            platform is relative on the others (e.g.
+ *                            `C:/...` resolves INSIDE the project on
+ *                            Linux/macOS), which silently breaks specs that
+ *                            depend on the external-directory permission ask.
+ *
  * IMPLEMENTATION NOTE (2026-09-17): this server intentionally does NOT use
  * the `fetch`-style `Request`/`Response`/`ReadableStream` abstraction. The
  * previous implementation built a `Response` around a `ReadableStream` and
@@ -100,6 +110,11 @@ async function extractScenario(req: IncomingMessage, rawBody: Buffer): Promise<s
  * optional per-event delay; `truncate-after` destroys the socket mid-stream
  * to simulate a dropped connection.
  */
+/** Platform-appropriate absolute path outside any e2e project directory. */
+function externalPath(): string {
+  return process.platform === "win32" ? "C:/Windows/System32/drivers/etc/hosts" : "/etc/hosts"
+}
+
 async function serveFixture(scenario: string, nodeRes: ServerResponse): Promise<void> {
   const fixturePath = resolve(FIXTURES_DIR, `${scenario}.sse`)
   if (!existsSync(fixturePath)) {
@@ -109,6 +124,7 @@ async function serveFixture(scenario: string, nodeRes: ServerResponse): Promise<
   }
 
   const plan = parseFixture(readFileSync(fixturePath, "utf8"))
+  plan.body = plan.body.replaceAll("{{EXTERNAL_PATH}}", externalPath())
 
   // Non-streaming responses (errors, plain text/HTML/JSON bodies)
   if (!plan.contentType.startsWith("text/event-stream")) {

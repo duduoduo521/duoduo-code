@@ -1,12 +1,15 @@
 # status: 200
 # 调用 read 工具读取项目目录外的绝对路径——触发 external_directory 权限 ask，
 # Rust 委派给 TS → TS Permission.ask → 前端权限卡 → 决策后工具继续。
-# 路径在三平台都不属于 e2e 项目目录，ask 判定跨平台一致。
+# 路径由 mock server 按 `{{EXTERNAL_PATH}}` 占位符按平台注入（Windows:
+# C:/Windows/System32/drivers/etc/hosts；POSIX: /etc/hosts）。硬编码单一
+# 平台路径在其它平台是项目内相对路径（如 Linux 上的 C:/...），不会触发 ask，
+# 曾导致 mac/ubuntu CI 上权限卡永不出现而必挂。
 data: {"id":"chatcmpl-mock-ext","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_mock_ext_001","type":"function","function":{"name":"read","arguments":""}}]},"finish_reason":null}]}
 
-data: {"id":"chatcmpl-mock-ext","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"filePath\":\"C:/Windows/System32/drivers/"}}]},"finish_reason":null}]}
+data: {"id":"chatcmpl-mock-ext","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"filePath\":\"{{EXTERNAL_PATH}}\""}}]},"finish_reason":null}]}
 
-data: {"id":"chatcmpl-mock-ext","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"etc/hosts\"}"}}]},"finish_reason":null}]}
+data: {"id":"chatcmpl-mock-ext","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"}"}}]},"finish_reason":null}]}
 
 data: {"id":"chatcmpl-mock-ext","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":40,"completion_tokens":20,"total_tokens":60}}
 

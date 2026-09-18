@@ -76,6 +76,22 @@ jobs:
         working-directory: packages/duoduo
         run: bun run test:ci
 
+      # 2026-09-18: the unit-test step once died mid-run with "exit code 143"
+      # (SIGTERM) while every visible test had passed, and the always()/post
+      # steps were skipped — the signature of a runner-level teardown, not a
+      # test failure. This step leaves forensic evidence when it happens again:
+      # OOM killer traces (SIGKILL/137) vs. nothing-but-runner-shutdown, plus
+      # memory/disk headroom at the time of death.
+      - name: Diagnose termination (OOM / runner teardown evidence)
+        if: always()
+        run: |
+          echo "=== memory ==="
+          free -h || true
+          echo "=== disk ==="
+          df -h / /tmp || true
+          echo "=== kernel OOM / kill traces ==="
+          sudo dmesg | grep -iE "oom|out of memory|killed process" | tail -20 || echo "(no OOM traces — if the step above died with 143 and these are empty, the runner itself was torn down)"
+
       - name: Upload test report
         if: always()
         uses: actions/upload-artifact@v4

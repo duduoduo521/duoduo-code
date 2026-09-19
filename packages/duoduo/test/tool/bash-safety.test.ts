@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { readFileSync } from "fs"
-import { classifyCommand, commandTokens, innerPayloadOf, parse } from "../../src/tool/bash"
+import { classifyCommand, commandTokens, innerPayloadOf, parse, redirectWriteTargets } from "../../src/tool/bash"
 
 // Shared vector file — the SAME file is consumed by the Rust side
 // (crates/agent-executor/src/bash_safety.rs shared_vectors_parity test), so
@@ -102,5 +102,32 @@ describe("P0-4 nested payload recursion (capability level)", () => {
         { type: "simple_expansion", text: "$V" },
       ]),
     ).toBeUndefined()
+  })
+})
+
+// A1: redirect write targets feed the spatial bound — extraction contract.
+describe("redirectWriteTargets (A1 spatial bound)", () => {
+  const targets = async (command: string, ps = false) => {
+    const root = await runPromise(parse(command, ps))
+    return redirectWriteTargets(root)
+  }
+
+  test("extracts bash output redirect targets (all glued forms)", async () => {
+    expect(await targets("echo x > /tmp/f")).toEqual(["/tmp/f"])
+    expect(await targets("cmd >> out.txt")).toEqual(["out.txt"])
+    expect(await targets("cmd 2>/tmp/err")).toEqual(["/tmp/err"])
+    expect(await targets("echo x>/tmp/f")).toEqual(["/tmp/f"])
+    expect(await targets("{ echo a; } > group.txt")).toEqual(["group.txt"])
+  })
+
+  test("ignores reads, fd dups, and heredocs", async () => {
+    expect(await targets("cmd < in.txt")).toEqual([])
+    expect(await targets("cmd 2>&1")).toEqual([])
+    expect(await targets("cat <<EOF\nbody\nEOF")).toEqual([])
+  })
+
+  test("powershell redirection nodes", async () => {
+    expect(await targets("echo x > /tmp/f", true)).toEqual(["/tmp/f"])
+    expect(await targets("echo x >> /tmp/f", true)).toEqual(["/tmp/f"])
   })
 })

@@ -442,7 +442,11 @@ export const layer = Layer.effect(
 // Debounced (500ms) batch sync of file changes into the knowledge graph.
 // Failures are caught and logged — they never block the FileWatcher main path.
 let kgUpdateTimer: ReturnType<typeof setTimeout> | undefined
-let kgPendingUpdates: Map<string, "add" | "change" | "unlink"> = new Map() // file → event type
+// B20: pending updates keyed by the OWNING instance directory. The previous
+// flat map flushed every directory inside whichever instance's context owned
+// the timer — files from other projects failed the path.relative containment
+// check and were silently dropped.
+const kgPendingUpdates = new Map<string, Map<string, "add" | "change" | "unlink">>()
 /** Consecutive flushes that found no smart-layer client. 7-6: unbounded —
  *  the pending updates are never dropped; retries continue with exponential
  *  backoff for the lifetime of the process. */
@@ -463,19 +467,45 @@ export function kgRetryDelayMs(retries: number = kgFlushRetries): number {
 }
 
 function scheduleKGUpdate(files: Array<[string, "add" | "change" | "unlink"]>) {
+  // Called from the watcher callback, which is bound to its instance —
+  // Instance.directory here IS the owning project.
+  const dir = Instance.directory
+  let bucket = kgPendingUpdates.get(dir)
+  if (!bucket) {
+    bucket = new Map()
+    kgPendingUpdates.set(dir, bucket)
+  }
   for (const [file, event] of files) {
-    kgPendingUpdates.set(file, event)
+    bucket.set(file, event)
   }
   if (!kgUpdateTimer) {
     kgUpdateTimer = setTimeout(flushKGUpdates, 500)
   }
 }
 
+function requeueKGUpdates(directory: string, updates: Array<[string, "add" | "change" | "unlink"]>) {
+  const bucket = kgPendingUpdates.get(directory) ?? new Map<string, "add" | "change" | "unlink">()
+  for (const [file, event] of updates) {
+    bucket.set(file, event)
+  }
+  kgPendingUpdates.set(directory, bucket)
+}
+
 async function flushKGUpdates() {
   kgUpdateTimer = undefined
-  const updates = Array.from(kgPendingUpdates.entries())
-  kgPendingUpdates.clear()
+  const dirs = [...kgPendingUpdates.keys()]
+  for (const directory of dirs) {
+    const updates = Array.from(kgPendingUpdates.get(directory)?.entries() ?? [])
+    kgPendingUpdates.delete(directory)
+    if (updates.length === 0) continue
+    await flushKGUpdatesFor(directory, updates)
+  }
+}
 
+async function flushKGUpdatesFor(
+  directory: string,
+  updates: Array<[string, "add" | "change" | "unlink"]>,
+) {
   const clients = createSmartLayerClients()
   if (!clients?.graph) {
     // Smart-layer not discoverable yet (e.g. this sidecar was spawned before
@@ -496,9 +526,7 @@ async function flushKGUpdates() {
         nextDelayMs: kgRetryDelayMs(),
       })
     }
-    for (const [file, event] of updates) {
-      kgPendingUpdates.set(file, event)
-    }
+    requeueKGUpdates(directory, updates)
     if (!kgUpdateTimer) {
       kgUpdateTimer = setTimeout(flushKGUpdates, kgRetryDelayMs())
     }
@@ -511,16 +539,14 @@ async function flushKGUpdates() {
   // the full-index snapshot hash is collected, which would make the cache look
   // fresh while the graph still contains stale entities.
   try {
-    const status = await clients.graph.getIndexStatus(Instance.directory)
+    const status = await clients.graph.getIndexStatus(directory)
     if (
       status &&
       typeof status === "object" &&
       "status" in status &&
       (status as { status: unknown }).status === "indexing"
     ) {
-      for (const [file, event] of updates) {
-        kgPendingUpdates.set(file, event)
-      }
+      requeueKGUpdates(directory, updates)
       if (!kgUpdateTimer) {
         kgUpdateTimer = setTimeout(flushKGUpdates, 2000)
       }
@@ -538,15 +564,18 @@ async function flushKGUpdates() {
     await Promise.allSettled(
       batch.map(async ([file, event]) => {
         try {
-          const relPath = path.relative(Instance.directory, file)
-          if (relPath.startsWith("..") || path.isAbsolute(relPath)) return
+          const relPath = path.relative(directory, file)
+          if (relPath.startsWith("..") || path.isAbsolute(relPath)) {
+            log.warn("KG update file outside the owning project directory, skipped", { file, directory })
+            return
+          }
           if (event === "unlink") {
-            await clients.graph.removeFile(relPath, Instance.directory)
+            await clients.graph.removeFile(relPath, directory)
           } else {
             // add or change — read content and incrementally update the graph
             const content = await import("fs/promises").then((fs) => fs.readFile(file, "utf-8"))
             const language = LANGUAGE_EXTENSIONS[path.extname(file)] ?? "plaintext"
-            await clients.graph.updateFile(relPath, content, language, Instance.directory)
+            await clients.graph.updateFile(relPath, content, language, directory)
           }
         } catch (e) {
           log.warn("KG incremental update failed", { file, error: String(e) })

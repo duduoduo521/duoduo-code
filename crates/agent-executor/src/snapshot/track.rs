@@ -35,12 +35,12 @@ pub fn track(svc: &SnapshotService) -> Result<String, String> {
     let mut dirty = svc.dirty.lock().map_err(|e| format!("lock error: {}", e))?;
 
     if *dirty {
-        git_ops::add_all(gitdir, worktree)?;
+        git_ops::add_all(gitdir, worktree, svc.max_staged_file_size)?;
         *dirty = false;
     } else {
         // Safety net: check for drift even if dirty flag says clean
         if git_ops::has_drift(gitdir, worktree) || git_ops::has_untracked(gitdir, worktree) {
-            git_ops::add_all(gitdir, worktree)?;
+            git_ops::add_all(gitdir, worktree, svc.max_staged_file_size)?;
         }
     }
 

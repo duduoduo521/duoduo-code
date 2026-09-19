@@ -580,7 +580,118 @@ pub fn out_of_bounds_paths(
             }
         }
     }
+
+    // A1: redirect write targets are write paths too — `echo x > /outside`
+    // must hit the spatial bound even though `echo` is not a FILES command.
+    // The tokenizer keeps operators glued to their target (`2>/dev/null`,
+    // `x>/tmp/f`) or standalone (`> /tmp/f`); `redirect_split` normalizes all
+    // three shapes. `&1`/`&2` and bare digit targets are fd dups, /dev/null
+    // (and Windows NUL) are bit buckets — none of them are file writes.
+    // Dynamic targets stay unscanned (same policy as FILES args — they
+    // remain reviewable via the ask flow).
+    for pipeline in pipelines(command) {
+        for stage in pipeline {
+            let toks = tokenize(&stage);
+            let mut expect_target = false;
+            for tok in &toks {
+                let split = redirect_split(&tok.text);
+                match split {
+                    RedirectSplit::None => {
+                        if expect_target {
+                            // A bare operator's target is THIS token (it just
+                            // carries no redirect of its own).
+                            expect_target = false;
+                            if tok.dynamic || tok.text.starts_with('-') {
+                                continue;
+                            }
+                            flag_oob(&mut found, &unquote(&tok.text), cwd, &roots);
+                        }
+                        continue;
+                    }
+                    RedirectSplit::Operator => {
+                        expect_target = true;
+                        continue;
+                    }
+                    RedirectSplit::Target(target) => {
+                        expect_target = false;
+                        if tok.dynamic || target.starts_with('-') {
+                            continue;
+                        }
+                        flag_oob(&mut found, &unquote(target), cwd, &roots);
+                    }
+                }
+            }
+        }
+    }
     found
+}
+
+/// A1: classify one token's redirect role. Returns `Target` with the path
+/// part for glued forms (`2>/dev/null`, `x>/tmp/f`, `>>out`), `Operator` for
+/// a bare operator token (`> /tmp/f` — the target is the next token), or
+/// `None` when the token carries no unquoted output redirect. Input-only
+/// redirects (`< in`) are reads and never match.
+enum RedirectSplit<'a> {
+    None,
+    Operator,
+    Target(&'a str),
+}
+
+/// A1: bounds-check one redirect target and record it when it escapes the
+/// allowed roots. Shared by the glued-target and bare-operator paths.
+fn flag_oob(found: &mut Vec<String>, stripped: &str, cwd: &std::path::Path, roots: &[std::path::PathBuf]) {
+    if stripped == "&1"
+        || stripped == "&2"
+        || (!stripped.is_empty() && stripped.chars().all(|c| c.is_ascii_digit()))
+    {
+        // fd dups (`2>&1`) — not file writes.
+        return;
+    }
+    let resolved = normalize(&resolve_against(cwd, stripped));
+    let lower = resolved.to_string_lossy().replace('\\', "/").to_lowercase();
+    if lower == "/dev/null" || lower.ends_with("/dev/null") || lower == "nul" {
+        // universal bit buckets, not project escapes
+        return;
+    }
+    if roots.iter().any(|root| resolved.starts_with(root)) {
+        return;
+    }
+    if !found.iter().any(|f| f == stripped) {
+        found.push(stripped.to_string());
+    }
+}
+
+fn redirect_split<'a>(token: &'a str) -> RedirectSplit<'a> {
+    // Locate the first unquoted `>` (quote tracking mirrors `tokenize`).
+    let (mut sq, mut dq) = (false, false);
+    let mut op_at: Option<usize> = None;
+    for (i, c) in token.char_indices() {
+        match c {
+            '\'' if !dq => sq = !sq,
+            '"' if !sq => dq = !dq,
+            '>' if !sq && !dq => {
+                op_at = Some(i);
+                break;
+            }
+            _ => {}
+        }
+    }
+    let Some(i) = op_at else {
+        return RedirectSplit::None;
+    };
+    // `&>` puts the ampersand before the operator; `>&` after. Strip the
+    // operator run and one following `&` (fd dup) to isolate the target.
+    let after = &token[i..];
+    let target = after.trim_start_matches('>');
+    let target = target.strip_prefix('&').unwrap_or(target);
+    if target.is_empty() {
+        return RedirectSplit::Operator;
+    }
+    if target.chars().all(|c| c.is_ascii_digit()) {
+        // fd dup (`2>&1`) — not a path.
+        return RedirectSplit::None;
+    }
+    RedirectSplit::Target(target)
 }
 
 // ─── P0-4: nested command payloads ─────────────────────────────────────────
@@ -831,6 +942,46 @@ mod tests {
         assert!(explore_bash_write_reason("cat big.log 2>/dev/null | head").is_none());
         assert!(explore_bash_write_reason("echo hi >&2").is_none());
         assert!(explore_bash_write_reason("git log --oneline").is_none());
+    }
+
+    // ── A1: redirect write targets hit the spatial bound ──
+    fn oob(command: &str) -> Vec<String> {
+        out_of_bounds_paths(command, std::path::Path::new("/proj"), &[std::path::PathBuf::from("/proj")])
+    }
+
+    #[test]
+    fn redirect_targets_outside_project_are_flagged() {
+        assert_eq!(oob("echo x > /tmp/f"), vec!["/tmp/f"]);
+        assert_eq!(oob("echo x >> /tmp/f"), vec!["/tmp/f"]);
+        assert_eq!(oob("cmd 2>/tmp/err"), vec!["/tmp/err"]);
+        assert_eq!(oob("cmd >>/tmp/appended"), vec!["/tmp/appended"]);
+        // word glued to the operator (`x>/tmp/f`) — the shell treats the `>`
+        // as terminating the word.
+        assert_eq!(oob("echo x>/tmp/f"), vec!["/tmp/f"]);
+        // nested payloads go through the same gate (nested_violation →
+        // nested_walk → out_of_bounds_paths on the inner command).
+        assert_eq!(
+            nested_violation(
+                "bash -c 'echo x > /tmp/f'",
+                std::path::Path::new("/proj"),
+                &[std::path::PathBuf::from("/proj")]
+            ),
+            Some("nested command writes outside the allowed directories: /tmp/f".to_string())
+        );
+    }
+
+    #[test]
+    fn redirect_targets_inside_project_or_benign_pass() {
+        assert!(oob("echo x > ./inside.txt").is_empty());
+        assert!(oob("echo x > inside.txt").is_empty());
+        assert!(oob("cmd 2>/dev/null").is_empty());
+        assert!(oob("cmd 2>&1").is_empty());
+        assert!(oob("cmd > &1").is_empty());
+        assert!(oob("cmd < /etc/passwd").is_empty(), "input redirect is a read");
+        // dynamic targets stay unscanned (same policy as FILES args)
+        assert!(oob("cmd > $D/target").is_empty());
+        // quoted `>` is not an operator
+        assert!(oob("grep 'a>b' file").is_empty());
     }
 
     // ── P0-3 / P0-4 / P0-5: heredoc, nested payloads, dynamic destructive ──

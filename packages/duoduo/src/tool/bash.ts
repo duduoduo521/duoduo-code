@@ -383,6 +383,62 @@ export function commandTokens(node: Node, ps: boolean): Part[] {
   return out
 }
 
+// A1: redirect WRITE targets are write paths — `echo x > /outside` must hit
+// the spatial bound even though `echo` is not a FILES command. Only output
+// redirects count (operator contains `>`); `< in` is a read. AST shapes
+// verified against both grammars:
+// - bash: `file_redirect` [file_descriptor?, operator, target(word|number|
+//   concatenation)]; `2>&1` targets a `number` (fd dup, not a path).
+// - powershell: `redirection` [file_redirection_operator, redirected_file_name
+//   [generic_token]]; unspaced `2>$null` parses as a plain generic_token and
+//   is dynamic-skipped downstream.
+export function redirectWriteTargets(root: Node): string[] {
+  const out: string[] = []
+  const redirects: Node[] = []
+  for (const r of root.descendantsOfType("file_redirect")) {
+    if (r) redirects.push(r)
+  }
+  for (const r of redirects) {
+    let write = false
+    let target: string | undefined
+    for (let i = 0; i < r.childCount; i++) {
+      const c = r.child(i)
+      if (!c) continue
+      if (c.type === "file_descriptor") continue
+      if (c.type === "number") continue
+      if (c.type.includes(">")) {
+        write = true
+        continue
+      }
+      if (c.type === "word" || c.type === "string" || c.type === "raw_string" || c.type === "concatenation") {
+        target = c.text
+      }
+    }
+    if (write && target) out.push(target)
+  }
+  for (const r of root.descendantsOfType("redirection")) {
+    if (!r) continue
+    let write = false
+    let target: string | undefined
+    for (let i = 0; i < r.childCount; i++) {
+      const c = r.child(i)
+      if (!c) continue
+      if (c.type === "file_redirection_operator") {
+        if (c.text.includes(">")) write = true
+        continue
+      }
+      if (c.type === "redirected_file_name") {
+        for (let j = 0; j < c.childCount; j++) {
+          const t = c.child(j)
+          if (t && (t.type === "generic_token" || t.type === "string" || t.type === "raw_string")) target = t.text
+        }
+      }
+    }
+    if (write && target) out.push(target)
+  }
+  return out
+}
+
 // Resolve the effective command name: unwrap benign wrappers (env/nohup/…),
 // strip path + backslashes, and re-join whitespace-split fragments so
 // `r m -rf /` normalizes to `rm` (tree-sitter parses its name as just `r`).
@@ -760,6 +816,21 @@ export const BashTool = Tool.define(
           scan.patterns.add(source(node))
           scan.always.add(BashArity.prefix(tokens).join(" ") + " *")
         }
+      }
+
+      // A1: redirect write targets hit the same spatial bound as FILES
+      // command arguments. Plain writes keep the approval flow (scan.dirs →
+      // ask), matching the design for non-destructive FILES writes. Dynamic
+      // targets are skipped by argPath (same policy as FILES args — they
+      // stay reviewable via the ask patterns). /dev/null and NUL are
+      // universal bit buckets, not project escapes.
+      for (const target of redirectWriteTargets(root)) {
+        const resolved = yield* argPath(target, cwd, ps, shell)
+        if (!resolved || Instance.containsPath(resolved)) continue
+        const normalized = resolved.replaceAll("\\", "/").toLowerCase()
+        if (normalized === "/dev/null" || normalized.endsWith("/dev/null") || normalized === "nul") continue
+        const dir = (yield* fs.isDir(resolved)) ? resolved : path.dirname(resolved)
+        scan.dirs.add(dir)
       }
 
       return scan

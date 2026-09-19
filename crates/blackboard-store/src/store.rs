@@ -1987,6 +1987,28 @@ impl BlackboardStore {
         Ok(rows > 0)
     }
 
+    /// A4: list shared context entries whose key starts with `prefix`
+    /// (e.g. `cascade_block/` — one block entry per failed file). Returns
+    /// (key, value, updated_by, updated_at) ordered by key.
+    pub fn list_shared_context(&self, prefix: &str) -> Result<Vec<(String, String, String, String)>> {
+        let conn = self.get_read_conn()?;
+        let mut stmt = conn.prepare(
+            "SELECT key, value, updated_by, updated_at FROM shared_context
+             WHERE key LIKE ?1 || '%'
+             ORDER BY key",
+        )?;
+        let rows = stmt.query_map(params![prefix], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+            ))
+        })?;
+        rows.collect::<std::result::Result<Vec<_>, _>>()
+            .map_err(Into::into)
+    }
+
     /// Cleanup blackboard data (for session end).
     pub fn cleanup(&self) -> Result<()> {
         {

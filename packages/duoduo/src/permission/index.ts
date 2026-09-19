@@ -44,10 +44,13 @@ async function rememberRejectedPlan(info: Request, message?: string) {
       content: summarizeRejectedPlan(info, message),
       category: "rejected_plan",
       userId: "default",
-      // 7-4: explicit canonical project key (the worktree path) — the old
-      // implicit "" row was only visible through the `OR project_id=''`
-      // fallback and went invisible the moment any reader passed a real id.
-      projectId: Instance.worktree,
+      // 7-4/B18: explicit canonical project key. The key is the OPENED
+      // directory (Instance.directory) — the same value every other memory
+      // write path (completion.ts, revert.ts) and the Rust structured
+      // assembler's read (get_core_memories with the request projectPath)
+      // uses, so L4 stays visible alongside L1-L3 in monorepo subdirectory
+      // opens too.
+      projectId: Instance.directory,
       metadata: { source: "plan_confirm", requestID: info.id },
     })
     .catch(() => {})

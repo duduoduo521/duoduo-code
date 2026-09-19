@@ -35,6 +35,11 @@ pub struct SnapshotService {
     pub worktree: PathBuf,
     /// Dirty flag — set to true when files change, reset after `add()`
     pub dirty: Arc<Mutex<bool>>,
+    /// A5: per-file staging cap in bytes. MUST match the TS live reader
+    /// (`snapshot_max_file_size`) so both sides exclude the same oversized
+    /// untracked files — otherwise tree hashes diverge between the Rust
+    /// run_loop and TS revert/restore.
+    pub max_staged_file_size: u64,
 }
 
 impl SnapshotService {
@@ -53,7 +58,15 @@ impl SnapshotService {
             gitdir,
             worktree: worktree.to_path_buf(),
             dirty: Arc::new(Mutex::new(true)), // Start dirty — first track() will init + add
+            max_staged_file_size: git_ops::DEFAULT_MAX_STAGED_FILE_SIZE,
         }
+    }
+
+    /// A5: override the per-file staging cap (bytes) with the TS-configured
+    /// value so both sides agree on which files are excluded.
+    pub fn with_max_staged_file_size(mut self, v: u64) -> Self {
+        self.max_staged_file_size = v;
+        self
     }
 
     /// Track the current worktree state and return a tree hash.

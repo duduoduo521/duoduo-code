@@ -62,6 +62,24 @@ export interface BlackboardWriteResponse {
   written: boolean
 }
 
+/** A4: prefix listing request for shared-context KV entries. */
+export interface BlackboardListRequest {
+  promptId: string
+  prefix: string
+}
+
+export interface BlackboardListEntry {
+  key: string
+  value: string
+  updatedBy: string
+  updatedAt: string
+}
+
+export interface BlackboardListResponse {
+  promptId: string
+  entries: BlackboardListEntry[]
+}
+
 /** Blackboard submit request (draft or stable file submission). */
 export interface BlackboardSubmitRequest {
   promptId: string
@@ -184,6 +202,14 @@ export class BlackboardClient {
       agent_id: req.agentId,
       key: req.key,
       value: req.value,
+    })
+  }
+
+  /** A4: list shared context entries whose key starts with `prefix`. */
+  async list(req: BlackboardListRequest): Promise<BlackboardListResponse> {
+    return this.client.post<BlackboardListResponse>("/blackboard/list", {
+      prompt_id: req.promptId,
+      prefix: req.prefix,
     })
   }
 

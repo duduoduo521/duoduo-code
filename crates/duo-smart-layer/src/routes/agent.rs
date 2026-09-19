@@ -1819,6 +1819,9 @@ struct RunLoopRequest {
     /// When None (non-git project / snapshot disabled), snapshot tracking is skipped.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     snapshot_gitdir: Option<String>,
+    /// A5: per-file snapshot cap in bytes — must match the TS live reader so
+    /// both sides exclude the same oversized files from the snapshot repo.
+    snapshot_max_file_size: Option<u64>,
     /// Output format for structured output (JSON schema).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     output_format: Option<agent_executor::OutputFormat>,
@@ -2618,6 +2621,7 @@ async fn run_loop_handler(
     // Snapshot gitdir — resolved by TS so Rust-written hashes are valid in the
     // same repo TS Snapshot.Service operates on. None ⇒ skip snapshot tracking.
     let snapshot_gitdir = req.snapshot_gitdir.clone();
+    let snapshot_max_file_size = req.snapshot_max_file_size;
     let permission_rules: Vec<agent_executor::PermissionRule> = req
         .permission_rules
         .as_ref()
@@ -2872,6 +2876,7 @@ async fn run_loop_handler(
     let agent_name_spawn = agent_name.clone();
     let project_path_spawn = project_path.clone();
     let snapshot_gitdir_spawn = snapshot_gitdir.clone();
+    let snapshot_max_file_size_spawn = snapshot_max_file_size;
     let output_format_spawn = req.output_format.clone();
     let intent_type_spawn = intent_type.clone();
     let system_prompt_spawn = req.system_prompt.clone();
@@ -3414,9 +3419,12 @@ async fn run_loop_handler(
                 let gitdir = std::path::PathBuf::from(gd);
                 let worktree = std::path::PathBuf::from(&project_path_spawn);
                 if worktree.exists() {
-                    Some(Arc::new(agent_executor::SnapshotService::new(
-                        gitdir, worktree,
-                    )))
+                    let svc = agent_executor::SnapshotService::new(gitdir, worktree);
+                    // A5: honour the TS-configured per-file cap (default 2MB).
+                    Some(Arc::new(match snapshot_max_file_size_spawn {
+                        Some(v) if v > 0 => svc.with_max_staged_file_size(v),
+                        _ => svc,
+                    }))
                 } else {
                     None
                 }
@@ -3969,6 +3977,10 @@ async fn run_loop_handler(
             };
             if !results.is_empty() {
                 let report = agent_executor::parallel_executor::aggregate_reports(&results);
+                // B23: the aggregate is re-sent EVERY round — without a cap,
+                // N sub-agent reports (each up to ~32K tokens) are re-injected
+                // verbatim and dominate the context for the rest of the run.
+                let report = agent_executor::permission::truncate_output(&report, 50_000);
                 messages.push(agent_executor::LlmMessage::user(format!(
                     "## Parallel sub-agent findings\n{}",
                     report

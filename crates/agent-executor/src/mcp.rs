@@ -564,6 +564,13 @@ fn scan_specs(dir: &Path) -> Vec<ServerSpec> {
             continue;
         }
         let gear_name = entry.file_name().to_string_lossy().to_string();
+        // B5: interrupted installs leave `<name>.tmp-*` / `<name>.broken-*`
+        // staging dirs — they are not gears and must never be loaded (a
+        // broken copy would re-spawn the same MCP command alongside the
+        // real one).
+        if gear_name.contains(".tmp-") || gear_name.contains(".broken-") {
+            continue;
+        }
         let mcp_json = path.join("tools").join("mcp.json");
         let Ok(text) = std::fs::read_to_string(&mcp_json) else {
             continue;

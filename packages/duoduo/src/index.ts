@@ -43,12 +43,16 @@ import { ensureProcessMetadata } from "./util/duoduo-process"
 const processMetadata = ensureProcessMetadata("main")
 
 process.on("unhandledRejection", (e) => {
+  // C2: an async failure must not exit 0 — scripts and CI key off the exit
+  // code, and the finally-block's plain `process.exit()` would mask it.
+  process.exitCode = 1
   Log.Default.error("rejection", {
     e: errorMessage(e),
   })
 })
 
 process.on("uncaughtException", (e) => {
+  process.exitCode = 1
   Log.Default.error("exception", {
     e: errorMessage(e),
   })

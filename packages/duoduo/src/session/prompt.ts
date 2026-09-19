@@ -1234,10 +1234,10 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       }).pipe(Effect.catch(() => Effect.succeed(null)))
 
       const preferences = yield* Effect.tryPromise({
-        // 7-4: profile key is the canonical project path (worktree), matching
-        // the writer (permission/index.ts) and the Rust assembler's read key —
-        // the old first-commit-hash id made the two sides mutually invisible.
-        try: () => clients.memory.getProfile("default", ctx.worktree),
+        // 7-4/B18: profile key is the opened directory — the same canonical
+        // key the writer (permission/index.ts), L1-L3 memories, and the Rust
+        // assembler's read all use.
+        try: () => clients.memory.getProfile("default", ctx.directory),
         catch: () => new DuoduoError({ message: "memory profile unavailable", messageZh: "memory profile 不可用", cause: undefined }),
       }).pipe(Effect.catch(() => Effect.succeed([])))
       const planPreferences = preferences.filter(
@@ -2668,14 +2668,26 @@ NOTE: At any point in time through this workflow you should feel free to ask the
 
         // Resolve the snapshot gitdir with the SAME formula the Snapshot.Service
         // uses, so Rust-written tree hashes are valid when TS later consumes them
-        // in the same repo (revert/restore/diff/diffFull). Guarded by vcs==="git"
-        // to mirror Snapshot.Service's enabled() — non-git projects pass undefined
-        // (Rust skips snapshot).
+        // in the same repo (revert/restore/diff/diffFull).
+        // - S-01/10-11: snapshots work for ANY project (standalone --git-dir),
+        //   not only git repos — the old vcs==="git" gate made run_loop edits
+        //   in non-git projects unrevertable (first revert was a no-op).
+        // - The `snapshot: false` opt-out is honoured HERE: the Rust run_loop
+        //   writes trees directly through the passed gitdir, so this is the
+        //   single gate for the run_loop path.
         // NOTE: keyed on ctx.directory (not ctx.worktree) so the snapshot worktree matches
         // the Rust run_loop's project_path — both scope to the opened sub-project, keeping
         // tree hashes compatible and avoiding a full-monorepo `git add --all`.
+        const snapshotCfg = yield* cfgService.get()
         const snapshotGitdir =
-          ctx.project.vcs === "git" ? snapshotGitDir(ctx.project.id, ctx.directory) : undefined
+          snapshotCfg.snapshot !== false ? snapshotGitDir(ctx.project.id, ctx.directory) : undefined
+        // A5: the cap MUST travel with the gitdir — Rust stages files into the
+        // same snapshot repo and would otherwise apply its own (stale) 2MB
+        // default, writing permanent exclude rules that override this setting.
+        const snapshotMaxFileSize =
+          typeof snapshotCfg.snapshot_max_file_size === "number" && snapshotCfg.snapshot_max_file_size > 0
+            ? snapshotCfg.snapshot_max_file_size
+            : undefined
 
         // Set session status to busy for the duration of the Rust runLoop.
         // This mirrors the old TS processor.ts "start" event handler (L240-242)
@@ -2847,6 +2859,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                 // `runAgentTurn` populated these on the shared InstanceContext.
                 allowedPaths: ctx.allowedPaths,
                 snapshot_gitdir: snapshotGitdir,
+                snapshot_max_file_size: snapshotMaxFileSize,
                 output_format: outputFormat,
                 provider: model.providerID,
                 base_url: providerBaseUrl,

@@ -141,7 +141,10 @@ function isMcpConfigured(entry: McpEntry): entry is ConfigMCP.Info {
 function gearMcpToConfigMcp(raw: unknown): ConfigMCP.Info | undefined {
   if (!raw || typeof raw !== "object") return undefined
   const r = raw as Record<string, unknown>
-  if (r.kind === "stdio") {
+  // B8: kind defaults to "stdio" — matching the Rust loader (mcp.rs), so a
+  // gear mcp.json without an explicit kind loads identically on both sides.
+  const kind = typeof r.kind === "string" ? r.kind : "stdio"
+  if (kind === "stdio") {
     const commandStr = typeof r.command === "string" ? r.command.trim() : ""
     if (!commandStr) return undefined
     // P0-6: gear mcp.json is remote-authored input (registry/CLI install).
@@ -157,14 +160,68 @@ function gearMcpToConfigMcp(raw: unknown): ConfigMCP.Info | undefined {
     const args = Array.isArray(r.args)
       ? (r.args.filter((a) => typeof a === "string") as string[])
       : []
-    return { type: "local", command: [commandStr, ...args] }
+    // B8: pass `env` through (the Rust loader always did) — gears that
+    // authenticate via environment variables silently failed on TS before.
+    const environment =
+      r.env && typeof r.env === "object" && !Array.isArray(r.env)
+        ? Object.fromEntries(
+            Object.entries(r.env as Record<string, unknown>).filter(
+              (entry): entry is [string, string] => typeof entry[1] === "string",
+            ),
+          )
+        : undefined
+    return {
+      type: "local",
+      command: [commandStr, ...args],
+      ...(environment ? { environment } : {}),
+    }
   }
-  if (r.kind === "sse") {
+  if (kind === "sse") {
     const url = typeof r.url === "string" ? r.url.trim() : ""
     if (!url) return undefined
     return { type: "remote", url }
   }
   return undefined
+}
+
+/** B5: interrupted installs leave `<name>.tmp-*` / `<name>.broken-*` staging
+ *  dirs inside the gears store — they are not gears and must never load. */
+function isGearStagingDir(name: string): boolean {
+  return name.includes(".tmp-") || name.includes(".broken-")
+}
+
+/** B7: read the manifest's `[meta] name` (the override key the Rust loader
+ *  uses), falling back to the directory name. */
+function readManifestMetaName(manifestPath: string): string | undefined {
+  try {
+    const text = fs.readFileSync(manifestPath, "utf8")
+    const meta = text.match(/\[meta\]([\s\S]*?)(\n\[|$)/)
+    return meta?.[1]?.match(/^\s*name\s*=\s*"([^"]+)"/m)?.[1]
+  } catch {
+    return undefined
+  }
+}
+
+/** B7: honour `.activation_overrides.json` (the Settings on/off switch, the
+ *  same file the Rust loader reads) — a disabled gear's MCP servers must not
+ *  load on the TS side either. */
+function gearDisabledByOverride(gearsDir: string, dirName: string): boolean {
+  try {
+    const raw = JSON.parse(fs.readFileSync(path.join(gearsDir, ".activation_overrides.json"), "utf8")) as Record<
+      string,
+      unknown
+    >
+    const metaName = readManifestMetaName(path.join(gearsDir, dirName, "manifest.toml"))
+    const value = raw[metaName ?? dirName] ?? raw[dirName]
+    // Legacy repr: a plain activation-mode string (enabled). Full repr: an
+    // object carrying `enabled`.
+    if (value && typeof value === "object" && "enabled" in value) {
+      return (value as { enabled?: boolean }).enabled === false
+    }
+    return false
+  } catch {
+    return false
+  }
 }
 
 /** Load MCP server declarations from installed 智械 gears. */
@@ -175,6 +232,8 @@ function loadGearMcpServers(): Record<string, ConfigMCP.Info> {
     const entries = fs.readdirSync(gearsDir, { withFileTypes: true })
     for (const entry of entries) {
       if (!entry.isDirectory()) continue
+      if (isGearStagingDir(entry.name)) continue
+      if (gearDisabledByOverride(gearsDir, entry.name)) continue
       const mcpJson = path.join(gearsDir, entry.name, "tools", "mcp.json")
       let raw: unknown
       try {
@@ -779,7 +838,12 @@ export const layer = Layer.effect(
       const defaultTimeout = cfg.experimental?.mcp_timeout
 
       const connectedClients = Object.entries(s.clients).filter(
-        ([clientName]) => s.status[clientName]?.status === "connected",
+        ([clientName]) =>
+          s.status[clientName]?.status === "connected" &&
+          // B6: a gear uninstalled (or a server removed from config) must stop
+          // exposing its tools even while its connection lingers until the
+          // next reconnect cycle prunes it.
+          config[clientName] !== undefined,
       )
 
       yield* Effect.forEach(

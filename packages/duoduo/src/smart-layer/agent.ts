@@ -75,6 +75,9 @@ export class AgentClient {
       /** Snapshot gitdir resolved by TS (identical to Snapshot.Service's gitdir).
        *  When undefined, Rust skips snapshot tracking (non-git / disabled). */
       snapshot_gitdir?: string
+      /** A5: per-file snapshot cap in bytes — MUST match the TS live reader so
+       *  Rust-written trees exclude the same oversized files TS would. */
+      snapshot_max_file_size?: number
       output_format?: { type: "json_schema"; schema: Record<string, unknown>; retryCount?: number }
       /** Provider ID (e.g. "openai", "xunfei-new"). Passed inline so the
        *  smart-layer can use it without a prior POST /agent/config call. */
@@ -149,6 +152,7 @@ export class AgentClient {
       agent_name: options?.agent_name,
       project_path: options?.project_path,
       snapshot_gitdir: options?.snapshot_gitdir,
+      snapshot_max_file_size: options?.snapshot_max_file_size,
       output_format: options?.output_format,
       provider: options?.provider,
       base_url: options?.base_url,

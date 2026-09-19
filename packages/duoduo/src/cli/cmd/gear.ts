@@ -69,7 +69,19 @@ async function installFromCacheDir(cacheDir: string, name: string): Promise<stri
 // loaded from `<GEAR_STORE>/<name>/tools/mcp.json` at sidecar load, so
 // deleting the directory fully removes the gear (nothing else is persisted:
 // gear install writes no plugin-config entries, npm packages, or metadata).
+// A2: `name` comes straight from argv and is joined into an `rm -rf` target —
+// validate it exactly like the desktop route's is_valid_name (gear.rs) so
+// `gear uninstall ..` cannot delete arbitrary directories.
+const GEAR_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]*$/
+
+function assertValidGearName(name: string) {
+  if (!GEAR_NAME_RE.test(name)) {
+    throw new Error(`Invalid gear name "${name}": use letters, digits, "-" or "_" (no leading dot)`)
+  }
+}
+
 async function uninstallGear(name: string): Promise<boolean> {
+  assertValidGearName(name)
   const dest = path.join(GEAR_STORE, name)
   if (!(await Filesystem.exists(dest))) return false
   await fs.rm(dest, { recursive: true, force: true })
@@ -92,7 +104,12 @@ async function uninstallGear(name: string): Promise<boolean> {
 async function listInstalled(): Promise<string[]> {
   await ensureStore()
   const entries = await fs.readdir(GEAR_STORE, { withFileTypes: true })
-  return entries.filter((e) => e.isDirectory()).map((e) => e.name)
+  // A2 (域11-D2): interrupted installs leave `<name>.tmp-*` / `<name>.broken-*`
+  // staging dirs — they are not installed gears and must never be listed
+  // (or loaded: the Rust/TS MCP loaders get the same filter).
+  return entries
+    .filter((e) => e.isDirectory() && !e.name.includes(".tmp-") && !e.name.includes(".broken-"))
+    .map((e) => e.name)
 }
 
 const GearSearchCommand = cmd({
@@ -111,6 +128,7 @@ const GearSearchCommand = cmd({
         const url = args.url
         if (!url) {
           prompts.log.error("missing registry <url>")
+          process.exitCode = 1
           return
         }
         UI.empty()
@@ -134,6 +152,7 @@ const GearSearchCommand = cmd({
         } catch (error) {
           spinner.stop("Search failed", 1)
           prompts.log.error(error instanceof Error ? error.message : String(error))
+          process.exitCode = 1
           prompts.outro("Done")
         }
       },
@@ -154,7 +173,7 @@ const GearListCommand = cmd({
         const gears = await listInstalled()
         if (gears.length === 0) {
           prompts.log.warn("No gears installed")
-          prompts.log.info("Install one with: duoduo gear install <name> <url>")
+          prompts.log.info("Install one with: duoduocode gear install <name> <url>")
           prompts.outro("Done")
           return
         }
@@ -183,6 +202,13 @@ const GearInstallCommand = cmd({
         type: "string",
         describe: "base URL of the 智械 registry",
         demandOption: true,
+      })
+      // C4: non-interactive environments (CI / piped input) cannot answer the
+      // consent prompt — `--yes` skips it explicitly.
+      .option("yes", {
+        type: "boolean",
+        describe: "skip the install confirmation prompt (non-interactive use)",
+        default: false,
       }),
   async handler(args) {
     await Instance.provide({
@@ -191,7 +217,8 @@ const GearInstallCommand = cmd({
         const name = args.name
         const url = args.url
         if (!name || !url) {
-          prompts.log.error("usage: duoduo gear install <name> <url>")
+          prompts.log.error("usage: duoduocode gear install <name> <url>")
+          process.exitCode = 1
           return
         }
         UI.empty()
@@ -222,23 +249,50 @@ const GearInstallCommand = cmd({
           }
           await walk(match)
           let commandNote = "(no tools/mcp.json — no command execution)"
+          let envNote = ""
           const mcpJsonPath = path.join(match, "tools", "mcp.json")
           if (await Filesystem.exists(mcpJsonPath)) {
             try {
               const raw = JSON.parse(await fs.readFile(mcpJsonPath, "utf8")) as Record<string, unknown>
               commandNote =
-                raw.kind === "stdio" && typeof raw.command === "string"
+                (raw.kind ?? "stdio") === "stdio" && typeof raw.command === "string"
                   ? `command: ${raw.command}${Array.isArray(raw.args) ? " " + raw.args.join(" ") : ""}`
                   : raw.kind === "sse" && typeof raw.url === "string"
                     ? `url: ${raw.url}`
                     : "(unrecognized tools/mcp.json)"
+              // B9: env injection is part of what the user consents to — the
+              // values are set into the MCP server's environment at spawn.
+              if (raw.env && typeof raw.env === "object" && !Array.isArray(raw.env)) {
+                const envEntries = Object.entries(raw.env as Record<string, unknown>).filter(
+                  (entry): entry is [string, string] => typeof entry[1] === "string",
+                )
+                if (envEntries.length > 0) {
+                  envNote = `env: ${envEntries.map(([k, v]) => `${k}=${v}`).join(", ")}`
+                }
+              }
             } catch {
               commandNote = "(invalid tools/mcp.json)"
             }
           }
           prompts.log.info(`Files:\n  ${files.join("\n  ")}`)
           prompts.log.info(commandNote)
-          const ok = await prompts.confirm({ message: "Install this gear?" })
+          if (envNote) prompts.log.info(envNote)
+          // C4: `--yes` skips the consent prompt for non-interactive use; in
+          // an interactive session the prompt always shows (informed consent,
+          // P0-6②). A non-TTY run WITHOUT --yes fails instead of hanging.
+          let ok: boolean | symbol
+          if (args.yes) {
+            prompts.log.info("(--yes) skipping confirmation")
+            ok = true
+          } else if (!process.stdin.isTTY) {
+            prompts.log.error("Non-interactive environment: pass --yes to accept the install consent shown above")
+            process.exitCode = 1
+            spinner.stop("Install cancelled")
+            prompts.outro("Done")
+            return
+          } else {
+            ok = await prompts.confirm({ message: "Install this gear?" })
+          }
           if (prompts.isCancel(ok) || !ok) {
             spinner.stop("Install cancelled")
             prompts.outro("Done")
@@ -252,6 +306,7 @@ const GearInstallCommand = cmd({
         } catch (error) {
           spinner.stop("Install failed", 1)
           prompts.log.error(error instanceof Error ? error.message : String(error))
+          process.exitCode = 1
           prompts.outro("Done")
         }
       },
@@ -266,7 +321,7 @@ const GearUninstallCommand = cmd({
   builder: (yargs) =>
     yargs.positional("name", {
       type: "string",
-      describe: "gear name (as shown by `duoduo gear list`)",
+      describe: "gear name (as shown by `duoduocode gear list`)",
       demandOption: true,
     }),
   async handler(args) {
@@ -275,7 +330,8 @@ const GearUninstallCommand = cmd({
       async fn() {
         const name = args.name
         if (!name) {
-          prompts.log.error("usage: duoduo gear uninstall <name>")
+          prompts.log.error("usage: duoduocode gear uninstall <name>")
+          process.exitCode = 1
           return
         }
         UI.empty()
@@ -287,9 +343,11 @@ const GearUninstallCommand = cmd({
             prompts.log.success(`Gear uninstalled: ${name}`)
           } else {
             prompts.log.warn(`Gear "${name}" is not installed`)
+            process.exitCode = 1
           }
         } catch (error) {
           prompts.log.error(error instanceof Error ? error.message : String(error))
+          process.exitCode = 1
         }
         prompts.outro("Done")
       },
@@ -317,7 +375,8 @@ const GearCreateCommand = cmd({
       async fn() {
         const name = args.name
         if (!name) {
-          prompts.log.error("usage: duoduo gear create <name>")
+          prompts.log.error("usage: duoduocode gear create <name>")
+          process.exitCode = 1
           return
         }
         UI.empty()
@@ -327,6 +386,7 @@ const GearCreateCommand = cmd({
 
         if (await Filesystem.exists(targetDir)) {
           prompts.log.error(`Target already exists: ${targetDir}`)
+          process.exitCode = 1
           prompts.outro("Done")
           return
         }

@@ -149,11 +149,11 @@ const removeEmptyDirs = (dir: string, root: string): Effect.Effect<void> =>
         break
       }
       if (entries.length > 0) break
-      // `nodefs.rm` handles both files and directories; recursive+force makes
-      // it safe even if the dir gained an unrelated entry between the check
-      // and the removal (it simply removes what it can).
+      // 10-1: `rmdir` (non-recursive) fails atomically if the directory gained
+      // an entry between the readdir and the removal — the old recursive rm
+      // would have deleted that new file along with the directory.
       try {
-        yield* Effect.promise(() => nodefs.rm(current, { recursive: true, force: true }))
+        yield* Effect.promise(() => nodefs.rmdir(current))
       } catch {
         break
       }
@@ -637,7 +637,16 @@ export const layer: Layer.Layer<
               // fits. Snapshots pruned this way lose their rollback point.
               const cap = yield* maxTotalSize()
               let size = yield* measure(state.gitdir)
-              let pruneDays = Math.max(1, yield* retentionDays())
+              // 10-3: start from the cutoff this run ACTUALLY used (the
+              // caller-supplied `days` when valid, else the configured
+              // retention) — initializing from the configured retention made
+              // the shrink loop a no-op whenever retention was already 1 day.
+              let pruneDays = Math.max(
+                1,
+                typeof days === "number" && Number.isFinite(days) && days > 0
+                  ? Math.floor(days)
+                  : yield* retentionDays(),
+              )
               let rounds = 0
               while (size > cap && rounds < 20 && pruneDays > 1) {
                 pruneDays = Math.max(1, Math.floor(pruneDays / 2))

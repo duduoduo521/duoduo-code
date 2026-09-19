@@ -378,8 +378,15 @@ fn display_path(path: &str) -> String {
         // under the same lock that reads, creates, then publishes the real id;
         // the loser polls briefly for the published id.
         const CREATING: &str = "__creating__";
+        // B16: the loser's wait must be bounded. If the winner panics (the
+        // ws.rs panic isolation swallows it before the Err-branch cleanup
+        // runs) the placeholder would stay `__creating__` forever and this
+        // chat would poll — and hold its serial gate — indefinitely. 100 ×
+        // 300ms = 30s, well past create_session's own 10s HTTP timeout.
+        const CREATING_POLL_MAX: usize = 100;
         let mut session_id = {
             let state = feishu_state();
+            let mut poll_waits = 0usize;
             loop {
                 let claim = {
                     let mut m = duo_utils::sync::lock(&state.sessions);
@@ -412,7 +419,22 @@ fn display_path(path: &str) -> String {
                         }
                     }
                     Some(sid) => break sid,
-                    None => tokio::time::sleep(Duration::from_millis(300)).await,
+                    None => {
+                        poll_waits += 1;
+                        if poll_waits > CREATING_POLL_MAX {
+                            // Stale placeholder — the winner died before it
+                            // could publish or clean up. Clear it so the next
+                            // message can claim and retry.
+                            let mut m = duo_utils::sync::lock(&state.sessions);
+                            if m.get(chat_id).map(|s| s == CREATING).unwrap_or(false) {
+                                m.remove(chat_id);
+                            }
+                            return Err(anyhow::anyhow!(
+                                "session creation timed out waiting for a concurrent claim; please retry"
+                            ));
+                        }
+                        tokio::time::sleep(Duration::from_millis(300)).await;
+                    }
                 }
             }
         };

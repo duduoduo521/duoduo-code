@@ -197,6 +197,13 @@ impl GearHost {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_dir() {
+                // B5: skip interrupted-install staging dirs (`<name>.tmp-*` /
+                // `<name>.broken-*`) — a broken copy carries a valid
+                // manifest.toml and would load as a duplicate gear.
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.contains(".tmp-") || name.contains(".broken-") {
+                    continue;
+                }
                 if let Err(e) = self.load_gear_pack(&path).await {
                     warn!(gear = %path.display(), error = %e, "skipping gear pack");
                 }

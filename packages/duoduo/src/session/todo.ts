@@ -139,15 +139,32 @@ export const layer = Layer.effect(
             if (input.todos.length === 0) return []
             // [1-1] Keep the matched row's stable id; brand-new tasks get a
             // generated one (an explicit id from the model is honored so a
-            // deleted-then-recreated task keeps its identity).
-            const resolvedTodos: Info[] = input.todos.map((todo) => {
+            // deleted-then-recreated task keeps its identity). An empty-string
+            // id counts as "no id" (it must never reach the DB or the UI key).
+            const resolvedTodos: Array<Info & { id: string }> = input.todos.map((todo) => {
+              const requestedId = todo.id || undefined
               const id =
-                (todo.id ? prevById.get(todo.id)?.id : undefined) ??
+                (requestedId ? prevById.get(requestedId)?.id : undefined) ??
                 (todo.content.length > 0 ? prevByContent.get(todo.content)?.id : undefined) ??
-                todo.id ??
+                requestedId ??
                 crypto.randomUUID()
               return { id, content: todo.content, status: todo.status, priority: todo.priority ?? "" }
             })
+            // D1-1: two inputs resolving to the SAME id (duplicate content
+            // without ids) would land duplicate reconcile keys in the UI and
+            // silently shadow a row on the next update (its T-03 check would
+            // be skipped). Reject the whole write instead.
+            const seenIds = new Set<string>()
+            for (const t of resolvedTodos) {
+              if (seenIds.has(t.id)) {
+                throw new DuoduoError({
+                  message: `Duplicate task "${t.content}" (id ${t.id}) — each task in the list must be unique`,
+                  messageZh: `任务 "${t.content}"（id ${t.id}）重复——列表中每个任务必须唯一`,
+                  cause: undefined,
+                })
+              }
+              seenIds.add(t.id)
+            }
             db.insert(TodoTable)
               .values(
                 resolvedTodos.map((todo, position) => ({

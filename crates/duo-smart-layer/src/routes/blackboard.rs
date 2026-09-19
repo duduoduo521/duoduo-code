@@ -19,6 +19,7 @@ pub fn router() -> Router<AppState> {
         .route("/blackboard/init", axum::routing::post(init))
         .route("/blackboard/read", axum::routing::post(read))
         .route("/blackboard/write", axum::routing::post(write))
+        .route("/blackboard/list", axum::routing::post(list))
         .route("/blackboard/submit", axum::routing::post(submit))
         .route("/blackboard/promote", axum::routing::post(promote))
         .route("/blackboard/annotate", axum::routing::post(annotate))
@@ -81,6 +82,27 @@ pub struct ReadResponse {
     pub updated_by: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
+}
+
+/// A4: prefix listing request for shared-context KV entries.
+#[derive(Debug, Deserialize)]
+pub struct ListRequest {
+    pub prompt_id: String,
+    pub prefix: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListEntry {
+    pub key: String,
+    pub value: String,
+    pub updated_by: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ListResponse {
+    pub prompt_id: String,
+    pub entries: Vec<ListEntry>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -411,6 +433,40 @@ async fn write(
         prompt_id: req.prompt_id,
         key: req.key,
         written: true,
+    }))
+}
+
+/// A4: list shared-context entries whose key starts with `prefix`
+/// (cascade_block/<file> aggregation for the write gate).
+async fn list(
+    State(state): State<AppState>,
+    Json(req): Json<ListRequest>,
+) -> Result<Json<ListResponse>> {
+    let factory = Arc::clone(&state.blackboard_factory);
+    let prompt_id = req.prompt_id.clone();
+
+    let coordinator =
+        tokio::task::spawn_blocking(move || factory.create_for_prompt("", &prompt_id))
+            .await
+            .map_err(|e| bad_request(anyhow::anyhow!("spawn error: {e}")))??;
+
+    let store = Arc::clone(coordinator.store());
+    let prefix = req.prefix.clone();
+    let entries = tokio::task::spawn_blocking(move || store.list_shared_context(&prefix))
+        .await
+        .map_err(|e| bad_request(anyhow::anyhow!("spawn error: {e}")))??;
+
+    Ok(Json(ListResponse {
+        prompt_id: req.prompt_id,
+        entries: entries
+            .into_iter()
+            .map(|(key, value, updated_by, updated_at)| ListEntry {
+                key,
+                value,
+                updated_by,
+                updated_at,
+            })
+            .collect(),
     }))
 }
 

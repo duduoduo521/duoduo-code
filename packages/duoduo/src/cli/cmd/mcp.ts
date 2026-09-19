@@ -237,12 +237,14 @@ export const McpAuthCommand = cmd({
         const serverConfig = mcpServers[serverName]
         if (!serverConfig) {
           prompts.log.error(`MCP server not found: ${serverName}`)
+          process.exitCode = 1
           prompts.outro("Done")
           return
         }
 
         if (!isMcpRemote(serverConfig) || serverConfig.oauth === false) {
           prompts.log.error(`MCP server ${serverName} is not an OAuth-capable remote server`)
+          process.exitCode = 1
           prompts.outro("Done")
           return
         }
@@ -283,6 +285,7 @@ export const McpAuthCommand = cmd({
           } else if (status.status === "needs_client_registration") {
             spinner.stop("Authentication failed", 1)
             prompts.log.error(status.error)
+            process.exitCode = 1
             prompts.log.info("Add clientId to your MCP server config:")
             prompts.log.info(`
   "mcp": {
@@ -302,12 +305,14 @@ export const McpAuthCommand = cmd({
           } else if (status.status === "failed") {
             spinner.stop("Authentication failed", 1)
             prompts.log.error(status.error)
+            process.exitCode = 1
           } else {
             spinner.stop("Unexpected status: " + status.status, 1)
           }
         } catch (error) {
           spinner.stop("Authentication failed", 1)
           prompts.log.error(error instanceof Error ? error.message : String(error))
+          process.exitCode = 1
         } finally {
           unsubscribe()
         }
@@ -402,6 +407,7 @@ export const McpLogoutCommand = cmd({
 
         if (!credentials[serverName]) {
           prompts.log.error(`No credentials found for: ${serverName}`)
+          process.exitCode = 1
           prompts.outro("Done")
           return
         }
@@ -637,12 +643,14 @@ export const McpDebugCommand = cmd({
         const serverConfig = mcpServers[serverName]
         if (!serverConfig) {
           prompts.log.error(`MCP server not found: ${serverName}`)
+          process.exitCode = 1
           prompts.outro("Done")
           return
         }
 
         if (!isMcpRemote(serverConfig)) {
           prompts.log.error(`MCP server ${serverName} is not a remote server`)
+          process.exitCode = 1
           prompts.outro("Done")
           return
         }

@@ -20,6 +20,7 @@ fn kg_bridge_link_is_queryable_after_decision_write() {
         .store_decision_to_memory(
             "kg_bridge:node-42",
             "KG bridge linked entity node-42 for session sess-1",
+            "",
         )
         .expect("decision should be stored");
     assert!(!memory_id.is_empty());
@@ -63,10 +64,10 @@ fn decision_write_is_deduplicated_by_context() {
     let assembler = StructuredAssembler::new(memory.clone(), None);
 
     let first = assembler
-        .store_decision_to_memory("kg_bridge:node-7", "KG bridge linked entity node-7 for session s")
+        .store_decision_to_memory("kg_bridge:node-7", "KG bridge linked entity node-7 for session s", "")
         .expect("first write");
     let second = assembler
-        .store_decision_to_memory("kg_bridge:node-7", "KG bridge linked entity node-7 for session s")
+        .store_decision_to_memory("kg_bridge:node-7", "KG bridge linked entity node-7 for session s", "")
         .expect("second call must still return an id so the link can be attached");
 
     assert_eq!(first, second, "dedup must reuse the existing memory id");
@@ -76,7 +77,7 @@ fn decision_write_is_deduplicated_by_context() {
 fn short_detail_is_rejected() {
     let memory = Arc::new(MemorySystem::new_in_memory().unwrap());
     let assembler = StructuredAssembler::new(memory, None);
-    assert!(assembler.store_decision_to_memory("ctx", "too short").is_none());
+    assert!(assembler.store_decision_to_memory("ctx", "too short", "").is_none());
 }
 
 #[test]
@@ -93,6 +94,7 @@ fn distinct_contexts_must_not_collapse_into_one_memory() {
             .store_decision_to_memory(
                 &format!("kg_bridge:node-{n}"),
                 &format!("KG bridge linked entity node-{n} for session sess-1"),
+                "",
             )
             .unwrap_or_else(|| panic!("node-{n} must be stored"));
         ids.push(id);
@@ -113,6 +115,7 @@ fn all_kg_nodes_get_a_queryable_link_end_to_end() {
         if let Some(mid) = assembler.store_decision_to_memory(
             &format!("kg_bridge:{entity}"),
             &format!("KG bridge linked entity {entity} for session sess-1"),
+            "",
         ) {
             memory.link_entity(&mid, &entity, "proj-1", "kg_bridge").unwrap();
         }

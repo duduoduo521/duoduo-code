@@ -210,13 +210,22 @@ export const layer: Layer.Layer<Service, never, AppFileSystem.Service | Path.Pat
             Effect.gen(function* () {
               const root = path.join(cache, entry.name)
 
-              yield* Effect.forEach(
+              const results = yield* Effect.forEach(
                 entry.files,
                 (file) => download(new URL(file, `${host}/${entry.dir}/`).href, path.join(root, file)),
                 {
                   concurrency: fileConcurrency,
                 },
               )
+
+              // B10: a partial download (any file failed) must not be treated
+              // as a valid gear — the marker alone would let an incomplete
+              // pack (missing tools/mcp.json or instructions.md) install.
+              if (results.some((ok) => !ok)) {
+                log.warn("gear download incomplete, skipped", { url: index, skill: entry.name })
+                yield* fs.remove(root, { recursive: true, force: true }).pipe(Effect.catch(() => Effect.void))
+                return null
+              }
 
               const markerPath = path.join(root, entry.marker)
               return (yield* fs.exists(markerPath).pipe(Effect.orDie)) ? root : null

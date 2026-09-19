@@ -26,7 +26,7 @@ pub fn patch(svc: &SnapshotService, prev_hash: &str) -> Result<PatchResult, Stri
     let worktree = &svc.worktree;
 
     // Stage current state
-    git_ops::add_all(gitdir, worktree)?;
+    git_ops::add_all(gitdir, worktree, svc.max_staged_file_size)?;
     // Mark as clean after add
     *svc.dirty.lock().map_err(|e| format!("lock error: {}", e))? = false;
 

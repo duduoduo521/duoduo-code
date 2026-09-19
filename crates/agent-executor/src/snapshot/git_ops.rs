@@ -15,7 +15,10 @@ use std::process::Command;
 
 /// Files larger than this are never staged into the shadow repo (P2-39).
 /// Same constant as TS `limit` in snapshot/index.ts.
-pub const MAX_STAGED_FILE_SIZE: u64 = 2 * 1024 * 1024;
+/// A5: default per-file staging cap. The live value travels from the TS
+/// config (`snapshot_max_file_size`) through SnapshotService — this constant
+/// is only the fallback when TS does not send one.
+pub const DEFAULT_MAX_STAGED_FILE_SIZE: u64 = 2 * 1024 * 1024;
 
 /// Result of a git command execution.
 pub struct GitResult {
@@ -355,7 +358,7 @@ fn candidates(gitdir: &Path, worktree: &Path) -> Result<Vec<String>, String> {
 /// make `write_tree` produce a baseline that does NOT represent the worktree,
 /// and downstream `revert` would then treat unstaged user files as
 /// "post-snapshot additions" and DELETE them (P2-40).
-pub fn add_all(gitdir: &Path, worktree: &Path) -> Result<(), String> {
+pub fn add_all(gitdir: &Path, worktree: &Path, max_staged_file_size: u64) -> Result<(), String> {
     let all = candidates(gitdir, worktree)?;
     if all.is_empty() {
         return Ok(());
@@ -410,7 +413,7 @@ pub fn add_all(gitdir: &Path, worktree: &Path) -> Result<(), String> {
             let abs = worktree.join(rel.as_str());
             std::fs::metadata(&abs)
                 .ok()
-                .map(|m| m.is_file() && m.len() > MAX_STAGED_FILE_SIZE)
+                .map(|m| m.is_file() && m.len() > max_staged_file_size)
                 .unwrap_or(false)
         })
         .cloned()

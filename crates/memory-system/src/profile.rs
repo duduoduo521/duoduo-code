@@ -57,6 +57,27 @@ impl MemorySystem {
         }
 
         let id = Uuid::new_v4().to_string();
+
+        // B19: L4 dedup — the same fact re-stored (identical content ignoring
+        // the date prefix, same user/project/category) refreshes the existing
+        // row instead of appending a duplicate.
+        if let Some(existing_id) = find_duplicate_core_memory(
+            &conn,
+            user_id,
+            &project_id,
+            category,
+            &strip_date_prefix(&content),
+        ) {
+            conn.execute(
+                "UPDATE core_memories SET updated_at = ?1 WHERE id = ?2",
+                rusqlite::params![now, existing_id],
+            )?;
+            return Ok(MemoryStoreResponse {
+                id: existing_id,
+                stored: true,
+            });
+        }
+
         conn.execute(
             "INSERT OR REPLACE INTO core_memories (id, user_id, project_id, content, category, metadata, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0)",
@@ -83,6 +104,23 @@ impl MemorySystem {
         let content = format!("[{}] {}", Utc::now().format("%Y-%m-%d"), req.content);
 
         let conn = self.get_write_conn()?;
+
+        // B19: same dedup as store_core_memory_internal — identical content
+        // (ignoring the date prefix) refreshes the existing row.
+        if let Some(existing_id) = find_duplicate_core_memory(
+            &conn,
+            user_id,
+            project_id,
+            category,
+            &strip_date_prefix(&content),
+        ) {
+            conn.execute(
+                "UPDATE core_memories SET updated_at = ?1 WHERE id = ?2",
+                rusqlite::params![now, existing_id],
+            )?;
+            return self.get_core_memory_by_id(&existing_id);
+        }
+
         conn.execute(
             "INSERT OR REPLACE INTO core_memories (id, user_id, project_id, content, category, metadata, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 0)",
@@ -217,5 +255,67 @@ impl MemorySystem {
             rusqlite::params![id],
         )?;
         Ok(affected > 0)
+    }
+}
+
+/// B19: strip the `[YYYY-MM-DD] ` date prefix the store prepends to L4
+/// content, so dedup can compare the logical fact across days.
+fn strip_date_prefix(content: &str) -> &str {
+    if content.starts_with('[')
+        && let Some(end) = content.find(']')
+    {
+        return content[end + 1..].trim_start();
+    }
+    content
+}
+
+/// B19: find an existing L4 row with the same user/project/category whose
+/// content matches `raw_content` ignoring the date prefix.
+fn find_duplicate_core_memory(
+    conn: &rusqlite::Connection,
+    user_id: &str,
+    project_id: &str,
+    category: &str,
+    raw_content: &str,
+) -> Option<String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, content FROM core_memories
+             WHERE user_id = ?1 AND project_id = ?2 AND category = ?3",
+        )
+        .ok()?;
+    let rows = stmt
+        .query_map(rusqlite::params![user_id, project_id, category], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .ok()?;
+    rows.flatten()
+        .find(|(_, stored)| strip_date_prefix(stored) == raw_content)
+        .map(|(id, _)| id)
+}
+
+impl MemorySystem {
+    /// B19: fetch a single core memory row by id (used to return the refreshed
+    /// duplicate after an L4 dedup hit).
+    fn get_core_memory_by_id(&self, id: &str) -> Result<CoreMemoryEntry> {
+        let conn = self.get_read_conn()?;
+        conn.query_row(
+            "SELECT id, user_id, project_id, content, category, metadata, created_at, updated_at
+             FROM core_memories WHERE id = ?1",
+            rusqlite::params![id],
+            |row: &rusqlite::Row<'_>| {
+                Ok(CoreMemoryEntry {
+                    id: row.get(0)?,
+                    user_id: row.get(1)?,
+                    project_id: row.get(2)?,
+                    content: row.get(3)?,
+                    category: row.get(4)?,
+                    metadata: serde_json::from_str(&row.get::<_, String>(5)?).unwrap_or_default(),
+                    created_at: row.get(6)?,
+                    updated_at: row.get(7)?,
+                })
+            },
+        )
+        .map_err(Into::into)
     }
 }

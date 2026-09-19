@@ -1951,7 +1951,12 @@ impl AgenticLoopExecutor {
                 self.session_id.as_deref().unwrap_or("unknown")
             );
             // 写决策记忆,拿真实 memory id(命中去重时返回既有 id,仍可建链)。
-            let Some(memory_id) = sa.store_decision_to_memory(&ctx, &detail) else {
+            // A6: 传真实 project_path——None 会落 "" 使决策记忆跨项目可见。
+            let Some(memory_id) = sa.store_decision_to_memory(
+                &ctx,
+                &detail,
+                &self.project_path.to_string_lossy(),
+            ) else {
                 continue;
             };
             if let Some(memory) = self.memory.as_ref() {

@@ -148,6 +148,7 @@ export const ProvidersLoginCommand = cmd({
           const response = await fetch(`${url}/.well-known/duoduo`)
           if (!response.ok) {
             prompts.log.error(`Failed to fetch .well-known/duoduo: ${response.status} ${response.statusText}`)
+            process.exitCode = 1
             prompts.outro("Done")
             return
           }
@@ -160,12 +161,14 @@ export const ProvidersLoginCommand = cmd({
           })
           if (!proc.stdout) {
             prompts.log.error("Failed")
+            process.exitCode = 1
             prompts.outro("Done")
             return
           }
           const [exit, token] = await Promise.all([proc.exited, text(proc.stdout)])
           if (exit !== 0) {
             prompts.log.error("Failed")
+            process.exitCode = 1
             prompts.outro("Done")
             return
           }
@@ -239,6 +242,7 @@ export const ProvidersLoginCommand = cmd({
           const match = byID ?? byName
           if (!match) {
             prompts.log.error(`Unknown provider "${input}"`)
+            process.exitCode = 1
             process.exit(1)
           }
           provider = match.value

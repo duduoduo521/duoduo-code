@@ -229,7 +229,7 @@ impl StructuredAssembler {
     /// 不使用 `chrono`(本 crate 未依赖),改用 `SystemTime` 生成可读日期。
     /// 返回新写入记忆的 id;命中去重/门槛而未写入时返回 `None`。
     /// 调用方需要这个 id 才能建立 `memory_entity_links`(见 `fetch_kg_context`)。
-    pub fn store_decision_to_memory(&self, ctx: &str, detail: &str) -> Option<String> {
+    pub fn store_decision_to_memory(&self, ctx: &str, detail: &str, project_path: &str) -> Option<String> {
         // ── 通用模型无关的去重 / 门槛前置判断(零新依赖, 复用 public `search`) ──
         // R-A: 内容过短(纯噪声)直接跳过, 不写低价值片段
         if detail.trim().len() < 20 {
@@ -303,7 +303,10 @@ impl StructuredAssembler {
                 DECISION_TAG.to_string(),
                 DECISION_SOURCE_TAG.to_string(),
             ]),
-            project_path: None,
+            // A6: the project path MUST be set — `None` falls back to "" in
+            // store(), which makes the decision memory globally visible to
+            // every project's searches (7-1 cross-project leak).
+            project_path: Some(project_path.to_string()),
             user_id: None,
         }) {
             Ok(resp) => Some(resp.id),
@@ -2234,6 +2237,7 @@ mod decision_memory_tests {
             .store_decision_to_memory(
                 "unit:importance",
                 "选择 better-sqlite3 而非 node-sqlite3 以获得同步 API 与更低延迟",
+                "",
             )
             .expect("decision memory must be written");
 

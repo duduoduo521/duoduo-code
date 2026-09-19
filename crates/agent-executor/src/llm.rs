@@ -401,6 +401,18 @@ fn get_http_client_stream() -> &'static reqwest::Client {
     })
 }
 
+/// B15: status-specific user guidance, shared by the non-streaming and
+/// streaming error paths so the main (streaming) path also tells the user HOW
+/// to fix the underlying problem (bad key vs. empty balance vs. no access).
+fn status_guidance(status: u16) -> &'static str {
+    match status {
+        401 => "——API Key 无效或已过期，请在设置中重新配置",
+        402 => "——账户余额不足，请前往服务商充值",
+        403 => "——无权访问该模型，请检查 Key 权限或模型名称",
+        _ => "",
+    }
+}
+
 /// Classify an HTTP status code and response body as retryable or not.
 ///
 /// Retryable conditions:
@@ -837,15 +849,11 @@ pub async fn call_llm(
             // empty balance vs. no model access). The detail is appended so
             // no information is lost.
             let status_num = status.as_u16();
-            let guidance = match status_num {
-                401 => "——API Key 无效或已过期，请在设置中重新配置",
-                402 => "——账户余额不足，请前往服务商充值",
-                403 => "——无权访问该模型，请检查 Key 权限或模型名称",
-                _ => "",
-            };
             let error_msg = format!(
                 "LLM API returned HTTP {}{}: {}",
-                status_num, guidance, detail
+                status_num,
+                status_guidance(status_num),
+                detail
             );
 
             // Capture the upstream Retry-After hint (if any) on every retryable
@@ -1329,7 +1337,15 @@ pub async fn call_llm_stream(
                         detail
                     )
                 } else {
-                    format!("LLM API returned HTTP {}: {}", status.as_u16(), detail)
+                    // B15: the same status-specific guidance the non-streaming
+                    // path attaches — the streaming path IS the main path, so
+                    // the user-facing fix-it hint must appear here too.
+                    format!(
+                        "LLM API returned HTTP {}{}: {}",
+                        status.as_u16(),
+                        status_guidance(status.as_u16()),
+                        detail
+                    )
                 };
 
                 // Capture the upstream Retry-After hint (if any) on every retryable

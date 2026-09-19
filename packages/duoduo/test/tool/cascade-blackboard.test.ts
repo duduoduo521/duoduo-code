@@ -65,9 +65,10 @@ describe("cascade-blackboard.writeCascadeValidationResult", () => {
     const call = blackboard.write.mock.calls[0]![0] as WriteCall
     expect(call.promptId).toBe("p1")
     expect(call.agentId).toBe("system:cascade")
-    // P1-4 (决策 2b): failures go to the dedicated `cascade_block` key so a
-    // concurrent validator's LWW `passed` cannot overwrite the failure.
-    expect(call.key).toBe("cascade_block")
+    // P1-4 (决策 2b) + A4 (方案 2): failures go to a per-file key under the
+    // `cascade_block/` prefix so a concurrent validator's LWW `passed` cannot
+    // overwrite the failure AND a second file's failure cannot erase this one.
+    expect(call.key).toBe("cascade_block/src/a.ts")
 
     const payload = JSON.parse(call.value)
     expect(payload.status).toBe("failed")

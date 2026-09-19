@@ -309,6 +309,7 @@ impl ContextBuilder {
                 layers: Some(vec![layer_name.clone()]),
                 tags: None,
                 project_path: project_path.map(|p| p.to_string()),
+                session_id: None,
             };
 
             let entries = self.memory.search(&request)?;

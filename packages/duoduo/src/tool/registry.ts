@@ -19,6 +19,7 @@ import z from "zod"
 
 import { Provider } from "../provider"
 import { ProviderID, type ModelID } from "../provider/schema"
+import { usePatchForModel } from "../session/system"
 import { GraphQueryTool } from "./graph_query"
 import { SymbolSearchTool } from "./symbol_search"
 import { RecallMemoryTool } from "./recall_memory"
@@ -325,8 +326,9 @@ export const layer: Layer.Layer<
       const graphIndexSvc = yield* GraphIndexStatus.Service
       const graphIndexStatus = yield* graphIndexSvc.get()
       const filtered = (yield* all()).filter((tool) => {
-        const usePatch =
-          input.modelID.includes("gpt-") && !input.modelID.includes("oss") && !input.modelID.includes("gpt-4")
+        // 4-2: shared usePatch decision (system.ts usePatchForModel) — the
+        // file-tool guidance wording must follow the same model gate.
+        const usePatch = usePatchForModel(input.modelID)
         if (tool.id === ApplyPatchTool.id) return usePatch
         if (tool.id === EditTool.id || tool.id === WriteTool.id) return !usePatch
 
@@ -338,33 +340,14 @@ export const layer: Layer.Layer<
         return true
       })
 
-      const kgReady = graphIndexStatus.type === "ready"
-
       return yield* Effect.forEach(
         filtered,
         Effect.fnUntraced(function* (tool: Tool.Def) {
           using _ = log.time(tool.id)
-          let description = tool.description
-
-          // When KG is ready, inject usage guidance into grep and bash descriptions
-          // so LLM prefers graph_query for code structure search
-          if (kgReady) {
-            if (tool.id === GrepTool.id) {
-              description =
-                description +
-                "\n\nIMPORTANT: For searching code structure, function/class definitions, call chains, and dependencies, you MUST use graph_query tool instead. Only use grep for searching non-code content (logs, configs, comments, strings)."
-            }
-            if (tool.id === BashTool.id) {
-              description =
-                description +
-                "\n\nIMPORTANT: NEVER use grep/rg/find commands for code search. Use graph_query for code structure search and the grep tool for text search."
-            }
-            if (tool.id === LspTool.id) {
-              description =
-                description +
-                "\n\nNOTE: For broad structural search across the whole project (large-scale dependencies, similar functions, call chains between distant modules) prefer graph_query. Use this LSP tool for PRECISE, TYPE-AWARE results at a known file/line/character (exact definition, references, hover type info, call hierarchy)."
-            }
-          }
+          // 4-3: the per-tool graph_query recommendation sentences (grep/bash/
+          // lsp descriptions) were removed — the recommendation lives in ONE
+          // place, the searchStrategyGuidance in system.ts environment().
+          const description = tool.description
 
           const output = {
             description,

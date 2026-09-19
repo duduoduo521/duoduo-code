@@ -443,10 +443,24 @@ export const layer = Layer.effect(
 // Failures are caught and logged — they never block the FileWatcher main path.
 let kgUpdateTimer: ReturnType<typeof setTimeout> | undefined
 let kgPendingUpdates: Map<string, "add" | "change" | "unlink"> = new Map() // file → event type
-/** Consecutive flushes that found no smart-layer client. Bounded so a
- *  permanently absent smart-layer cannot retry forever. */
+/** Consecutive flushes that found no smart-layer client. 7-6: unbounded —
+ *  the pending updates are never dropped; retries continue with exponential
+ *  backoff for the lifetime of the process. */
 let kgFlushRetries = 0
-const KG_FLUSH_MAX_RETRIES = 30 // 30 × 2s ≈ 60s of sidecar-startup cover
+const KG_FLUSH_BASE_DELAY_MS = 2000
+const KG_FLUSH_MAX_DELAY_MS = 60_000
+/** After this many consecutive failures the retry log upgrades warn → error
+ *  (once, so a permanently absent sidecar does not spam). */
+const KG_FLUSH_ERROR_THRESHOLD = 30
+
+// Exported for unit tests: backoff starts at 2s, doubles per consecutive
+// failure and caps at 60s — the pending updates are retried forever (7-6).
+// The retry count defaults to the module-level counter and is injectable so
+// the curve is testable without driving real flushes.
+export function kgRetryDelayMs(retries: number = kgFlushRetries): number {
+  const delay = KG_FLUSH_BASE_DELAY_MS * 2 ** Math.min(retries, 6)
+  return Math.min(delay, KG_FLUSH_MAX_DELAY_MS)
+}
 
 function scheduleKGUpdate(files: Array<[string, "add" | "change" | "unlink"]>) {
   for (const [file, event] of files) {
@@ -465,20 +479,28 @@ async function flushKGUpdates() {
   const clients = createSmartLayerClients()
   if (!clients?.graph) {
     // Smart-layer not discoverable yet (e.g. this sidecar was spawned before
-    // the duo-smart-layer sidecar finished booting). Keep the updates pending
-    // and retry instead of silently dropping them — dropping would leave the
-    // graph stale while the on-disk snapshot hash already covers the files.
-    if (kgFlushRetries >= KG_FLUSH_MAX_RETRIES) {
-      kgFlushRetries = 0
-      log.warn("KG incremental sync dropped after retry budget exhausted", { count: updates.length })
-      return
-    }
+    // the duo-smart-layer sidecar finished booting). 7-6: keep the updates
+    // pending and retry with exponential backoff (2s → capped 60s) for the
+    // process lifetime — the old fixed retry budget DROPPED the pending
+    // updates when exhausted, leaving the graph stale until the next full
+    // rebuild while the snapshot hash already looked fresh.
     kgFlushRetries++
+    if (kgFlushRetries === KG_FLUSH_ERROR_THRESHOLD) {
+      log.error("KG incremental sync still unavailable after repeated retries; continuing with backoff", {
+        pending: updates.length,
+      })
+    } else {
+      log.warn("KG incremental sync deferred (smart-layer unavailable), will retry", {
+        pending: updates.length,
+        attempt: kgFlushRetries,
+        nextDelayMs: kgRetryDelayMs(),
+      })
+    }
     for (const [file, event] of updates) {
       kgPendingUpdates.set(file, event)
     }
     if (!kgUpdateTimer) {
-      kgUpdateTimer = setTimeout(flushKGUpdates, 2000)
+      kgUpdateTimer = setTimeout(flushKGUpdates, kgRetryDelayMs())
     }
     return
   }

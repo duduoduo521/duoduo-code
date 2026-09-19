@@ -141,7 +141,7 @@ function createGlobalSync() {
       )
       return
     }
-    setGlobalStore("session_todo", sessionID, reconcile(todos, { key: "content" }))
+    setGlobalStore("session_todo", sessionID, reconcile(todos, { key: "id" }))
   }
 
   const paused = () => untrack(() => globalStore.reload) !== undefined

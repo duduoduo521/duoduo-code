@@ -442,6 +442,7 @@ impl StructuredAssembler {
                     "coding_standards".to_string(),
                 ]),
                 project_path: Some(project_path.to_string()),
+                session_id: None,
             };
             self.memory
                 .search(&req)

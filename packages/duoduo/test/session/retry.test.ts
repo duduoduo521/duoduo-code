@@ -67,12 +67,15 @@ describe("session.retry.delay", () => {
     expect(SessionRetry.delay(1, error)).toBe(2000)
   })
 
-  test("uses retry-after values even when exceeding 10 minutes with headers", () => {
+  test("caps header delays above the 60s runtime cap (P2-2)", () => {
+    // Sub-cap values pass through unchanged.
     const error = apiError({ "retry-after": "50" })
     expect(SessionRetry.delay(1, error)).toBe(50000)
 
+    // P2-2: RETRY_MAX_DELAY is now 60s — an 11.6-minute Retry-After is capped
+    // (previously 2^31-1 let multi-minute stalls through).
     const longError = apiError({ "retry-after-ms": "700000" })
-    expect(SessionRetry.delay(1, longError)).toBe(700000)
+    expect(SessionRetry.delay(1, longError)).toBe(SessionRetry.RETRY_MAX_DELAY)
   })
 
   test("caps oversized header delays to the runtime timer limit", () => {

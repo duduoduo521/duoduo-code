@@ -44,6 +44,10 @@ async function rememberRejectedPlan(info: Request, message?: string) {
       content: summarizeRejectedPlan(info, message),
       category: "rejected_plan",
       userId: "default",
+      // 7-4: explicit canonical project key (the worktree path) — the old
+      // implicit "" row was only visible through the `OR project_id=''`
+      // fallback and went invisible the moment any reader passed a real id.
+      projectId: Instance.worktree,
       metadata: { source: "plan_confirm", requestID: info.id },
     })
     .catch(() => {})

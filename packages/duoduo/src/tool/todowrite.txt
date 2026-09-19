@@ -25,6 +25,9 @@ The list shown to the user MUST always reflect actual progress.
 ## Full-list replacement
 Every call passes the COMPLETE list with latest statuses. Items omitted are removed.
 
+## Item identity
+Every task carries a stable `id`. When you update an EXISTING task, you MUST pass back its id (from the previous tool result); omit `id` only when creating a brand-new task. Changing the content text does not make it a new task.
+
 ## Item quality
 Specific, actionable, clear names; break complex tasks into smaller steps.
 When in doubt, use this tool — proactive tracking ensures all requirements are met.

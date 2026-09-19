@@ -920,6 +920,11 @@ export const dict = {
   "settings.snapshot.retentionDesc": "超过该天数的旧快照会在每小时自动清理时被删除。设置更长可保留更久的历史以便回溯（如查看上周的改动）。",
   "settings.snapshot.retentionSave": "保存",
   "settings.snapshot.retentionSaved": "快照保留时间已保存",
+  "settings.snapshot.maxFileSize": "单文件快照上限（MB）",
+  "settings.snapshot.maxFileSizeDesc": "超过该大小的未跟踪文件不参与快照与回滚（也绝不会被回滚删除）；调整只对新文件生效。",
+  "settings.snapshot.maxTotalSize": "快照仓库总体积上限（GB）",
+  "settings.snapshot.maxTotalSizeDesc": "超过上限时自动清理会从最旧的快照开始裁剪；被裁剪的快照将无法再回滚到该点。",
+  "settings.snapshot.invalidSize": "请输入有效的正整数（MB / GB）",
 
   "settings.concurrency.title": "并发控制",
   "settings.concurrency.description": "配置 Agent 并行数量与 LLM 重试策略",

@@ -13,17 +13,36 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
 use tokio::sync::{Mutex, oneshot};
 use tracing::{debug, warn};
 
+/// How long a pending entry may sit untouched before it is considered stale:
+/// 2× the 10-minute wait timeout. A live waiter always removes its own entry
+/// (submit / timeout / sender-dropped) well inside that window, so purging an
+/// entry older than TTL can never kill a live wait.
+const ENTRY_TTL: Duration = Duration::from_secs(1200);
+
 /// Registry that pairs suspended agent loops with oneshot channels,
 /// allowing an external producer to submit tool results that the loop
 /// is awaiting.
 /// Map of `(session_id, tool_call_id)` → channel awaiting that tool's result.
-type PendingToolResults = Arc<Mutex<HashMap<(String, String), oneshot::Sender<String>>>>;
+type PendingToolResults = Arc<Mutex<HashMap<(String, String), PendingEntry>>>;
+
+struct PendingEntry {
+    tx: oneshot::Sender<String>,
+    inserted_at: Instant,
+}
+
+impl std::fmt::Debug for PendingEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PendingEntry")
+            .field("age_secs", &self.inserted_at.elapsed().as_secs())
+            .finish()
+    }
+}
 
 #[derive(Debug)]
 pub struct ToolResultRegistry {
@@ -35,6 +54,21 @@ impl ToolResultRegistry {
     pub fn new() -> Self {
         Self {
             pending: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// 2-6: drop entries that nobody picked up within [`ENTRY_TTL`]. Without
+    /// this, a cancelled waiter (whose caller drops the future, so neither the
+    /// submit nor the timeout arm ever runs for it) leaks its entry until the
+    /// same key re-registers or a late submit arrives. Purging drops the
+    /// oneshot sender, which correctly errors the (long-gone) waiter.
+    async fn purge_expired(&self) {
+        let mut map = self.pending.lock().await;
+        let before = map.len();
+        map.retain(|_, entry| entry.inserted_at.elapsed() < ENTRY_TTL);
+        let removed = before - map.len();
+        if removed > 0 {
+            warn!(removed, "purged expired pending tool-result entries");
         }
     }
 
@@ -56,15 +90,22 @@ impl ToolResultRegistry {
         let (tx, rx) = oneshot::channel();
         let key = (session_id.to_owned(), call_id.to_owned());
 
+        self.purge_expired().await;
         {
             let mut map = self.pending.lock().await;
-            if let Some(old_tx) = map.insert(key.clone(), tx) {
+            if let Some(old) = map.insert(
+                key.clone(),
+                PendingEntry {
+                    tx,
+                    inserted_at: Instant::now(),
+                },
+            ) {
                 warn!(
                     session_id = %key.0,
                     call_id = %key.1,
                     "duplicate pending entry — dropping previous sender"
                 );
-                drop(old_tx);
+                drop(old.tx);
             }
         }
 
@@ -131,10 +172,11 @@ impl ToolResultRegistry {
     ) -> Result<()> {
         let key = (session_id.to_owned(), call_id.to_owned());
 
+        self.purge_expired().await;
         let tx = {
             let mut map = self.pending.lock().await;
             match map.remove(&key) {
-                Some(tx) => tx,
+                Some(entry) => entry.tx,
                 None => {
                     warn!(
                         session_id = %key.0,

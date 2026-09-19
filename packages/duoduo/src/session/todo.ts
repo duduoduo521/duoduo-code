@@ -25,6 +25,16 @@ export function isValidTransition(from: string, to: string): boolean {
 
 export const Info = z
   .object({
+    // [1-1] Stable identity. The model MUST pass back the id when updating an
+    // existing task; omitting it is only valid for brand-new tasks (backend
+    // generates one). Legacy rows written before this column existed fall
+    // back to content matching (read side: id = content).
+    id: z
+      .string()
+      .optional()
+      .describe(
+        "Stable id of an existing task. When updating an existing task you MUST pass back its id; omit it only when creating a brand-new task.",
+      ),
     content: z.string().describe("Brief description of the task"),
     status: z
       .string()
@@ -47,13 +57,11 @@ export const Event = {
 }
 
 export interface Interface {
-  readonly update: (input: {
-    sessionID: SessionID
-    todos: Info[]
-    /** Who is updating the list. "ai" applies the no-skip-ordering guard (问题3);
-     *  "user" bypasses it. Defaults to "user". */
-    source?: "ai" | "user"
-  }) => Effect.Effect<void, DuoduoError>
+  // Resolves to the persisted todo list (ids filled in for brand-new tasks) so
+  // the todowrite tool can echo the CANONICAL ids back to the model — the
+  // todowrite prompt requires the model to pass ids back on updates, and it
+  // can only do that if the tool result carries them.
+  readonly update: (input: { sessionID: SessionID; todos: Info[] }) => Effect.Effect<Info[], DuoduoError>
   readonly get: (sessionID: SessionID) => Effect.Effect<Info[]>
 }
 
@@ -64,89 +72,104 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const bus = yield* Bus.Service
 
-    const update = Effect.fn("Todo.update")(function* (
-      input: { sessionID: SessionID; todos: Info[]; source?: "ai" | "user" },
-    ) {
-      // [T-03] Validate statuses + transitions against the previous state. Todos
-      // are matched to their prior version by content (the de-facto identity used
-      // by `update`, which replaces the whole list).
-      const prev = yield* get(input.sessionID)
-      const prevByContent = new Map(prev.map((t) => [t.content, t.status]))
-      for (const todo of input.todos) {
-        if (!ALLOWED_STATUSES.has(todo.status)) {
-          return yield* Effect.fail(
-            new DuoduoError({
-              message: t({
-                en: `Invalid todo status: "${todo.status}" (allowed: pending / in_progress / completed / cancelled)`,
-                zh: `非法任务状态: "${todo.status}"（允许: pending / in_progress / completed / cancelled）`,
-              }),
-              cause: undefined,
-            }),
-          )
-        }
-        if (todo.content.length > 0 && prevByContent.has(todo.content)) {
-          const from = prevByContent.get(todo.content)!
-          if (!isValidTransition(from, todo.status)) {
-            return yield* Effect.fail(
-              new DuoduoError({
-                message: t({
-                  en: `Illegal status transition: "${todo.content}" ${from} → ${todo.status}`,
-                  zh: `非法状态流转: "${todo.content}" ${from} → ${todo.status}`,
-                }),
-                cause: undefined,
-              }),
-            )
-          }
-        }
-      }
-
-      // [T-04 / 问题3] When the AI updates the list, enforce ordered execution:
-      // it must not skip ahead to a later task while an earlier one is still
-      // pending. Cancelled tasks are ignored for ordering. This prevents the
-      // agent from silently dropping earlier checklist items.
-      if (input.source === "ai") {
-        const ordered = input.todos
-          .map((t, position) => ({ t, position }))
-          .filter(({ t }) => t.status !== "cancelled")
-          .sort((a, b) => a.position - b.position)
-        let firstPendingIdx = ordered.findIndex(({ t }) => t.status === "pending")
-        if (firstPendingIdx !== -1) {
-          const firstPending = ordered[firstPendingIdx]
-          for (let i = firstPendingIdx + 1; i < ordered.length; i++) {
-            const st = ordered[i]!.t.status
-            if (st === "in_progress" || st === "completed") {
-              return yield* Effect.fail(
-                new DuoduoError({
-                  message: t({
-                    en: `Execute the task list in order: you cannot start or complete "${ordered[i]!.t.content}" before "${firstPending!.t.content}" (pending) is done. Please work on the earlier unfinished item first.`,
-                    zh: `请按顺序执行任务清单：在「${firstPending!.t.content}」(pending) 完成之前，不能先开始/完成「${ordered[i]!.t.content}」。请先处理靠前的未完成项。`,
-                  }),
-                  cause: undefined,
-                }),
-              )
+    const update = Effect.fn("Todo.update")(function* (input: { sessionID: SessionID; todos: Info[] }) {
+      // [1-2] Read-validate-write inside ONE transaction: the previous state is
+      // read from the same snapshot the delete+insert commits against, so two
+      // concurrent updates can no longer lose each other's writes (TOCTOU).
+      const resolved = yield* Effect.try({
+        try: () =>
+          Database.projectTransaction((db): Info[] => {
+            const fail = (en: string, zh: string): never => {
+              throw new DuoduoError({ message: t({ en, zh }), cause: undefined })
             }
-          }
-        }
-      }
+            const rows = db
+              .select()
+              .from(TodoTable)
+              .where(eq(TodoTable.session_id, input.sessionID))
+              .orderBy(asc(TodoTable.position))
+              .all()
+            // [1-1] Identity is the stable `id`. Legacy rows written before
+            // the column existed have id = NULL — fall back to content
+            // matching so old sessions keep working.
+            const prevById = new Map(rows.map((r) => [r.id ?? r.content, r]))
+            const prevByContent = new Map(rows.map((r) => [r.content, r]))
 
-      yield* Effect.sync(() =>
-        Database.projectTransaction((db) => {
-          db.delete(TodoTable).where(eq(TodoTable.session_id, input.sessionID)).run()
-          if (input.todos.length === 0) return
-          db.insert(TodoTable)
-            .values(
-              input.todos.map((todo, position) => ({
-                session_id: input.sessionID,
-                content: todo.content,
-                status: todo.status,
-                priority: todo.priority ?? "",
-                position,
-              })),
-            )
-            .run()
-        }),
-      )
-      yield* bus.publish(Event.Updated, input)
+            // [T-03] Validate statuses + transitions against the previous state.
+            for (const todo of input.todos) {
+              if (!ALLOWED_STATUSES.has(todo.status)) {
+                fail(
+                  `Invalid todo status: "${todo.status}" (allowed: pending / in_progress / completed / cancelled)`,
+                  `非法任务状态: "${todo.status}"（允许: pending / in_progress / completed / cancelled）`,
+                )
+              }
+              const matched =
+                (todo.id ? prevById.get(todo.id) : undefined) ??
+                (todo.content.length > 0 ? prevByContent.get(todo.content) : undefined)
+              if (matched && !isValidTransition(matched.status, todo.status)) {
+                fail(
+                  `Illegal status transition: "${todo.content}" ${matched.status} → ${todo.status}`,
+                  `非法状态流转: "${todo.content}" ${matched.status} → ${todo.status}`,
+                )
+              }
+            }
+
+            // [T-04] Enforce ordered execution: the list must not skip ahead to
+            // a later task while an earlier one is still pending. Cancelled
+            // tasks are ignored for ordering. This prevents the agent from
+            // silently dropping earlier checklist items.
+            const ordered = input.todos
+              .map((t, position) => ({ t, position }))
+              .filter(({ t }) => t.status !== "cancelled")
+              .sort((a, b) => a.position - b.position)
+            const firstPendingIdx = ordered.findIndex(({ t }) => t.status === "pending")
+            if (firstPendingIdx !== -1) {
+              const firstPending = ordered[firstPendingIdx]!
+              for (let i = firstPendingIdx + 1; i < ordered.length; i++) {
+                const st = ordered[i]!.t.status
+                if (st === "in_progress" || st === "completed") {
+                  fail(
+                    `Execute the task list in order: you cannot start or complete "${ordered[i]!.t.content}" before "${firstPending.t.content}" (pending) is done. Please work on the earlier unfinished item first.`,
+                    `请按顺序执行任务清单：在「${firstPending.t.content}」(pending) 完成之前，不能先开始/完成「${ordered[i]!.t.content}」。请先处理靠前的未完成项。`,
+                  )
+                }
+              }
+            }
+
+            db.delete(TodoTable).where(eq(TodoTable.session_id, input.sessionID)).run()
+            if (input.todos.length === 0) return []
+            // [1-1] Keep the matched row's stable id; brand-new tasks get a
+            // generated one (an explicit id from the model is honored so a
+            // deleted-then-recreated task keeps its identity).
+            const resolvedTodos: Info[] = input.todos.map((todo) => {
+              const id =
+                (todo.id ? prevById.get(todo.id)?.id : undefined) ??
+                (todo.content.length > 0 ? prevByContent.get(todo.content)?.id : undefined) ??
+                todo.id ??
+                crypto.randomUUID()
+              return { id, content: todo.content, status: todo.status, priority: todo.priority ?? "" }
+            })
+            db.insert(TodoTable)
+              .values(
+                resolvedTodos.map((todo, position) => ({
+                  session_id: input.sessionID,
+                  id: todo.id,
+                  content: todo.content,
+                  status: todo.status,
+                  priority: todo.priority,
+                  position,
+                })),
+              )
+              .run()
+            return resolvedTodos
+          }),
+        catch: (e) =>
+          e instanceof DuoduoError
+            ? e
+            : new DuoduoError({ message: "todo update failed", messageZh: "任务清单更新失败", cause: e }),
+      })
+
+      yield* bus.publish(Event.Updated, { sessionID: input.sessionID, todos: resolved })
+      return resolved
     })
 
     const get = Effect.fn("Todo.get")(function* (sessionID: SessionID) {
@@ -155,7 +178,10 @@ export const layer = Layer.effect(
           db.select().from(TodoTable).where(eq(TodoTable.session_id, sessionID)).orderBy(asc(TodoTable.position)).all(),
         ),
       )
+      // [1-1] Legacy rows have id = NULL — expose id = content so consumers
+      // (frontend reconcile, tool descriptions) always see a stable key.
       return rows.map((row) => ({
+        id: row.id ?? row.content,
         content: row.content,
         status: row.status,
         priority: row.priority,

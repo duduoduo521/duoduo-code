@@ -200,6 +200,7 @@ async fn search(
         } else {
             Some(req.project_path.clone())
         },
+        session_id: None,
     };
 
     let entries: Vec<MemoryEntry> =

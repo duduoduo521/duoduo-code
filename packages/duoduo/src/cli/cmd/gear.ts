@@ -39,8 +39,8 @@ async function pullGears(url: string): Promise<string[]> {
 async function installFromCacheDir(cacheDir: string, name: string): Promise<string> {
   const dest = path.join(GEAR_STORE, name)
   const tmp = `${dest}.tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-  await fs.cp(cacheDir, tmp, { recursive: true })
   try {
+    await fs.cp(cacheDir, tmp, { recursive: true })
     await fs.rm(dest, { recursive: true, force: true })
     let renamed = false
     for (let attempt = 0; attempt < 3 && !renamed; attempt++) {
@@ -53,11 +53,13 @@ async function installFromCacheDir(cacheDir: string, name: string): Promise<stri
       }
     }
   } catch (e) {
-    // Preserve the staged copy for diagnosis instead of leaving nothing.
+    // Preserve the staged copy for diagnosis instead of leaving nothing
+    // (audit fix: a cp-stage failure previously leaked the `.tmp-` dir).
+    await fs.rm(tmp, { recursive: true, force: true }).catch(() => {})
     const broken = `${dest}.broken-${Date.now()}`
-    await fs.rename(tmp, broken).catch(() => {})
+    await fs.cp(cacheDir, broken, { recursive: true }).catch(() => {})
     throw new Error(
-      `Gear install failed during final swap; the partially-installed copy was preserved at ${broken}: ${e instanceof Error ? e.message : String(e)}`,
+      `Gear install failed; the source copy was preserved at ${broken}: ${e instanceof Error ? e.message : String(e)}`,
     )
   }
   return dest

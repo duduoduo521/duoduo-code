@@ -574,6 +574,34 @@ impl MemorySystem {
         let mut conn = self.get_write_conn_mut()?;
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
 
+        // 7-5: content dedup. A fresh store (no explicit id) whose content,
+        // project and layer all match an existing row must NOT append a
+        // duplicate — refresh the existing row's updated_at and return its id.
+        // Single-machine low-frequency writes, so an equality scan without a
+        // new index/column is acceptable (no schema migration).
+        if req.id.is_none() {
+            let dup: Option<String> = match tx.query_row(
+                "SELECT id FROM memories WHERE content = ?1 AND project_path = ?2 AND layer = ?3 LIMIT 1",
+                rusqlite::params![req.content, project_path, layer_int],
+                |row| row.get::<_, String>(0),
+            ) {
+                Ok(id) => Ok(Some(id)),
+                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                Err(e) => Err(e),
+            }
+            .context("Failed to check for duplicate memory")?;
+            if let Some(dup_id) = dup {
+                tx.execute(
+                    "UPDATE memories SET updated_at = ?1 WHERE id = ?2",
+                    rusqlite::params![Utc::now().timestamp(), dup_id],
+                )
+                .context("Failed to refresh duplicate memory")?;
+                tx.commit()?;
+                tracing::debug!(id = %dup_id, "duplicate memory store — refreshed existing row");
+                return Ok(MemoryStoreResponse { id: dup_id, stored: true });
+            }
+        }
+
         tx.execute(
             "INSERT OR REPLACE INTO memories
              (id, content, layer, tags, metadata, project_path, created_at,
@@ -799,6 +827,14 @@ impl MemorySystem {
             }
         }
 
+        // 7-3: the vector path fetches by id (no SQL WHERE session_id) — apply
+        // the same session filter post-hoc so merged results stay scoped.
+        if let Some(ref sid) = req.session_id
+            && !sid.is_empty()
+        {
+            vector_results.retain(|e| e.session_id.as_deref() == Some(sid.as_str()));
+        }
+
         // Try FTS5 next (coarse + fine)
         let mut fts5_results: Vec<MemoryEntry> = Vec::new();
         match self.fts5_search(req) {
@@ -877,6 +913,16 @@ impl MemorySystem {
                 base_idx
             ));
             param_values.push(Box::new(project_path.clone()));
+        }
+
+        // 7-3: session pushdown — filter before the LIMIT so a session-scoped
+        // recall is not truncated to unrelated sessions' rows.
+        if let Some(ref session_id) = req.session_id
+            && !session_id.is_empty()
+        {
+            let base_idx = param_values.len() + 1;
+            sql.push_str(&format!(" AND m.session_id = ?{}", base_idx));
+            param_values.push(Box::new(session_id.clone()));
         }
 
         // Fetch more than limit for fine-ranking, then truncate
@@ -1040,6 +1086,15 @@ impl MemorySystem {
         // recency in SQL, and only that bounded window is Jaccard-scored in
         // Rust. The window is a generous multiple of the request so ranking
         // quality is unaffected in practice.
+        // 7-3: session pushdown (same rationale as the FTS5 path).
+        if let Some(ref session_id) = req.session_id
+            && !session_id.is_empty()
+        {
+            let base_idx = param_values.len() + 1;
+            sql.push_str(&format!(" AND session_id = ?{}", base_idx));
+            param_values.push(Box::new(session_id.clone()));
+        }
+
         let candidate_cap = req.limit.saturating_mul(50).max(500);
         {
             let base_idx = param_values.len() + 1;
@@ -2595,6 +2650,13 @@ mod tests {
         }
     }
 
+    fn store_req_in_session(content: &str, layer: &str, session_id: &str) -> MemoryStoreRequest {
+        MemoryStoreRequest {
+            session_id: Some(session_id.to_string()),
+            ..store_req(content, layer)
+        }
+    }
+
     /// Helper: create an in-memory MemorySystem for testing.
     ///
     /// We bypass `new()` because it tries to open a file on disk.
@@ -2661,12 +2723,86 @@ mod tests {
                 layers: None,
                 tags: None,
                 project_path: None,
+                session_id: None,
             })
             .unwrap();
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].content, "Rust is a systems programming language");
         assert!(results[0].score > 0.0);
+    }
+
+    // 7-3: session_id pushdown — a session-scoped search only returns that
+    // session's rows, even though other sessions' rows share the same layer
+    // and would otherwise fill the FTS LIMIT window.
+    #[test]
+    fn search_session_filter_excludes_other_sessions() {
+        let sys = test_system();
+        sys.store(&store_req_in_session(
+            "todo list from session A",
+            "short_term",
+            "s-a",
+        ))
+        .unwrap();
+        sys.store(&store_req_in_session(
+            "todo list from session B",
+            "short_term",
+            "s-b",
+        ))
+        .unwrap();
+
+        let results = sys
+            .search(&MemorySearchRequest {
+                query: "todo list".into(),
+                limit: 10,
+                layers: None,
+                tags: None,
+                project_path: None,
+                session_id: Some("s-a".into()),
+            })
+            .unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].session_id.as_deref(), Some("s-a"));
+        assert!(results[0].content.contains("session A"));
+
+        // No filter → both sessions visible (global search unchanged).
+        let all = sys
+            .search(&MemorySearchRequest {
+                query: "todo list".into(),
+                limit: 10,
+                layers: None,
+                tags: None,
+                project_path: None,
+                session_id: None,
+            })
+            .unwrap();
+        assert_eq!(all.len(), 2);
+    }
+
+    // 7-5: storing identical content (no explicit id) refreshes the existing
+    // row's updated_at instead of appending a duplicate.
+    #[test]
+    fn store_dedupes_identical_content_without_explicit_id() {
+        let sys = test_system();
+        let first = sys
+            .store(&store_req_in_session("user prefers tabs over spaces", "short_term", "s1"))
+            .unwrap();
+        let second = sys
+            .store(&store_req_in_session("user prefers tabs over spaces", "short_term", "s1"))
+            .unwrap();
+        assert_eq!(first.id, second.id, "duplicate store must reuse the row id");
+
+        let results = sys
+            .search(&MemorySearchRequest {
+                query: "prefers tabs".into(),
+                limit: 10,
+                layers: None,
+                tags: None,
+                project_path: None,
+                session_id: None,
+            })
+            .unwrap();
+        assert_eq!(results.len(), 1, "no duplicate row may exist");
     }
 
     #[test]
@@ -2686,6 +2822,7 @@ mod tests {
                 layers: Some(vec!["long_term".into()]),
                 tags: None,
                 project_path: None,
+                session_id: None,
             })
             .unwrap();
 
@@ -2736,6 +2873,7 @@ mod tests {
                 layers: None,
                 tags: Some(vec!["important".into()]),
                 project_path: None,
+                session_id: None,
             })
             .unwrap();
 
@@ -2780,6 +2918,7 @@ mod tests {
                 layers: None,
                 tags: None,
                 project_path: None,
+                session_id: None,
             })
             .unwrap();
         assert!(results.is_empty());
@@ -2827,6 +2966,7 @@ mod tests {
                 layers: None,
                 tags: None,
                 project_path: None,
+                session_id: None,
             })
             .unwrap();
         assert!(
@@ -2928,6 +3068,7 @@ mod tests {
                 layers: None,
                 tags: None,
                 project_path: None,
+                session_id: None,
             })
             .unwrap();
         assert!(
@@ -3254,6 +3395,7 @@ mod bench {
             layers: None,
             tags: None,
             project_path: None,
+            session_id: None,
         };
         let results = system.search(&req).unwrap();
         let elapsed = start.elapsed();

@@ -1706,11 +1706,17 @@ fn spawn_sse_parser(
 
                                         // First delta at this index: seed the
                                         // entry from the fragments it carries.
-                                        let id = tc
-                                            .get("id")
-                                            .and_then(|v| v.as_str())
-                                            .unwrap_or("")
-                                            .to_string();
+                                        // 3-3: an empty first-delta id can never
+                                        // be paired with a tool_result (provider
+                                        // 400) — generate a stable id keyed on
+                                        // the delta index so TS/recover/provider
+                                        // all see the same identifier.
+                                        let raw_id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                                        let id = if raw_id.is_empty() {
+                                            format!("duo_gen_{index}")
+                                        } else {
+                                            raw_id.to_string()
+                                        };
                                         let tc_type = tc
                                             .get("type")
                                             .and_then(|v| v.as_str())
@@ -1874,11 +1880,17 @@ fn spawn_sse_parser(
 
                                         // First delta at this index: seed the
                                         // entry from the fragments it carries.
-                                        let id = tc
-                                            .get("id")
-                                            .and_then(|v| v.as_str())
-                                            .unwrap_or("")
-                                            .to_string();
+                                        // 3-3: an empty first-delta id can never
+                                        // be paired with a tool_result (provider
+                                        // 400) — generate a stable id keyed on
+                                        // the delta index so TS/recover/provider
+                                        // all see the same identifier.
+                                        let raw_id = tc.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                                        let id = if raw_id.is_empty() {
+                                            format!("duo_gen_{index}")
+                                        } else {
+                                            raw_id.to_string()
+                                        };
                                         let tc_type = tc
                                             .get("type")
                                             .and_then(|v| v.as_str())
@@ -2061,6 +2073,71 @@ mod fallback_tests {
             res,
             Err(unified_error::UnifiedError::Unavailable(_))
         ));
+    }
+
+    // P1-6 + P2-8(3-3): a tool_calls-only SSE stream that ends WITHOUT the
+    // [DONE] marker must be assembled into LlmStreamChunk::Done (not an
+    // error), with the empty first-delta id replaced by `duo_gen_{index}`.
+    #[tokio::test]
+    async fn sse_tool_calls_only_stream_without_done_yields_done() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let body = concat!(
+            r#"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"","type":"function","function":{"name":"read_file","arguments":"{\"path\":"}}]}}]}"#,
+            "\n\n",
+            r#"data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"a.txt\"}"}}]}}]}"#,
+            "\n\n",
+            r#"data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"#,
+            "\n\n",
+        );
+        let server = tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let mut buf = vec![0u8; 8192];
+            let _ = sock.read(&mut buf).await.unwrap(); // request bytes (discarded)
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            sock.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let req = LlmRequest {
+            model: "test-model".to_string(),
+            ..Default::default()
+        };
+        let mut stream = call_llm_stream(
+            &format!("http://{addr}/v1/chat/completions"),
+            None,
+            &req,
+            tokio_util::sync::CancellationToken::new(),
+            1,
+        )
+        .await
+        .expect("connection must succeed");
+        server.await.unwrap();
+
+        use futures::StreamExt;
+        let mut done: Option<LlmResponse> = None;
+        while let Some(chunk) = stream.next().await {
+            match chunk {
+                LlmStreamChunk::Done(r) => {
+                    done = Some(r);
+                    break;
+                }
+                LlmStreamChunk::Error(e) => panic!("tool_calls-only stream must not error: {e:?}"),
+                _ => {}
+            }
+        }
+        let done = done.expect("stream must end with Done");
+        assert_eq!(done.content, "");
+        assert_eq!(done.finish_reason.as_deref(), Some("tool_calls"));
+        let calls = done.tool_calls.expect("tool calls preserved");
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].id, "duo_gen_0", "empty first-delta id is generated");
+        assert_eq!(calls[0].function.name, "read_file");
+        assert_eq!(calls[0].function.arguments, r#"{"path":"a.txt"}"#);
     }
 }
 

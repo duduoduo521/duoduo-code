@@ -306,10 +306,12 @@ test("revert with empty patches", async () => {
     directory: tmp.path,
     fn: async () => {
       // Should not crash with empty patches
-      expect(run(tmp.path, (snapshot) => snapshot.revert([], true))).resolves.toBeUndefined()
+      expect(run(tmp.path, (snapshot) => snapshot.revert([], true))).resolves.toEqual({ failed: [] })
 
       // Should not crash with patches that have empty file lists
-      expect(run(tmp.path, (snapshot) => snapshot.revert([{ hash: "dummy", files: [] }], true))).resolves.toBeUndefined()
+      expect(run(tmp.path, (snapshot) => snapshot.revert([{ hash: "dummy", files: [] }], true))).resolves.toEqual({
+        failed: [],
+      })
     },
   })
 })
@@ -352,7 +354,7 @@ test("revert non-existent file", async () => {
             },
           ]),
         ),
-      ).resolves.toBeUndefined()
+      ).resolves.toEqual({ failed: [] })
     },
   })
 })
@@ -1714,9 +1716,7 @@ test("S-02: restore refuses to overwrite uncommitted edits without force", async
       )
 
       // With force: proceeds.
-      await expect(
-        run(tmp.path, (snapshot) => snapshot.restore(initial!, true)),
-      ).resolves.toBeUndefined()
+      await expect(run(tmp.path, (snapshot) => snapshot.restore(initial!, true))).resolves.toEqual({ failed: [] })
     },
   })
 })

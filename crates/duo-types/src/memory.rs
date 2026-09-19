@@ -109,6 +109,10 @@ pub struct MemorySearchRequest {
     pub tags: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_path: Option<String>,
+    /// 7-3: when set, SQL-filters `session_id = ?` BEFORE the LIMIT so a
+    /// session-scoped recall cannot be truncated by unrelated sessions' rows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
 }
 
 fn default_limit() -> usize {

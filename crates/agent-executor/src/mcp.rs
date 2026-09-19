@@ -95,6 +95,17 @@ fn parse_server_spec(gear_name: &str, raw: &Value, dir: &Path) -> Option<ServerS
             if command.is_empty() {
                 return None;
             }
+            // P0-6 parity with the TS loader (mcp/index.ts gearMcpToConfigMcp):
+            // reject shell metacharacters in the command. Both sides spawn via
+            // argv (no shell), so this is defense-in-depth against a gear
+            // package sneaking a `sh -c`-style payload into `command`.
+            if command.chars().any(|c| matches!(c, ';' | '|' | '&' | '`' | '$' | '>' | '<' | '\r' | '\n')) {
+                tracing::warn!(
+                    gear = %gear_name,
+                    "gear mcp.json command contains shell metacharacters — refusing to load this server"
+                );
+                return None;
+            }
             let args = raw
                 .get("args")
                 .and_then(|v| v.as_array())
@@ -926,6 +937,34 @@ mod tests {
         assert!(parse_server_spec("bad", &json!({ "kind": "stdio", "command": "" }), Path::new(".")).is_none());
         assert!(parse_server_spec("bad", &json!({ "kind": "sse", "url": "" }), Path::new(".")).is_none());
         assert!(parse_server_spec("bad", &json!({ "kind": "other" }), Path::new(".")).is_none());
+    }
+
+    // P0-6: shell metacharacters in a gear mcp.json command are refused
+    // (parity with the TS loader, mcp/index.ts gearMcpToConfigMcp).
+    #[test]
+    fn parse_rejects_shell_metacharacters_in_command() {
+        for cmd in [
+            "npx; rm -rf /",
+            "sh -c `id`",
+            "node | evil",
+            "node > /tmp/pwn",
+            "node < /etc/passwd",
+            "node & background",
+            "echo $HOME",
+            "node\r\nloop",
+        ] {
+            assert!(
+                parse_server_spec("bad", &json!({ "kind": "stdio", "command": cmd }), Path::new(".")).is_none(),
+                "command {cmd:?} must be refused"
+            );
+        }
+        // Metacharacters in args are fine — args are passed verbatim via argv.
+        assert!(parse_server_spec(
+            "ok",
+            &json!({ "kind": "stdio", "command": "npx", "args": ["-e", "a&&b"] }),
+            Path::new(".")
+        )
+        .is_some());
     }
 
     #[test]

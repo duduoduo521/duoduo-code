@@ -43,6 +43,23 @@ export function pathMatches(file: string, candidate: string) {
   return normalizedFile === normalizedCandidate || normalizedFile.endsWith(`/${normalizedCandidate}`)
 }
 
+// P1-4 (决策 2b) pure arbitration, extracted so the checkedAt ordering rule
+// is unit-testable without a live blackboard: the block shadows the write
+// only while it is NEWER than the `passed` validation; a re-pass with a newer
+// timestamp supersedes it (no delete needed).
+export function cascadeBlockArbitration(
+  block: ValidationResult | undefined,
+  validation: ValidationResult | undefined,
+  relPath: string,
+  toWorktreeRel: (p: string) => string,
+): boolean {
+  if (block?.status !== "failed") return false
+  if (!(block.files ?? []).some((file) => pathMatches(relPath, toWorktreeRel(file)))) return false
+  const blockAt = block.checkedAt ?? 0
+  const passedAt = validation?.checkedAt ?? 0
+  return blockAt > passedAt
+}
+
 export function ensureWriteAllowedByOrchestration(ctx: Tool.Context, filePath: string) {
   return Effect.gen(function* () {
     const promptID = getPromptID(ctx.sessionID)
@@ -125,16 +142,10 @@ export function ensureWriteAllowedByOrchestration(ctx: Tool.Context, filePath: s
       catch: () => new DuoduoError({ message: "failed to read cascade_block", messageZh: "读取 cascade_block 失败", cause: undefined }),
     }).pipe(Effect.catch(() => Effect.succeed(null)))
     const block = parseJsonObject<ValidationResult>(blockRead?.content)
-    if (
-      block?.status === "failed" &&
-      (block.files ?? []).some((file) => pathMatches(relPath, toWorktreeRel(file)))
-    ) {
-      const blockAt = block.checkedAt ?? 0
-      const passedAt = validation?.checkedAt ?? 0
-      if (blockAt > passedAt) {
+    if (cascadeBlockArbitration(block, validation, relPath, toWorktreeRel)) {
+      const blockAt = block!.checkedAt ?? 0
 // @effect-diagnostics-next-line unnecessaryFailYieldableError:off
-        return yield* Effect.fail(new DuoduoError({ message: String(`Cascade verification failed for ${relPath} at ${new Date(blockAt).toISOString()} and has not been re-validated since. Ask a validator agent to re-check and write blackboard validation_result={"status":"passed","files":["${relPath}"],"checkedAt":...}.`), messageZh: String(`${relPath} 的级联校验于 ${new Date(blockAt).toISOString()} 失败且此后未重新校验通过。请让校验智能体复查并写入黑板 validation_result={"status":"passed","files":["${relPath}"],"checkedAt":...}.`), cause: undefined }))
-      }
+      return yield* Effect.fail(new DuoduoError({ message: String(`Cascade verification failed for ${relPath} at ${new Date(blockAt).toISOString()} and has not been re-validated since. Ask a validator agent to re-check and write blackboard validation_result={"status":"passed","files":["${relPath}"],"checkedAt":...}.`), messageZh: String(`${relPath} 的级联校验于 ${new Date(blockAt).toISOString()} 失败且此后未重新校验通过。请让校验智能体复查并写入黑板 validation_result={"status":"passed","files":["${relPath}"],"checkedAt":...}.`), cause: undefined }))
     }
   })
 }

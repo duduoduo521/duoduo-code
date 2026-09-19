@@ -15,6 +15,8 @@ interface SnapshotStats {
   exists: boolean
   sizeBytes: number
   defaultPruneDays: number
+  maxFileSizeBytes: number
+  maxTotalSizeBytes: number
 }
 
 function formatBytes(bytes: number): string {
@@ -42,6 +44,10 @@ export const SettingsSnapshot: Component = () => {
   // placeholder default that could overwrite the real configured retention.
   const [retention, setRetention] = createSignal("")
   const [retentionSaving, setRetentionSaving] = createSignal(false)
+  // 10-3/10-5: per-file cap shown in MB, total-size cap shown in GB. Empty
+  // until stats load, same prefill policy as retention.
+  const [maxFileSizeMb, setMaxFileSizeMb] = createSignal("")
+  const [maxTotalSizeGb, setMaxTotalSizeGb] = createSignal("")
 
   // Backend `POST /snapshot/cleanup` validates 1..=3650; mirror it client-side
   // with an explicit toast instead of silently dropping invalid input.
@@ -88,6 +94,12 @@ export const SettingsSnapshot: Component = () => {
       if (typeof data.defaultPruneDays === "number" && data.defaultPruneDays > 0) {
         setRetention(String(data.defaultPruneDays))
       }
+      if (typeof data.maxFileSizeBytes === "number" && data.maxFileSizeBytes > 0) {
+        setMaxFileSizeMb(String(Math.round(data.maxFileSizeBytes / (1024 * 1024))))
+      }
+      if (typeof data.maxTotalSizeBytes === "number" && data.maxTotalSizeBytes > 0) {
+        setMaxTotalSizeGb(String(Math.round(data.maxTotalSizeBytes / (1024 * 1024 * 1024))))
+      }
     } catch {
       showToast({ variant: "error", title: language.t("common.requestFailed") })
     } finally {
@@ -102,12 +114,23 @@ export const SettingsSnapshot: Component = () => {
     if (!url) return
     const days = validDays(retention())
     if (days === null) return
+    // 10-3/10-5: file cap is entered in MB, total cap in GB (stored as bytes).
+    const fileMb = parseInt(maxFileSizeMb(), 10)
+    const totalGb = parseInt(maxTotalSizeGb(), 10)
+    if (isNaN(fileMb) || fileMb <= 0 || isNaN(totalGb) || totalGb <= 0) {
+      showToast({ variant: "error", title: language.t("settings.snapshot.invalidSize") })
+      return
+    }
     setRetentionSaving(true)
     try {
       const response = await fetch(url, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ snapshot_retention_days: days }),
+        body: JSON.stringify({
+          snapshot_retention_days: days,
+          snapshot_max_file_size: fileMb * 1024 * 1024,
+          snapshot_max_total_size: totalGb * 1024 * 1024 * 1024,
+        }),
       })
       if (!response.ok) throw new Error(await response.text())
       showToast({ variant: "success", title: language.t("settings.snapshot.retentionSaved") })
@@ -217,6 +240,50 @@ export const SettingsSnapshot: Component = () => {
                 ? language.t("common.loading.ellipsis")
                 : language.t("settings.snapshot.retentionSave")}
             </Button>
+          </div>
+
+          {/* 10-3: per-file snapshot cap (MB). Larger untracked files are
+              excluded from snapshots — they are never snapshotted and never
+              deleted by a rollback; changing this only affects new files. */}
+          <div class="flex flex-col gap-1">
+            <div class="text-13-regular text-text-base">
+              {language.t("settings.snapshot.maxFileSize")}
+            </div>
+            <div class="text-12-regular text-text-weak">
+              {language.t("settings.snapshot.maxFileSizeDesc")}
+            </div>
+          </div>
+          <div class="flex items-end gap-3">
+            <div class="flex flex-col gap-2 flex-1">
+              <TextField
+                value={maxFileSizeMb()}
+                onChange={setMaxFileSizeMb}
+                placeholder="2"
+                type="number"
+              />
+            </div>
+          </div>
+
+          {/* 10-5: snapshot-repo disk cap (GB). When exceeded the hourly
+              cleanup prunes the oldest snapshots first; a pruned snapshot
+              loses its rollback point. */}
+          <div class="flex flex-col gap-1">
+            <div class="text-13-regular text-text-base">
+              {language.t("settings.snapshot.maxTotalSize")}
+            </div>
+            <div class="text-12-regular text-text-weak">
+              {language.t("settings.snapshot.maxTotalSizeDesc")}
+            </div>
+          </div>
+          <div class="flex items-end gap-3">
+            <div class="flex flex-col gap-2 flex-1">
+              <TextField
+                value={maxTotalSizeGb()}
+                onChange={setMaxTotalSizeGb}
+                placeholder="5"
+                type="number"
+              />
+            </div>
           </div>
         </div>
       </SettingsList>

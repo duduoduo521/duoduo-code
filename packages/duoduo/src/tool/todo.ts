@@ -29,18 +29,21 @@ export const TodoWriteTool = Tool.define<typeof parameters, Metadata, Todo.Servi
             metadata: {},
           })
 
-          yield* todo.update({
+          // Echo the RESOLVED list (backend-assigned ids included), not the
+          // raw model input — the todowrite prompt requires the model to pass
+          // ids back on the next update, so brand-new tasks must return the
+          // generated ids here.
+          const resolved = yield* todo.update({
             sessionID: ctx.sessionID,
             todos: params.todos,
-            source: "ai",
           })
 
           return {
-            title: `${params.todos.filter((x) => x.status !== "completed").length} todos`,
+            title: `${resolved.filter((x) => x.status !== "completed").length} todos`,
 // @effect-diagnostics-next-line preferSchemaOverJson:off
-            output: JSON.stringify(params.todos, null, 2),
+            output: JSON.stringify(resolved, null, 2),
             metadata: {
-              todos: params.todos,
+              todos: resolved,
             },
           }
         }),

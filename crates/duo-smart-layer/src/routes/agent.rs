@@ -1449,28 +1449,6 @@ async fn set_llm_config(
         // one slider controls both global and per-project limits)
         state.project_tasks.set_max_concurrent(max);
     }
-    if let Some(max_sub) = config.max_concurrent_subagents {
-        // Clamp to 1..10 to stay consistent with the frontend UI, which also
-        // limits this field to 1..10. Prevents pathological configs submitted
-        // directly via the API (bypassing the UI) from over-spawning sub-agents.
-        let max_sub = max_sub.clamp(1, 10);
-        tracing::info!(
-            max_concurrent_subagents = max_sub,
-            "subagent concurrency limit configured"
-        );
-    }
-    if let Some(max_retry) = config.max_retry_attempts {
-        let max_retry = max_retry.clamp(1, 10);
-        tracing::info!(
-            max_retry_attempts = max_retry,
-            "LLM retry attempts configured"
-        );
-    }
-    if let Some(tc) = config.tool_concurrency {
-        let tc = tc.max(1).min(agent_executor::MAX_TOOL_CONCURRENCY_HARD as u32);
-        tracing::info!(tool_concurrency = tc, "per-round tool execution concurrency configured");
-    }
-
     // Async sync to duoduo (fire-and-forget, does not block response)
     tokio::spawn(crate::duoduo_sync::sync_to_duoduo(sync_config));
 
@@ -2828,7 +2806,10 @@ async fn run_loop_handler(
     let api_key_spawn = api_key.clone();
     let model_spawn = model.clone();
     let config_provider = effective_provider.clone();
-    let max_retry_spawn = config.max_retry_attempts;
+    // 2-7c: clamp here (the single definition of the consumed value) instead
+    // of a log-only clamp in the configure handler — the main loop (:4511
+    // unwrap_or) and sub-agent inheritance consume this value unclamped.
+    let max_retry_spawn = config.max_retry_attempts.map(|r| r.clamp(1, 10));
     // [LLM-05/P1-1] Configured fallback models for the main run loop's LLM
     // calls (chat_stream and sub-agents already had them; the main loop was
     // the only caller without degradation).
@@ -3056,8 +3037,7 @@ async fn run_loop_handler(
             config
                 .max_concurrent_subagents
                 .unwrap_or(3)
-                .clamp(1, 10)
-                .max(1),
+                .clamp(1, 10),
         )
         .with_phase(req.initial_phase.unwrap_or(duo_types::renderer::TaskPhase::Execute))
         .with_temperature(req.temperature);
@@ -3419,6 +3399,16 @@ async fn run_loop_handler(
         // (revert/restore/diff/diffFull) in the same repo. When TS passes None
         // (non-git project / snapshot disabled), snapshot tracking is skipped.
         let mut prev_snapshot_hash: Option<String> = None;
+        // P2-12/9-5: consecutive quality-failure rewrite counter, keyed by the
+        // resolved target file. Lives for this run_loop only; fixed cap (3):
+        // after 3 consecutive failed rewrites the model gets one "stop
+        // auto-rewriting, human review needed" notice and no further fix prompts.
+        let mut quality_rewrite_counts: std::collections::HashMap<String, u32> =
+            std::collections::HashMap::new();
+        // 3-4: MAX_STEPS_PROMPT must be injected at most once per run_loop —
+        // the wrap-up round terminates the loop, so a second push is dead
+        // weight (and was previously re-injected on every loop-top re-entry).
+        let mut max_steps_prompt_injected = false;
         let snapshot_svc: Option<Arc<agent_executor::SnapshotService>> = {
             if let Some(ref gd) = snapshot_gitdir_spawn {
                 let gitdir = std::path::PathBuf::from(gd);
@@ -3643,6 +3633,10 @@ async fn run_loop_handler(
                     layers: None,
                     tags: Some(vec!["conversation".to_string()]),
                     project_path: req.project_path.clone(),
+                    // 7-3: push the session filter into SQL so the LIMIT
+                    // cannot be eaten by unrelated sessions' rows (the old
+                    // take-20-then-filter lost entries in busy sessions).
+                    session_id: Some(session_id_spawn.clone()),
                 }) {
                     Ok(entries) => {
                         let session_mems: Vec<&str> = entries
@@ -3714,12 +3708,14 @@ async fn run_loop_handler(
                 max_total_tokens: Some(sub_agent_limits_spawn.max_total_tokens),
                 max_file_reads: Some(sub_agent_limits_spawn.max_file_reads),
                 max_retries: 1,
+                // 2-7c: clamp both bounds (the old `.max(1)` only guarded the
+                // lower one, letting a pathological config over-spawn).
                 max_concurrent: state_clone
                     .executor
                     .get_llm_config()
                     .max_concurrent_subagents
                     .unwrap_or(3)
-                    .max(1) as usize,
+                    .clamp(1, 10) as usize,
                 // Route-B fan-out inherits the same per-round tool concurrency
                 // setting. Clamping/in-flight limit are enforced per-sub-agent
                 // inside `build_executor`, so this only propagates the user's
@@ -4170,9 +4166,13 @@ async fn run_loop_handler(
                     session_id: session_id_spawn.clone(),
                     steps,
                 });
-                messages.push(agent_executor::LlmMessage::user(
-                    agent_executor::MAX_STEPS_PROMPT,
-                ));
+                // 3-4: inject the wrap-up directive once per run_loop.
+                if !max_steps_prompt_injected {
+                    messages.push(agent_executor::LlmMessage::user(
+                        agent_executor::MAX_STEPS_PROMPT,
+                    ));
+                    max_steps_prompt_injected = true;
+                }
             }
 
             // Text-only wrap-up: tools are disabled and the model's summary
@@ -5179,6 +5179,27 @@ async fn run_loop_handler(
                 continue;
             }
 
+            // 3-4: the wrap-up round disabled the tool DEFINITIONS, but some
+            // providers still return tool_calls (cache/temperature residue).
+            // They must not execute, and history must stay legal (every
+            // tool_call paired with a tool_result) — synthesize results and
+            // end the run.
+            if force_text_only && !tool_calls.is_empty() {
+                for tc in &tool_calls {
+                    messages.push(agent_executor::LlmMessage::tool_result(
+                        &tc.id,
+                        "max steps reached; tool not executed",
+                    ));
+                }
+                tracing::info!(
+                    session_id = %session_id_spawn,
+                    steps,
+                    calls = tool_calls.len(),
+                    "max-steps wrap-up round returned tool_calls; synthesized results and ended run"
+                );
+                break;
+            }
+
             // ── Doom-loop detection ──
             // A doom loop is a *recurring* action (same tool+args). Detect it by
             // counting how often the current round's signature recurs inside the
@@ -6145,6 +6166,8 @@ async fn run_loop_handler(
                         read_reservations: read_reservations.clone(),
                         files_read_count: files_read_count.clone(),
                         fail_fast: false,
+                        // 3-5: batch tools observe the run-loop cancel token.
+                        cancel: Some(cancel_token.clone()),
                     })
                     .await;
                 match batch_res {
@@ -6786,14 +6809,25 @@ async fn run_loop_handler(
                                     .collect();
                                 if failed_checks.is_empty() {
                                     // score >= 0.8 equivalent: all checks passed, normal continuation
+                                    // 9-5: reset the consecutive-failure counter on success.
+                                    quality_rewrite_counts.remove(&full_path_clone);
                                     continue;
                                 }
                                 if report.score >= 0.8 {
                                     // Overall score good, minor issues — soft hint
+                                    quality_rewrite_counts.remove(&full_path_clone);
                                     continue;
                                 }
                                 if report.score >= retry_threshold {
                                     // score 0.5-0.8: inject suggestions as reflective prompt
+                                    // P2-12/9-5: cap consecutive failed rewrites per file.
+                                    let rewrite_count = quality_rewrite_counts
+                                        .entry(full_path_clone.clone())
+                                        .or_insert(0);
+                                    *rewrite_count += 1;
+                                    if *rewrite_count > 3 {
+                                        continue;
+                                    }
                                     let suggestions_text = if report.suggestions.is_empty() {
                                         failed_checks.join("; ")
                                     } else {
@@ -6803,27 +6837,53 @@ async fn run_loop_handler(
                                             report.suggestions.join("; ")
                                         )
                                     };
-                                    let quality_prompt = format!(
-                                        "## Quality Review\n\
-                                         Quality issues detected in {} (score: {:.2}):\n\
-                                         {}\n\
-                                         Consider addressing these before proceeding.",
-                                        full_path_clone, report.score, suggestions_text
-                                    );
+                                    let quality_prompt = if *rewrite_count == 3 {
+                                        format!(
+                                            "## Quality Review\n\
+                                             Quality issues in {} failed 3 consecutive automatic rewrites. \
+                                             Stop auto-rewriting this file and ask the user to review it manually.",
+                                            full_path_clone
+                                        )
+                                    } else {
+                                        format!(
+                                            "## Quality Review\n\
+                                             Quality issues detected in {} (score: {:.2}):\n\
+                                             {}\n\
+                                             Consider addressing these before proceeding.",
+                                            full_path_clone, report.score, suggestions_text
+                                        )
+                                    };
                                     messages
                                         .push(agent_executor::LlmMessage::user(&quality_prompt));
                                 } else {
                                     // score < threshold: strong correction
-                                    let quality_prompt = format!(
-                                        "## MANDATORY QUALITY CHECK\n\
-                                         Serious quality issues in {} (score: {:.2}):\n\
-                                         {}\n\
-                                         Fix these issues immediately before proceeding.\n\
-                                         If you cannot fix them, revert the changes.",
-                                        full_path_clone,
-                                        report.score,
-                                        failed_checks.join("; ")
-                                    );
+                                    // P2-12/9-5: same rewrite cap applies here.
+                                    let rewrite_count = quality_rewrite_counts
+                                        .entry(full_path_clone.clone())
+                                        .or_insert(0);
+                                    *rewrite_count += 1;
+                                    if *rewrite_count > 3 {
+                                        continue;
+                                    }
+                                    let quality_prompt = if *rewrite_count == 3 {
+                                        format!(
+                                            "## MANDATORY QUALITY CHECK\n\
+                                             Serious quality issues in {} failed 3 consecutive automatic rewrites. \
+                                             Stop auto-rewriting this file and ask the user to review it manually.",
+                                            full_path_clone
+                                        )
+                                    } else {
+                                        format!(
+                                            "## MANDATORY QUALITY CHECK\n\
+                                             Serious quality issues in {} (score: {:.2}):\n\
+                                             {}\n\
+                                             Fix these issues immediately before proceeding.\n\
+                                             If you cannot fix them, revert the changes.",
+                                            full_path_clone,
+                                            report.score,
+                                            failed_checks.join("; ")
+                                        )
+                                    };
                                     messages
                                         .push(agent_executor::LlmMessage::user(&quality_prompt));
                                 }

@@ -792,6 +792,7 @@ pub fn recall_memory_handler<'a>(
             layers: None,
             tags: None,
             project_path,
+            session_id: None,
         };
         let entries = mem
             .search(&req)

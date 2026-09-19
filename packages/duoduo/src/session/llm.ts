@@ -11,7 +11,8 @@ import { Config } from "@/config"
 import { Instance } from "@/project/instance"
 import type { Agent } from "@/agent/agent"
 import type { MessageV2 } from "./message-v2"
-import { SystemPrompt } from "./system"
+import { SystemPrompt, usePatchForModel } from "./system"
+import { GraphIndexStatus } from "@/project/graph-index-status"
 import { Flag } from "@/flag/flag"
 import { context, propagation } from "@opentelemetry/api"
 import { Permission } from "@/permission"
@@ -141,7 +142,17 @@ export const live: Layer.Layer<
         // matches the Rust run-loop path (prompt.ts) and honours the program's UI
         // language. environment() falls back to message-language when locale is
         // absent, so this is a strict superset of prior behaviour — never a regression.
-        const envLines = sysSvc.environment(input.model, { locale: input.user.locale })
+        // 4-1/4-2: gate the graph_query guidance on the registry's KG readiness
+        // (absent service → omit, never name an unregistered tool) and align
+        // file-tool wording with the model's apply_patch vs edit/write tool set.
+        const graphIndexOpt = yield* Effect.serviceOption(GraphIndexStatus.Service)
+        const kgReady =
+          graphIndexOpt._tag === "Some" ? (yield* graphIndexOpt.value.get()).type === "ready" : false
+        const envLines = sysSvc.environment(input.model, {
+          locale: input.user.locale,
+          kgReady,
+          usePatch: usePatchForModel(input.model.api.id),
+        })
 
         // A-class enhancement: inject local coding standards (AGENTS.md family) so the
         // stream path honours the team's rules. Remote URLs stay (main path only);

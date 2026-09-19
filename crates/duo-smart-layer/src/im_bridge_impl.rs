@@ -507,7 +507,9 @@ fn display_path(path: &str) -> String {
                     // pending-ACK timer) before giving up with an error log.
                     Err(e) => {
                         let mut last = e;
-                        for attempt in 0..3u32 {
+                        let mut delivered = false;
+                        let mut empty_reply = false;
+                        for _ in 0..3u32 {
                             tokio::time::sleep(Duration::from_secs(5)).await;
                             match client_for_reply.fetch_assistant_reply(&session_id_reply).await {
                                 Ok(reply) if !reply.trim().is_empty() => {
@@ -515,19 +517,32 @@ fn display_path(path: &str) -> String {
                                         chat_id: chat_id_reply,
                                         text: reply,
                                     });
-                                    last = anyhow::anyhow!("recovered");
+                                    delivered = true;
                                     break;
                                 }
-                                Ok(_) => break,
+                                Ok(_) => {
+                                    empty_reply = true;
+                                    break;
+                                }
                                 Err(e2) => last = e2,
                             }
-                            let _ = attempt;
                         }
-                        tracing::error!(
-                            error = %last,
-                            session_id = %session_id_reply,
-                            "Failed to fetch Feishu reply after 3 retries — agent answer not delivered"
-                        );
+                        // Log only the actual outcome — a recovered delivery
+                        // must not be reported as "not delivered".
+                        if delivered {
+                            // success — no log needed
+                        } else if empty_reply {
+                            tracing::warn!(
+                                session_id = %session_id_reply,
+                                "Feishu reply fetch returned empty after retries; nothing to push"
+                            );
+                        } else {
+                            tracing::error!(
+                                error = %last,
+                                session_id = %session_id_reply,
+                                "Failed to fetch Feishu reply after 3 retries — agent answer not delivered"
+                            );
+                        }
                     }
                 }
             });

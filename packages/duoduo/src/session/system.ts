@@ -96,7 +96,10 @@ export function provider(model: Provider.Model) {
 const smartLayerLog = Log.create({ service: "smart-layer" })
 
 export interface Interface {
-  readonly environment: (model: Provider.Model, opts?: { locale?: string }) => string[]
+  readonly environment: (
+    model: Provider.Model,
+    opts?: { locale?: string; kgReady?: boolean; usePatch?: boolean },
+  ) => string[]
   readonly skills: (agent: Agent.Info) => Effect.Effect<string | undefined, unknown, unknown>
   readonly structuredContext: (
     sessionID: string,
@@ -206,7 +209,18 @@ const CONCISE_GUIDANCE = `Keep your responses concise and to the point. Match th
 // within a provider's workflow. As a universal tail directive, "MUST prefer
 // X over Y" carries the same behavioral intent without depending on where it
 // appears in the prompt.
-const SEARCH_STRATEGY_GUIDANCE = `When searching for code (functions, classes, variables, dependencies), you MUST prefer graph_query or symbol_search over brute-force text search — they are faster and more accurate. Use grep only for raw text search in non-code files (logs, configs), and use glob only for filename pattern matching when graph_query is unavailable.`
+//
+// 4-1/4-3: single source for the graph_query recommendation. kgReady=false
+// swaps it for a symbol_search-only wording so the prompt never names a tool
+// the registry did not register (registry.ts registers graph_query only when
+// the KG index is ready).
+// Exported for unit tests (test/session/system-guidance.test.ts): the variant
+// text is the P2-4 contract — kgReady=false must not mention graph_query.
+export function searchStrategyGuidance(kgReady: boolean): string {
+  return kgReady
+    ? `When searching for code (functions, classes, variables, dependencies), you MUST prefer graph_query or symbol_search over brute-force text search — they are faster and more accurate. Use grep only for raw text search in non-code files (logs, configs), and use glob only for filename pattern matching when graph_query is unavailable.`
+    : `When searching for code (functions, classes, variables, dependencies), you MUST prefer symbol_search over brute-force text search — it is faster and more accurate. Use grep only for raw text search in non-code files (logs, configs), and use glob only for filename pattern matching.`
+}
 
 // ─── Code-reuse directive ───────────────────────────────────────────────
 // Injected through the universal `environment()` hook so every session —
@@ -220,12 +234,23 @@ const SEARCH_STRATEGY_GUIDANCE = `When searching for code (functions, classes, v
 // the default behavior. It pairs with the write-time reuse reminder gate in
 // `submit_stable_with_write` (blackboard-coordinator), which surfaces existing
 // candidates automatically on every file write.
-const REUSE_GUIDANCE = `When writing OR editing code, you MUST reuse existing project code before creating anything new. Procedure:
-1. Before implementing, query the knowledge graph for an existing implementation: graph_query (query_type="search") and symbol_search by the function/class/feature name you are about to write. Also recall_memory to surface prior conventions.
+// 4-1/4-3: graph_query mentions follow the same kgReady gate as the search
+// strategy directive — when the KG is not ready the procedure points at
+// symbol_search only.
+export function reuseGuidance(kgReady: boolean): string {
+  const step1 = kgReady
+    ? `1. Before implementing, query the knowledge graph for an existing implementation: graph_query (query_type="search") and symbol_search by the function/class/feature name you are about to write. Also recall_memory to surface prior conventions.`
+    : `1. Before implementing, search for an existing implementation: symbol_search by the function/class/feature name you are about to write. Also recall_memory to surface prior conventions.`
+  const step4 = kgReady
+    ? `4. At the end of a task that introduced or modified code, use graph_query (query_type="references_of") on the new symbols: if the same logic is now duplicated across >= 2 locations, refactor it into a single shared function/module.`
+    : `4. At the end of a task that introduced or modified code, check the new symbols for duplication: if the same logic now exists in >= 2 locations, refactor it into a single shared function/module.`
+  return `When writing OR editing code, you MUST reuse existing project code before creating anything new. Procedure:
+${step1}
 2. If an existing symbol satisfies the need, import and call it — do NOT reimplement it in a new file or copy its body inline.
 3. Only create a new symbol when no reusable one exists. When you do, check whether the same logic is (or will be) needed by >= 2 call sites; if so, extract it into a shared module/utility rather than duplicating it at each site.
-4. At the end of a task that introduced or modified code, use graph_query (query_type="references_of") on the new symbols: if the same logic is now duplicated across >= 2 locations, refactor it into a single shared function/module.
+${step4}
 Prefer reuse over reimplementation. Duplicated logic across files is a defect, not a shortcut.`
+}
 
 // ─── Universal parallel-read directive ───────────────────────────────────
 // Injected through the universal `environment()` hook so every session —
@@ -240,7 +265,20 @@ const PARALLEL_READ_GUIDANCE = `When the user asks you to review, read, or compa
 // file tools over shell commands. Without this, models fall back to shell
 // redirection (cat/echo/>) for file work, which is slower, harder to
 // review, and trips the command classifier and sandbox more often.
-const FILE_TOOL_GUIDANCE = `When working with files, you MUST prefer the dedicated file tools over the bash tool: use the read tool to read files, the edit/write tools to create or modify files, glob to locate files by name pattern, and grep to search file contents. Use bash only for commands that have no dedicated tool (running builds, tests, git, package managers, process management). Never use shell redirection (>, >>) or shell utilities as a substitute for the file tools.`
+//
+// 4-2: two variants keyed by the SAME usePatch decision the registry uses to
+// filter edit/write vs apply_patch — gpt-* models get apply_patch wording so
+// the prompt never asks for tools that are not in the tool set.
+export function fileToolGuidance(usePatch: boolean): string {
+  const modify = usePatch ? "the apply_patch tool to create or modify files" : "the edit/write tools to create or modify files"
+  return `When working with files, you MUST prefer the dedicated file tools over the bash tool: use the read tool to read files, ${modify}, glob to locate files by name pattern, and grep to search file contents. Use bash only for commands that have no dedicated tool (running builds, tests, git, package managers, process management). Never use shell redirection (>, >>) or shell utilities as a substitute for the file tools.`
+}
+
+// 4-2: shared usePatch decision (model → apply_patch tool set). Registry tool
+// filtering and the file-tool guidance above must agree — both call this.
+export function usePatchForModel(modelID: string): boolean {
+  return modelID.includes("gpt-") && !modelID.includes("oss") && !modelID.includes("gpt-4")
+}
 
 // ─── structuredContext cache ────────────────────────────────────────────
 // Avoids re-querying memory/architecture/KG on every LLM call within the
@@ -431,8 +469,22 @@ export const layer = Layer.effect(
     return Service.of({
       environment(model, opts) {
         const localeLine = formatLocaleDirective(opts?.locale)
+        // 4-1/4-2: guidance follows the same gating as the registry's tool
+        // set. kgReady defaults to false — without status the graph_query
+        // pointer is omitted (naming an unregistered tool is the defect).
+        const kgReady = opts?.kgReady ?? false
+        const usePatch = opts?.usePatch ?? false
         return [
-          [...buildEnvironmentLines(model), localeLine, PROJECT_CONTEXT_GUIDANCE, CONCISE_GUIDANCE, SEARCH_STRATEGY_GUIDANCE, PARALLEL_READ_GUIDANCE, FILE_TOOL_GUIDANCE, REUSE_GUIDANCE]
+          [
+            ...buildEnvironmentLines(model),
+            localeLine,
+            PROJECT_CONTEXT_GUIDANCE,
+            CONCISE_GUIDANCE,
+            searchStrategyGuidance(kgReady),
+            PARALLEL_READ_GUIDANCE,
+            fileToolGuidance(usePatch),
+            reuseGuidance(kgReady),
+          ]
             .filter((x): x is string => !!x)
             .join("\n"),
         ]

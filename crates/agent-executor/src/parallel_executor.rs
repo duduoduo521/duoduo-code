@@ -277,6 +277,10 @@ pub async fn dispatch_with_cancel(
         return Vec::new();
     }
 
+    // 2-7a: snapshot the submission order so the collected results can be
+    // reordered back to it (completion order differs once groups run parallel).
+    let submission_order: Vec<String> = tasks.iter().map(|t| t.id.clone()).collect();
+
     // Bound concurrency so a large fan-out cannot exhaust the LLM rate limit
     // or memory. `max(1)` guards a zero config value that would otherwise
     // dead-lock every task permanently.
@@ -292,29 +296,35 @@ pub async fn dispatch_with_cancel(
     // dead-lock every task permanently.
     let sem = Arc::new(tokio::sync::Semaphore::new(ctx.max_concurrent.max(1)));
 
+    // 2-4: every finished sub-task is streamed to the collector through this
+    // channel the moment it settles, so a panic later in a group task can no
+    // longer discard its already-completed siblings (the old design returned
+    // the group's results as one value, which a panic erased entirely).
+    let (result_tx, mut result_rx) = tokio::sync::mpsc::unbounded_channel::<SubTaskResult>();
+
     let mut handles = Vec::with_capacity(groups.len());
     for group in groups {
         let ctx = Arc::clone(&ctx);
         let parent_cancel = parent_cancel.clone();
         let sem = Arc::clone(&sem);
+        let result_tx = result_tx.clone();
         let handle = tokio::spawn(async move {
             // One permit gates the whole group: serial inside, parallel across
             // groups. Released when the group's future is dropped.
             let _permit = match sem.clone().acquire_owned().await {
                 Ok(p) => p,
                 Err(_) => {
-                    return group
-                        .into_iter()
-                        .map(|t| SubTaskResult {
+                    for t in group {
+                        let _ = result_tx.send(SubTaskResult {
                             id: t.id,
                             output: String::new(),
                             status: SubTaskStatus::Failed,
                             error: Some("semaphore acquire failed".into()),
-                        })
-                        .collect::<Vec<_>>();
+                        });
+                    }
+                    return;
                 }
             };
-            let mut group_results = Vec::with_capacity(group.len());
             for task in group {
                 let id = task.id.clone();
                 let system_prompt = task.system_prompt.clone();
@@ -337,7 +347,7 @@ pub async fn dispatch_with_cancel(
                                 error: Some("cancelled".into()),
                             });
                         }
-                        group_results.push(SubTaskResult {
+                        let _ = result_tx.send(SubTaskResult {
                             id,
                             output: String::new(),
                             status: SubTaskStatus::Failed,
@@ -378,7 +388,7 @@ pub async fn dispatch_with_cancel(
                                     error: None,
                                 });
                             }
-                            group_results.push(SubTaskResult {
+                            let _ = result_tx.send(SubTaskResult {
                                 id,
                                 output,
                                 status: SubTaskStatus::Succeeded,
@@ -413,7 +423,7 @@ pub async fn dispatch_with_cancel(
                                         error: Some(format!("{}", e)),
                                     });
                                 }
-                                group_results.push(SubTaskResult {
+                                let _ = result_tx.send(SubTaskResult {
                                     id,
                                     output: String::new(),
                                     status: SubTaskStatus::Failed,
@@ -432,27 +442,42 @@ pub async fn dispatch_with_cancel(
                     }
                 }
             }
-            group_results
         });
         handles.push(handle);
     }
 
-    let mut results = Vec::with_capacity(handles.len());
+    // Wait for every group task; a panicked/aborted group adds ONE placeholder
+    // (its completed siblings were already streamed through the channel).
+    let mut join_placeholders = Vec::new();
     for h in handles {
-        match h.await {
-            Ok(mut r) => results.append(&mut r),
-            Err(e) => {
-                // A panicked/aborted task is reported as Failed; others are unaffected.
-                tracing::warn!(error = %e, "Parallel sub-task join error (treated as Failed)");
-                results.push(SubTaskResult {
-                    id: String::new(),
-                    output: String::new(),
-                    status: SubTaskStatus::Failed,
-                    error: Some(format!("join error: {}", e)),
-                });
-            }
+        if let Err(e) = h.await {
+            tracing::warn!(error = %e, "Parallel sub-task join error (treated as Failed)");
+            join_placeholders.push(SubTaskResult {
+                id: String::new(),
+                output: String::new(),
+                status: SubTaskStatus::Failed,
+                error: Some(format!("join error: {}", e)),
+            });
         }
     }
+    let mut streamed = Vec::new();
+    while let Ok(r) = result_rx.try_recv() {
+        streamed.push(r);
+    }
+
+    // 2-7a: reorder to submission order (the "in submission order" contract).
+    // A result whose id is unknown keeps the tail; join placeholders stay at
+    // the end exactly as before.
+    let mut results = Vec::with_capacity(streamed.len() + join_placeholders.len());
+    let mut unmatched = Vec::new();
+    for id in &submission_order {
+        if let Some(pos) = streamed.iter().position(|r| &r.id == id) {
+            results.push(streamed.remove(pos));
+        }
+    }
+    unmatched.append(&mut streamed);
+    results.append(&mut unmatched);
+    results.append(&mut join_placeholders);
     results
 }
 

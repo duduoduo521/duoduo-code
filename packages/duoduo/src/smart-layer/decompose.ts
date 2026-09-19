@@ -3,7 +3,8 @@ import { tool, jsonSchema } from "ai"
 import { Log } from "@/util"
 import { LLM } from "@/session/llm"
 import { Agent } from "@/agent/agent"
-import { SystemPrompt } from "@/session/system"
+import { SystemPrompt, usePatchForModel } from "@/session/system"
+import { GraphIndexStatus } from "@/project/graph-index-status"
 import type { Provider } from "@/provider"
 import type { MessageV2 } from "@/session/message-v2"
 import type { SubTaskRequest } from "./agent"
@@ -128,7 +129,14 @@ export function decomposeTask(args: {
     const sys = yield* SystemPrompt.Service
     // Date appended after the stable environment lines (sub-agent prompts are
     // per-task unique anyway, so this is informational, not cache-relevant).
-    const envLines = [...sys.environment(args.model), SystemPrompt.dateDirective()]
+    // 4-1/4-2: same kgReady/usePatch gating as the other environment() callers.
+    const graphIndexOpt = yield* Effect.serviceOption(GraphIndexStatus.Service)
+    const kgReady =
+      graphIndexOpt._tag === "Some" ? (yield* graphIndexOpt.value.get()).type === "ready" : false
+    const envLines = [
+      ...sys.environment(args.model, { kgReady, usePatch: usePatchForModel(args.model.api.id) }),
+      SystemPrompt.dateDirective(),
+    ]
     // Supply-chain guard: sub-agents must NOT receive remote instruction URLs.
     const codingStandards = yield* sys.projectGuidance({ excludeRemoteUrls: true, includeSharedTypes: true, tokenBudget: 800 })
 

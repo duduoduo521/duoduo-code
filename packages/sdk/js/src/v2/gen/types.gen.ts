@@ -361,6 +361,10 @@ export type Todo = {
    * Priority level of the task: high, medium, low
    */
   priority: string
+  /**
+   * Stable identity of the task (legacy rows fall back to content)
+   */
+  id: string
 }
 
 export type EventTodoUpdated = {

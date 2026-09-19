@@ -781,6 +781,9 @@ describe("session.message-v2.toModelMessage", () => {
 
     // Aborted message with non-synthetic text part: hasCompletedParts=true,
     // so the message is preserved as an assistant message with interruption prefix.
+    // P1-3: reasoning parts are NOT echoed back into the model context
+    // (the model must not see its own thinking from previous rounds), so the
+    // reasoning part is absent from the expected content.
     // The second message has only reasoning+step-start (no completed parts),
     // so it's skipped entirely (no synthetic gist parts either).
     expect(await MessageV2.toModelMessages(input, model)).toStrictEqual([
@@ -791,7 +794,6 @@ describe("session.message-v2.toModelMessage", () => {
             type: "text",
             text: "[The user interrupted this response. Do NOT continue the interrupted task unless the user explicitly asks you to continue.]",
           },
-          { type: "reasoning", text: "thinking", providerOptions: undefined },
           { type: "text", text: "partial answer" },
         ],
       },

@@ -17,7 +17,8 @@ import { SessionCompaction } from "./compaction"
 import { persistDiscoveredOutputLimit, getDiscoveredOutputLimit } from "./overflow"
 import { Bus } from "../bus"
 import { ProviderTransform } from "../provider"
-import { SystemPrompt, provider as systemPromptProvider } from "./system"
+import { SystemPrompt, provider as systemPromptProvider, usePatchForModel } from "./system"
+import { GraphIndexStatus } from "@/project/graph-index-status"
 import { SessionCompletion } from "./completion"
 import { Instruction } from "./instruction"
 
@@ -428,7 +429,9 @@ export const layer = Layer.effect(
           (yield* provider.getModel(input.providerID, input.modelID)))
       const msgs = onlySubtasks
         ? [{ role: "user" as const, content: subtasks.map((p) => p.prompt).join("\n") }]
-        : yield* MessageV2.toModelMessagesEffect(context, mdl)
+        : // 15-11: titles don't need full tool outputs — same 2000-char cap as
+          // the compaction path.
+          yield* MessageV2.toModelMessagesEffect(context, mdl, { toolOutputMaxChars: 2000 })
       const text = yield* llm
         .stream({
           agent: ag,
@@ -1231,7 +1234,10 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       }).pipe(Effect.catch(() => Effect.succeed(null)))
 
       const preferences = yield* Effect.tryPromise({
-        try: () => clients.memory.getProfile("default", ctx.project.id),
+        // 7-4: profile key is the canonical project path (worktree), matching
+        // the writer (permission/index.ts) and the Rust assembler's read key —
+        // the old first-commit-hash id made the two sides mutually invisible.
+        try: () => clients.memory.getProfile("default", ctx.worktree),
         catch: () => new DuoduoError({ message: "memory profile unavailable", messageZh: "memory profile 不可用", cause: undefined }),
       }).pipe(Effect.catch(() => Effect.succeed([])))
       const planPreferences = preferences.filter(
@@ -2541,9 +2547,15 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         // A-class enhancement: inject local coding standards (AGENTS.md family) so the
         // Rust run-loop path honours the team's rules. Remote URLs stay (main path only).
         const codingStandards = yield* sys.projectGuidance({ excludeRemoteUrls: false, includeSharedTypes: true })
+        // 4-1/4-2: same kgReady/usePatch gating as the stream path (llm.ts).
+        // Absent service → omit the graph_query pointer (never name an
+        // unregistered tool).
+        const graphIndexOpt = yield* Effect.serviceOption(GraphIndexStatus.Service)
+        const kgReady =
+          graphIndexOpt._tag === "Some" ? (yield* graphIndexOpt.value.get()).type === "ready" : false
         const systemPromptParts: string[] = [
           ...(agent.prompt ? [agent.prompt] : systemPromptProvider(model)),
-          ...sys.environment(model, { locale }),
+          ...sys.environment(model, { locale, kgReady, usePatch: usePatchForModel(model.api.id) }),
           ...(codingStandards ? [codingStandards] : []),
           // Daily-changing line goes LAST so the stable prefix above stays
           // byte-identical across days (implicit provider prefix caching on

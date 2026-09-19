@@ -187,7 +187,10 @@ const log = Log.create({ service: "snapshot" })
 // `snapshot_retention_days` config key; the live value is read by
 // `retentionDays` so a config change applies on the next hourly cleanup.
 const DEFAULT_RETENTION_DAYS = 90
-const limit = 2 * 1024 * 1024
+// 10-3/10-5: overridable via `snapshot_max_file_size` / `snapshot_max_total_size`
+// (user-controllable settings, read live like retentionDays).
+const DEFAULT_MAX_FILE_SIZE = 2 * 1024 * 1024
+const DEFAULT_MAX_TOTAL_SIZE = 5 * 1024 * 1024 * 1024
 // Monotonic suffix for throwaway git index files, so two concurrent
 // `hasUncommitted` calls can never share (and corrupt) the same temp file.
 let throwawaySeq = 0
@@ -212,6 +215,10 @@ export interface Stats {
   readonly sizeBytes: number
   /** Default retention used by the hourly background cleanup, in days. */
   readonly defaultPruneDays: number
+  /** 10-3: per-file snapshot cap in bytes (configured / default). */
+  readonly maxFileSizeBytes: number
+  /** 10-5: snapshot-repo disk cap in bytes (configured / default). */
+  readonly maxTotalSizeBytes: number
 }
 
 export interface Interface {
@@ -226,8 +233,11 @@ export interface Interface {
   readonly track: (description?: string) => Effect.Effect<string | undefined>
   readonly markDirty: () => Effect.Effect<void>
   readonly patch: (hash: string) => Effect.Effect<Patch>
-  readonly restore: (snapshot: string, force?: boolean) => Effect.Effect<void, DuoduoError>
-  readonly revert: (patches: Patch[], force?: boolean) => Effect.Effect<void, DuoduoError>
+  // 10-4: restore/revert report the files they could not roll back so the
+  // caller can surface a partial-failure summary instead of it living only
+  // in logs.
+  readonly restore: (snapshot: string, force?: boolean) => Effect.Effect<{ failed: string[] }, DuoduoError>
+  readonly revert: (patches: Patch[], force?: boolean) => Effect.Effect<{ failed: string[] }, DuoduoError>
   readonly diff: (hash: string) => Effect.Effect<string>
   readonly diffFull: (from: string, to: string) => Effect.Effect<FileDiff[], DuoduoError>
   /**
@@ -415,6 +425,23 @@ export const layer: Layer.Layer<
           return typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.floor(v) : DEFAULT_RETENTION_DAYS
         })
 
+        // 10-3: live per-file snapshot cap (bytes). Untracked files larger than
+        // this are excluded from snapshots (never snapshotted, never deleted by
+        // a rollback). Changing the value only affects NEW judgments — already
+        // excluded files stay excluded.
+        const maxFileSize = Effect.fnUntraced(function* () {
+          const cfg = yield* config.get()
+          const v = cfg.snapshot_max_file_size
+          return typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.floor(v) : DEFAULT_MAX_FILE_SIZE
+        })
+
+        // 10-5: live snapshot-repo disk cap (bytes).
+        const maxTotalSize = Effect.fnUntraced(function* () {
+          const cfg = yield* config.get()
+          const v = cfg.snapshot_max_total_size
+          return typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.floor(v) : DEFAULT_MAX_TOTAL_SIZE
+        })
+
         // S-02: detect uncommitted worktree changes against the rollback baseline.
         // B1 (root fix for defect B): we must NOT rely on the shadow index
         // (diff-files / ls-files --others), because track()/patch() run `add -A`
@@ -555,6 +582,7 @@ export const layer: Layer.Layer<
           const allow = all.filter((item) => !ignored.has(item))
           if (!allow.length) return true
 
+          const fileSizeCap = yield* maxFileSize()
           const large = new Set(
             (yield* Effect.all(
               allow.map((item) =>
@@ -566,7 +594,7 @@ export const layer: Layer.Layer<
                     Effect.map((stat) => {
                       if (!stat || stat.type !== "File") return
                       const size = typeof stat.size === "bigint" ? Number(stat.size) : stat.size
-                      return size > limit ? item : undefined
+                      return size > fileSizeCap ? item : undefined
                     }),
                   ),
               ),
@@ -600,6 +628,30 @@ export const layer: Layer.Layer<
                 return
               }
               log.info("cleanup", { prune: cutoff })
+
+              // 10-5: disk-size cap (`snapshot_max_total_size`). The repo pins
+              // only the LATEST snapshot with a ref (P2-38) — older snapshots
+              // are unreachable commits whose age-based pruning IS the
+              // oldest-first lever — so shrink the prune cutoff (≥1 day,
+              // halved per round, at most 20 gc rounds per run) until the repo
+              // fits. Snapshots pruned this way lose their rollback point.
+              const cap = yield* maxTotalSize()
+              let size = yield* measure(state.gitdir)
+              let pruneDays = Math.max(1, yield* retentionDays())
+              let rounds = 0
+              while (size > cap && rounds < 20 && pruneDays > 1) {
+                pruneDays = Math.max(1, Math.floor(pruneDays / 2))
+                const shrunk = yield* git(args(["gc", `--prune=${pruneDays}.days`]), { cwd: state.directory })
+                if (shrunk.code !== 0) {
+                  log.warn("size-cap cleanup gc failed", { exitCode: shrunk.code, stderr: shrunk.stderr })
+                  break
+                }
+                size = yield* measure(state.gitdir)
+                rounds++
+              }
+              if (size > cap) {
+                log.warn("snapshot repo still over size cap after cleanup", { size, cap })
+              }
             }),
           )
         })
@@ -633,6 +685,8 @@ export const layer: Layer.Layer<
             exists: present,
             sizeBytes: present ? yield* measure(state.gitdir) : 0,
             defaultPruneDays: yield* retentionDays(),
+            maxFileSizeBytes: yield* maxFileSize(),
+            maxTotalSizeBytes: yield* maxTotalSize(),
           } satisfies Stats
         })
 
@@ -791,6 +845,11 @@ export const layer: Layer.Layer<
           const reverse = yield* track(`pre-rollback → ${snapshot.slice(0, 12)}`)
           if (reverse) log.info("reverse snapshot created", { reverse, target: snapshot })
 
+          // 10-4: files that could not be removed during the post-restore
+          // cleanup are reported back to the caller instead of vanishing into
+          // a swallowed error.
+          const failed: string[] = []
+
           return yield* locked(
             Effect.gen(function* () {
               // S-02: refuse to overwrite uncommitted edits unless forced.
@@ -858,12 +917,21 @@ export const layer: Layer.Layer<
                         { cwd: state.worktree, env },
                       )
                       if (ls.code === 0) {
+                        // 10-3 invariant: files excluded from snapshots by the
+                        // per-file size cap were never snapshotted — a rollback
+                        // must never delete them (they are user data the
+                        // snapshot layer deliberately does not track).
+                        const fileSizeCap = yield* maxFileSize()
                         const current = ls.text.split("\0").filter(Boolean)
                         const emptyDirs = new Set<string>()
                         for (const f of current) {
                           if (!keep.has(f)) {
                             const abs = path.join(state.worktree, f)
-                            yield* fs.remove(abs).pipe(Effect.catch(() => Effect.void))
+                            const stat = yield* fs.stat(abs).pipe(Effect.catch(() => Effect.void))
+                            const size = stat && stat.type === "File" ? (typeof stat.size === "bigint" ? Number(stat.size) : stat.size) : 0
+                            if (size > fileSizeCap) continue
+                            const removed = yield* fs.remove(abs).pipe(Effect.catch(() => Effect.succeed(false as const)))
+                            if (removed === false) failed.push(abs)
                             // Track the now-orphaned parent directory for cleanup,
                             // so a complete rollback also removes empty post-snapshot
                             // directories (not just the files within them).
@@ -879,7 +947,7 @@ export const layer: Layer.Layer<
                     }
                     yield* fs.remove(tmpIndex).pipe(Effect.catch(() => Effect.void))
                   }
-                  return
+                  return { failed }
                 }
                 log.error("failed to restore snapshot", {
                   snapshot,
@@ -945,6 +1013,10 @@ export const layer: Layer.Layer<
                 }
               }
 
+              // 10-4: files that could not be reverted (kept as-is) are
+              // reported back to the caller instead of only living in logs.
+              const failed: string[] = []
+
               const single = Effect.fnUntraced(function* (op: (typeof ops)[number]) {
                 log.info("reverting", { file: op.file, hash: op.hash })
                 const result = yield* git([...core, ...args(["checkout", op.hash, "--", op.file])], {
@@ -962,14 +1034,17 @@ export const layer: Layer.Layer<
                     hash: op.hash,
                     stderr: tree.stderr,
                   })
+                  failed.push(op.file)
                   return
                 }
                 if (tree.text.trim()) {
                   log.info("file existed in snapshot but checkout failed, keeping", { file: op.file, hash: op.hash })
+                  failed.push(op.file)
                   return
                 }
                 log.info("file did not exist in snapshot, deleting", { file: op.file, hash: op.hash })
                 yield* remove(op.file)
+                if (yield* exists(op.file)) failed.push(op.file)
               })
 
               const clash = (a: string, b: string) => a === b || a.startsWith(`${b}/`) || b.startsWith(`${a}/`)
@@ -1041,10 +1116,15 @@ export const layer: Layer.Layer<
                   if (have.has(op.rel)) continue
                   log.info("file did not exist in snapshot, deleting", { file: op.file, hash: op.hash })
                   yield* remove(op.file)
+                  // 10-4: same post-delete existence check as `single` — a
+                  // swallowed removal failure must surface in the failed[] summary.
+                  if (yield* exists(op.file)) failed.push(op.file)
                 }
 
                 i = j
               }
+
+              return { failed }
             }),
           )
         })

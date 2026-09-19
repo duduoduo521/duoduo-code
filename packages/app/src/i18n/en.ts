@@ -1000,6 +1000,13 @@ export const dict = {
     "Snapshots older than this many days are pruned during the hourly cleanup. A larger value keeps more history for review (e.g. to look back at last week's changes).",
   "settings.snapshot.retentionSave": "Save",
   "settings.snapshot.retentionSaved": "Snapshot retention saved",
+  "settings.snapshot.maxFileSize": "Per-file Snapshot Limit (MB)",
+  "settings.snapshot.maxFileSizeDesc":
+    "Untracked files larger than this are excluded from snapshots and rollback (they are never deleted by a rollback); changes only apply to new files.",
+  "settings.snapshot.maxTotalSize": "Snapshot Repository Size Limit (GB)",
+  "settings.snapshot.maxTotalSizeDesc":
+    "When exceeded, the hourly cleanup prunes the oldest snapshots first; a pruned snapshot loses its rollback point.",
+  "settings.snapshot.invalidSize": "Enter a valid positive number (MB / GB)",
 
   "settings.concurrency.title": "Concurrency",
   "settings.concurrency.description": "Configure agent parallelism and LLM retry behavior",

@@ -606,8 +606,12 @@ export const RunCommand = cmd({
         // P2-15: message-only — the old `console.error(e)` dumped the raw
         // stack to stderr (bypassing the message-only handler used elsewhere)
         // and polluted the `--format json` pipe when stderr was merged via
-        // 2>&1. Full detail goes to the log file; the user sees one line.
-        Log.Default.error("run loop failed", { error: errorMessage(e) })
+        // 2>&1. Full detail (message + stack) goes to the log file; the user
+        // sees one line.
+        Log.Default.error("run loop failed", {
+          error: errorMessage(e),
+          stack: e instanceof Error ? e.stack : undefined,
+        })
         console.error(`error: ${errorMessage(e)} (check the log file for details)`)
         process.exit(1)
       })

@@ -78,6 +78,9 @@ export const TodoTable = sqliteTable(
       .$type<SessionID>()
       .notNull()
       .references(() => SessionTable.id, { onDelete: "cascade" }),
+    // [1-1] Stable task identity. Nullable because legacy rows predate the
+    // column; consumers fall back to content for NULL (todo.ts get/update).
+    id: text(),
     content: text().notNull(),
     status: text().notNull(),
     priority: text().notNull(),

@@ -148,8 +148,18 @@ export const layer = Layer.effect(
           }),
         )
       }
-      if (session.revert?.snapshot) yield* snap.restore(session.revert.snapshot)
-      yield* snap.revert(patches)
+      // 10-4: surface partial rollback failures — the files are listed so the
+      // user knows the worktree is not fully rolled back (failure detail also
+      // lives in the snapshot service logs).
+      const restoreResult = session.revert?.snapshot ? yield* snap.restore(session.revert.snapshot) : { failed: [] }
+      const revertResult = yield* snap.revert(patches)
+      const failedFiles = [...restoreResult.failed, ...revertResult.failed]
+      if (failedFiles.length > 0) {
+        log.error("revert completed with files that could not be rolled back", {
+          sessionID: input.sessionID,
+          files: failedFiles,
+        })
+      }
       if (rev.snapshot) rev.diff = yield* snap.diff(rev.snapshot)
       const range = all.filter((msg) => msg.info.id >= rev.messageID)
       const diffs = yield* summary.computeDiff({ messages: range })
@@ -187,7 +197,12 @@ export const layer = Layer.effect(
       yield* state.assertNotBusy(input.sessionID)
       const session = yield* sessions.get(input.sessionID)
       if (!session.revert) return session
-      if (session.revert.snapshot) yield* snap.restore(session.revert.snapshot)
+      if (session.revert.snapshot) {
+        const restored = yield* snap.restore(session.revert.snapshot)
+        if (restored.failed.length > 0) {
+          log.error("unrevert restore left files unrestored", { sessionID: input.sessionID, files: restored.failed })
+        }
+      }
       yield* sessions.clearRevert(input.sessionID)
       return yield* sessions.get(input.sessionID)
     })

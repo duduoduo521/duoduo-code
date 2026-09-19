@@ -1,5 +1,5 @@
 import { afterEach, describe, expect } from "bun:test"
-import { Effect, Layer } from "effect"
+import { Effect, Exit, Layer } from "effect"
 import { Agent } from "../../src/agent/agent"
 import { Config } from "../../src/config"
 import * as CrossSpawnSpawner from "../../src/effect/cross-spawn-spawner"
@@ -11,6 +11,7 @@ import { MessageV2 } from "../../src/session/message-v2"
 import type { SessionPrompt } from "../../src/session/prompt"
 import { MessageID, PartID } from "../../src/session/schema"
 import { ModelID, ProviderID } from "../../src/provider/schema"
+import { deleteCascadeQA, setCascadeQA } from "../../src/session/cascade-qa-registry"
 import { TaskTool, type TaskPromptOps } from "../../src/tool/task"
 import { Truncate } from "../../src/tool"
 import { ToolRegistry } from "../../src/tool"
@@ -225,6 +226,84 @@ describe("tool.task", () => {
         expect(result.metadata.sessionId).toBe(child.id)
         expect(result.output).toContain(`task_id: ${child.id}`)
         expect(seen?.sessionID).toBe(child.id)
+      }),
+    ),
+  )
+
+  // P1-9: a task_id whose session belongs to a DIFFERENT parent must be
+  // refused — resuming it would write cross-session.
+  it.live("execute refuses a task_id belonging to a different session", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const sessions = yield* Session.Service
+        const { chat, assistant } = yield* seed()
+        const otherRoot = yield* sessions.create({ title: "Other root" })
+        const foreign = yield* sessions.create({ parentID: otherRoot.id, title: "Child of other root" })
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+
+        // execute() ends with Effect.orDie, so the refusal surfaces as a
+        // defect — capture it with Effect.exit instead of Effect.flip.
+        const exit = yield* def.execute(
+          {
+            description: "inspect bug",
+            prompt: "look into the cache key path",
+            subagent_type: "general",
+            task_id: foreign.id,
+          },
+          {
+            sessionID: chat.id,
+            messageID: assistant.id,
+            agent: "build",
+            abort: new AbortController().signal,
+            extra: { promptOps: stubOps() },
+            messages: [],
+            metadata: () => Effect.void,
+            ask: () => Effect.void,
+          },
+        ).pipe(Effect.exit)
+
+        expect(Exit.isFailure(exit)).toBe(true)
+        expect(String(exit.cause)).toContain("does not belong")
+        // The foreign session was not resumed: no reply landed in it.
+        expect((yield* sessions.children(otherRoot.id)).length).toBe(1)
+      }),
+    ),
+  )
+
+  // P0-2: the per-session cascade QA decision must flow into the ops.prompt
+  // input so the sub-agent inherits it (global default when no override).
+  it.live("onPrompt carries the session cascadeQA decision", () =>
+    provideTmpdirInstance(() =>
+      Effect.gen(function* () {
+        const { chat, assistant } = yield* seed()
+        const tool = yield* TaskTool
+        const def = yield* tool.init()
+        const base = {
+          sessionID: chat.id,
+          messageID: assistant.id,
+          agent: "build",
+          abort: new AbortController().signal,
+          messages: [],
+          metadata: () => Effect.void,
+          ask: () => Effect.void,
+        }
+
+        setCascadeQA(chat.id, true)
+        let seenOn: SessionPrompt.PromptInput | undefined
+        yield* def.execute(
+          { description: "inspect bug", prompt: "look", subagent_type: "general" },
+          { ...base, extra: { promptOps: stubOps({ onPrompt: (input) => (seenOn = input) }) } },
+        )
+        expect(seenOn?.cascadeQA).toBe(true)
+
+        deleteCascadeQA(chat.id)
+        let seenOff: SessionPrompt.PromptInput | undefined
+        yield* def.execute(
+          { description: "inspect bug", prompt: "look", subagent_type: "general" },
+          { ...base, extra: { promptOps: stubOps({ onPrompt: (input) => (seenOff = input) }) } },
+        )
+        expect(seenOff?.cascadeQA).toBe(false)
       }),
     ),
   )

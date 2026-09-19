@@ -64,8 +64,14 @@ test.describe("Tool delegation round-trip (Rust → TS)", () => {
     })
     if (res.status === 404) test.skip(true, "no todo REST endpoint in this build")
     expect(res.ok).toBeTruthy()
-    const todos = (await res.json()) as Array<{ content?: string }>
+    const todos = (await res.json()) as Array<{ id?: string; content?: string }>
     expect(JSON.stringify(todos)).toContain("Write the feature")
+    // P2-6: every persisted todo carries its stable backend-assigned id —
+    // the model must receive ids back (todowrite prompt requires passing
+    // them on updates) and the UI reconciles on id, not content.
+    for (const todo of todos) {
+      expect(todo.id).toBeTruthy()
+    }
 
     // The tool call is visible in the timeline as a completed part.
     const messages = await getMessages(sessionId)

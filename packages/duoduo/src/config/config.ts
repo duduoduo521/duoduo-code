@@ -150,6 +150,14 @@ export const Info = Schema.Struct({
     description:
       "How many days of file-snapshot history to retain before automatic garbage collection. Snapshots older than this are pruned during the hourly cleanup. Defaults to 90.",
   }),
+  snapshot_max_file_size: Schema.optional(PositiveInt).annotate({
+    description:
+      "Maximum size (bytes) of an untracked file for it to participate in snapshots and rollback. Files larger than this are excluded (they are never deleted by a rollback). Defaults to 2097152 (2 MB).",
+  }),
+  snapshot_max_total_size: Schema.optional(PositiveInt).annotate({
+    description:
+      "Maximum on-disk size (bytes) of the snapshot repository. When exceeded, the hourly cleanup prunes the oldest snapshots first (bounded per run) until below the limit. Snapshots pruned this way lose their rollback point. Defaults to 5368709120 (5 GB).",
+  }),
   // User-facing plugin config is stored as Specs; provenance gets attached later while configs are merged.
   plugin: Schema.optional(Schema.mutable(Schema.Array(ConfigPlugin.Spec))),
   autoupdate: Schema.optional(Schema.Union([Schema.Boolean, Schema.Literal("notify")])).annotate({

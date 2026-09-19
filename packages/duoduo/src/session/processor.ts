@@ -571,6 +571,40 @@ export const layer: Layer.Layer<
           }
         }
         ctx.reasoningBufferMap = {}
+
+        // 10-2: settle in-flight tool calls BEFORE computing the abort patch —
+        // the old order computed the patch first, so writes landing during the
+        // (250ms-bounded) settle window were not captured by the revertable
+        // patch. Wait bound stays 250ms per call, so abort latency is unchanged.
+        yield* Effect.forEach(
+          Object.values(ctx.toolcalls),
+          (call) =>
+            Deferred.await(call.done).pipe(
+              Effect.timeout("250 millis"),
+              Effect.catchCause((cause) => Effect.logWarning("tool call cleanup timeout", { cause: String(cause) })),
+            ),
+          { concurrency: "unbounded" },
+        )
+
+        for (const toolCallID of Object.keys(ctx.toolcalls)) {
+          const match = yield* readToolCall(toolCallID)
+          if (!match) continue
+          const part = match.part
+          const end = Date.now()
+          const metadata = "metadata" in part.state && isRecord(part.state.metadata) ? part.state.metadata : {}
+          yield* session.updatePart({
+            ...part,
+            state: {
+              ...part.state,
+              status: "error",
+              error: "Tool execution aborted",
+              metadata: { ...metadata, interrupted: true },
+              time: { start: "time" in part.state ? part.state.time.start : end, end },
+            },
+          })
+        }
+        ctx.toolcalls = {}
+
         if (ctx.snapshot) {
           const patch = yield* snapshot.patch(ctx.snapshot)
           if (patch.files.length) {
@@ -602,34 +636,6 @@ export const layer: Layer.Layer<
         }
         ctx.reasoningMap = {}
 
-        yield* Effect.forEach(
-          Object.values(ctx.toolcalls),
-          (call) =>
-            Deferred.await(call.done).pipe(
-              Effect.timeout("250 millis"),
-              Effect.catchCause((cause) => Effect.logWarning("tool call cleanup timeout", { cause: String(cause) })),
-            ),
-          { concurrency: "unbounded" },
-        )
-
-        for (const toolCallID of Object.keys(ctx.toolcalls)) {
-          const match = yield* readToolCall(toolCallID)
-          if (!match) continue
-          const part = match.part
-          const end = Date.now()
-          const metadata = "metadata" in part.state && isRecord(part.state.metadata) ? part.state.metadata : {}
-          yield* session.updatePart({
-            ...part,
-            state: {
-              ...part.state,
-              status: "error",
-              error: "Tool execution aborted",
-              metadata: { ...metadata, interrupted: true },
-              time: { start: "time" in part.state ? part.state.time.start : end, end },
-            },
-          })
-        }
-        ctx.toolcalls = {}
         ctx.assistantMessage.time.completed = Date.now()
         yield* session.updateMessage(ctx.assistantMessage)
       })

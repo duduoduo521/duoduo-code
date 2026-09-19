@@ -32,10 +32,36 @@ const FILES = new Set([
   "cp",
   "mv",
   "mkdir",
+  "rmdir",
   "touch",
   "chmod",
   "chown",
   "cat",
+  // 13-6: write-capable subset of the Rust FILES list
+  // (bash_safety.rs:92-107). Read-only commands in the Rust list
+  // (ls/grep/awk/head/… ) are deliberately NOT mirrored: after P0-1 the bash
+  // main path is the Rust executor, which spatially scans all 100 entries —
+  // this TS list only restores the boundary on the fallback path where it
+  // matters (commands that can create/modify/delete files).
+  "dd",
+  "tee",
+  "truncate",
+  "ln",
+  "install",
+  "patch",
+  "sed",
+  "tar",
+  "zip",
+  "unzip",
+  "gzip",
+  "gunzip",
+  "bzip2",
+  "xz",
+  // 13-6 audit follow-up: editors write files in place
+  "vim",
+  "nano",
+  "emacs",
+  "code",
   // `find` only reads, but `find <path> -delete` removes everything under
   // <path>. It is scanned so the spatial bound below sees its search root —
   // otherwise `find / -delete` would be an unguarded `rm -rf` equivalent.
@@ -51,6 +77,24 @@ const FILES = new Set([
   "remove-item",
   "new-item",
   "rename-item",
+  // 13-6: PowerShell write cmdlets / delete-and-rename aliases / cd aliases
+  "set-item",
+  "clear-content",
+  "out-file",
+  "tee-object",
+  "compress-archive",
+  "expand-archive",
+  "export-csv",
+  "del",
+  "erase",
+  "ri",
+  "rd",
+  "mi",
+  "ren",
+  "md",
+  "chdir",
+  "pushd",
+  "popd",
 ])
 const FLAGS = new Set(["-destination", "-literalpath", "-path"])
 const SWITCHES = new Set(["-confirm", "-debug", "-force", "-nonewline", "-recurse", "-verbose", "-whatif"])
@@ -396,8 +440,9 @@ function dangerousArgs(name: string, args: Part[]): string | undefined {
     return
   }
   if (name === "chown") {
-    if (texts.some((t) => /^-[a-z]*r[a-z]*$/i.test(t) || t === "--recursive")) return "recursive chown"
-    return
+    // 13-5: any chown is hard-blocked (Rust legacy pattern `chown\s` parity —
+    // ownership changes are never part of an unattended edit loop).
+    return "chown changes file ownership"
   }
   if (name === "dd") {
     if (texts.some((t) => t.startsWith("if=") || t.startsWith("of="))) return "dd with raw device/file target"
@@ -441,6 +486,13 @@ export function classifyCommand(root: Node, raw: string, ps: boolean): BashVerdi
     return { blocked: true, reason: HEREDOC_REASON }
   if (/(^|[^<])<<-?[ \t]*(?:[A-Za-z_][A-Za-z0-9_]*|'[^']*'|"[^"]*")[ \t]*(?:#.*)?\r?$/m.test(raw))
     return { blocked: true, reason: HEREDOC_REASON }
+  // 13-5: process substitution runs the inner command unreviewed and feeds its
+  // output as a file argument (Rust legacy pattern `<\(` parity).
+  if (raw.includes("<("))
+    return {
+      blocked: true,
+      reason: "process substitution cannot be scanned — run the inner command separately",
+    }
   for (const m of raw.matchAll(/>{1,2}\s*([^\s;|&<>]+)/g)) {
     const target = unquote(m[1]!)
     if (target.startsWith("/dev/") && !SAFE_DEV_TARGETS.has(target))
@@ -493,8 +545,12 @@ export function classifyCommand(root: Node, raw: string, ps: boolean): BashVerdi
         return { blocked: true, reason: `xargs ${baseName(firstCmd.text)}` }
     }
 
-    // eval/exec with expanded payload = statically invisible code.
-    if ((name === "eval" || name === "exec") && args.some((a) => isDynamicToken(a, ps)))
+    // 13-5: exec replaces the shell process — hard-block unconditionally
+    // (Rust legacy pattern `exec\s` parity). Dynamic eval stays the rule below.
+    if (name === "exec") return { blocked: true, reason: "exec is not allowed" }
+
+    // eval with expanded payload = statically invisible code.
+    if (name === "eval" && args.some((a) => isDynamicToken(a, ps)))
       return { blocked: true, reason: `${name} with expanded (hidden) payload` }
 
     if (!ps) {

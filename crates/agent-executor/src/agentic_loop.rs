@@ -943,6 +943,12 @@ pub struct ToolBatchParams<'a> {
     pub read_reservations: Arc<AtomicUsize>,
     pub files_read_count: Arc<AtomicUsize>,
     pub fail_fast: bool,
+    /// 3-5: checked BEFORE each tool executes. Once cancelled, this call and
+    /// every remaining one synthesize a "cancelled" tool_result instead of
+    /// executing (history stays legal; no tool runs after the user aborted).
+    /// A tool already mid-execution is not interrupted (same policy as the
+    /// serial branch — half-executed tool state is worse than late cancel).
+    pub cancel: Option<tokio_util::sync::CancellationToken>,
 }
 
 pub struct AgenticLoopExecutor {
@@ -2807,6 +2813,8 @@ the task normally.\n\
                             read_reservations: read_reservations.clone(),
                             files_read_count: files_read_count.clone(),
                             fail_fast: true,
+                            // 3-5: batch tools observe the loop's cancel token.
+                            cancel: Some(loop_cancel.clone()),
                         })
                         .await?;
 
@@ -2971,10 +2979,20 @@ the task normally.\n\
                     // G17: Explore mode is read-only — reject write tools. Codegen mode
                     // (G7 parallel dispatch) allows writes, which route through the
                     // blackboard gate via execute_tool → write_output.
+                    // P1-16: bash write forms are hard-blocked here too, matching
+                    // the execute_tool_batch gates (this variant currently has no
+                    // constructor, but the gate must stay in lockstep if it ever
+                    // becomes reachable).
                     let tool_result = if tool_set == LoopToolSet::Explore
                         && WRITE_TOOL_NAMES.contains(&entry.tool_name.as_str())
                     {
                         "[Explore mode is read-only] Write tools (edit_file/write/apply_patch) are not permitted in explore mode. Use read-only tools (read_file, list_dir, grep, bash).".to_string()
+                    } else if tool_set == LoopToolSet::Explore
+                        && entry.tool_name == "bash"
+                        && let Some(cmd) = entry.arguments.get("command").and_then(|v| v.as_str())
+                        && let Some(reason) = crate::bash_safety::explore_bash_write_reason(cmd)
+                    {
+                        format!("[Explore mode is read-only] Blocked: {reason}")
                     } else {
                         match self
                             .execute_tool(
@@ -3324,16 +3342,37 @@ the task normally.\n\
         // the parent token, so cancelling it stops only this sub-agent while the parent
         // keeps running; cancelling the parent still cascades to it via the parent token.
         // `_cancel_guard` removes the entry when this function returns (any path).
-        let _cancel_guard = self.cancellation_registry.as_ref().map(|reg| {
+        let _cancel_guard = if let Some(reg) = self.cancellation_registry.clone() {
             let key = format!("runloop-{}", child_session_id);
-            if let Ok(mut g) = reg.try_lock() {
-                g.insert(key.clone(), child.cancel_token.clone());
+            // 2-5: a silently skipped registration breaks per-sub-session halt
+            // (cancel_agent only sees registered tokens). The lock is held only
+            // for short critical sections, so a few yields suffice; if it still
+            // fails, log loudly instead of failing silently.
+            let mut registered = false;
+            for _ in 0..3 {
+                match reg.try_lock() {
+                    Ok(mut g) => {
+                        g.insert(key.clone(), child.cancel_token.clone());
+                        registered = true;
+                        break;
+                    }
+                    Err(_) => tokio::task::yield_now().await,
+                }
             }
-            CancellationRegistryGuard {
-                registry: Some(reg.clone()),
+            if !registered {
+                tracing::warn!(
+                    child_session = %child_session_id,
+                    key = %key,
+                    "cancellation-token registration failed after retries; per-sub-session halt may not reach this sub-agent"
+                );
+            }
+            Some(CancellationRegistryGuard {
+                registry: Some(reg),
                 key,
-            }
-        });
+            })
+        } else {
+            None
+        };
 
         let result = Box::pin(child.execute_explore_loop(&system_prompt, prompt)).await;
 
@@ -4034,6 +4073,7 @@ the task normally.\n\
             read_reservations,
             files_read_count,
             fail_fast,
+            cancel,
         }: ToolBatchParams<'_>,
     ) -> anyhow::Result<(
         Vec<ToolCall>,
@@ -4041,6 +4081,8 @@ the task normally.\n\
         Vec<(String, String)>,
         Vec<anyhow::Result<String>>,
     )> {
+        let is_cancelled =
+            || cancel.as_ref().is_some_and(|c| c.is_cancelled());
         let all_parallel_safe = calls
             .iter()
             .all(|c| Self::PARALLEL_SAFE.contains(&c.tool_name.as_str()));
@@ -4056,6 +4098,25 @@ the task normally.\n\
                 std::collections::HashMap::new();
             for (i, entry) in calls.iter().enumerate() {
                 let call_id = format!("call_{}_{}", round, i);
+                // 3-5: cancel checkpoint — this call and everything after it
+                // become synthesized "cancelled" results, none execute.
+                if is_cancelled() {
+                    for (j, entry) in calls.iter().enumerate().skip(i) {
+                        let cid = format!("call_{}_{}", round, j);
+                        per_results.push(Ok("cancelled".to_string()));
+                        reflect_pairs.push((entry.tool_name.clone(), "cancelled".to_string()));
+                        tool_calls_for_msg.push(ToolCall {
+                            id: cid.clone(),
+                            r#type: "function".to_string(),
+                            function: FunctionCall {
+                                name: entry.tool_name.clone(),
+                                arguments: serde_json::to_string(&entry.arguments).unwrap_or_default(),
+                            },
+                        });
+                        tool_results.push(LlmMessage::tool_result(&cid, "cancelled"));
+                    }
+                    return Ok((tool_calls_for_msg, tool_results, reflect_pairs, per_results));
+                }
                 // Capture the Result so fail_fast can either abort or record it.
                 let exec_result: anyhow::Result<String> = if tool_set == LoopToolSet::Explore
                     && WRITE_TOOL_NAMES.contains(&entry.tool_name.as_str())
@@ -4234,6 +4295,12 @@ the task normally.\n\
             bucket_futs.push(async move {
                 for &ci in &group {
                     let entry = &calls[ci];
+                    // 3-5: cancel checkpoint — this call and the rest of the
+                    // bucket become "cancelled" results, none execute.
+                    if is_cancelled() {
+                        lock(&raw)[ci] = Some(Ok("cancelled".to_string()));
+                        break;
+                    }
                     // 检查点 1：执行工具前，若已有兄弟工具失败则跳过（同桶后续一并跳过）。
                     if fail_fast && error_flag.load(Ordering::Acquire) {
                         lock(&raw)[ci] =
@@ -4244,7 +4311,11 @@ the task normally.\n\
                         .acquire()
                         .await
                         .expect("tool concurrency semaphore never closed");
-                    // 检查点 2：等待 semaphore 期间可能已有兄弟工具失败。
+                    // 检查点 2：等待 semaphore 期间可能已有兄弟工具失败或发生取消。
+                    if is_cancelled() {
+                        lock(&raw)[ci] = Some(Ok("cancelled".to_string()));
+                        break;
+                    }
                     if fail_fast && error_flag.load(Ordering::Acquire) {
                         lock(&raw)[ci] =
                             Some(Err(anyhow::anyhow!("skipped: fail_fast")));
@@ -4519,19 +4590,14 @@ the task normally.\n\
             shared_types: Vec::new(),
             // Contract check stays regex-only here (LLM content check is gated by
             // the user setting and run via the TS `CascadeService.verify` path).
+            // P2-12/9-4: the LLM judge mount was removed — with
+            // `enable_llm_check: false` the pipeline never consulted it, so
+            // attaching the executor was dead weight.
             enable_llm_check: false,
             diff: None,
             kg_related: Vec::new(),
         };
-        // Attach the executor only if an LLM is configured — otherwise
-        // `with_llm_judge` is harmless but skipped inside the pipeline (degrades to regex).
-        let pipeline = if self.executor.with_llm() {
-            QualityPipeline::new()
-                .ok()?
-                .with_llm_judge(std::sync::Arc::new(self.executor.clone()))
-        } else {
-            QualityPipeline::new().ok()?
-        };
+        let pipeline = QualityPipeline::new().ok()?;
         match pipeline.validate(&req).await {
             Ok(report) if !report.passed => {
                 let failed: Vec<String> = report
@@ -7123,6 +7189,7 @@ Keep your final reply to a single short sentence.";
                 read_reservations: Arc::new(AtomicUsize::new(0)),
                 files_read_count: Arc::new(AtomicUsize::new(0)),
                 fail_fast: true,
+                cancel: None,
             })
             .await
             .unwrap();
@@ -7143,6 +7210,111 @@ Keep your final reply to a single short sentence.";
         );
 
         let _ = std::fs::remove_dir_all(&project);
+    }
+
+    /// P2-8 (3-5): once the cancel token fires, NO tool in the batch executes —
+    /// every call (parallel-safe path) is synthesized as "cancelled" and the
+    /// (call_id -> result) pairing stays legal.
+    #[tokio::test]
+    async fn test_tool_batch_cancelled_parallel_path_synthesizes_cancelled() {
+        let project = std::env::temp_dir().join(format!(
+            "duo_tcancel_p_{}_{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&project);
+        std::fs::create_dir_all(&project).unwrap();
+        std::fs::write(project.join("a.txt"), "AAA").unwrap();
+
+        let calls = vec![ToolCallEntry {
+            tool_name: "read_file".to_string(),
+            arguments: json!({ "path": "a.txt" }),
+        }];
+        let token = tokio_util::sync::CancellationToken::new();
+        token.cancel(); // cancelled BEFORE the batch runs
+        let executor = AgenticLoopExecutor::new(AgentExecutor::new().unwrap(), &project);
+
+        let (tc, tool_results, _rf, per) = executor
+            .execute_tool_batch(ToolBatchParams {
+                round: 0,
+                calls: &calls,
+                tool_set: LoopToolSet::Explore,
+                files_read: Arc::new(Mutex::new(Vec::new())),
+                read_reservations: Arc::new(AtomicUsize::new(0)),
+                files_read_count: Arc::new(AtomicUsize::new(0)),
+                fail_fast: false,
+                cancel: Some(token),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(tc.len(), 1);
+        assert_eq!(tool_results[0].content, "cancelled");
+        assert_eq!(per[0].as_deref().unwrap(), "cancelled");
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    /// P2-8 (3-5) serial path: a non-parallel-safe tool with a pre-cancelled
+    /// token is synthesized as "cancelled" without executing.
+    #[tokio::test]
+    async fn test_tool_batch_cancelled_serial_path_synthesizes_cancelled() {
+        let project = std::env::temp_dir().join(format!(
+            "duo_tcancel_s_{}_{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&project);
+        std::fs::create_dir_all(&project).unwrap();
+
+        // bash is NOT in PARALLEL_SAFE → serial branch.
+        let calls = vec![
+            ToolCallEntry {
+                tool_name: "bash".to_string(),
+                arguments: json!({ "command": "echo should-not-run" }),
+            },
+            ToolCallEntry {
+                tool_name: "read_file".to_string(),
+                arguments: json!({ "path": "a.txt" }),
+            },
+        ];
+        let token = tokio_util::sync::CancellationToken::new();
+        token.cancel();
+        let executor = AgenticLoopExecutor::new(AgentExecutor::new().unwrap(), &project);
+
+        let (_tc, tool_results, _rf, _per) = executor
+            .execute_tool_batch(ToolBatchParams {
+                round: 0,
+                calls: &calls,
+                tool_set: LoopToolSet::Codegen,
+                files_read: Arc::new(Mutex::new(Vec::new())),
+                read_reservations: Arc::new(AtomicUsize::new(0)),
+                files_read_count: Arc::new(AtomicUsize::new(0)),
+                fail_fast: false,
+                cancel: Some(token),
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(tool_results.len(), 2);
+        for result in &tool_results {
+            assert_eq!(result.content, "cancelled");
+        }
+        let _ = std::fs::remove_dir_all(&project);
+    }
+
+    /// P1-7: malformed arguments are refused, never silently emptied.
+    #[test]
+    fn parse_tool_arguments_rejects_malformed_json() {
+        let err = parse_tool_arguments("edit_file", "{\"path\": ").unwrap_err();
+        assert!(err.contains("edit_file"));
+        assert!(err.contains("NOT executed"));
+        assert!(parse_tool_arguments("edit_file", "{\"path\": \"a.txt\"}").is_ok());
     }
 
     /// A pure read-only batch returns results in the original call order, so the
@@ -7183,6 +7355,7 @@ Keep your final reply to a single short sentence.";
                 read_reservations: Arc::new(AtomicUsize::new(0)),
                 files_read_count: Arc::new(AtomicUsize::new(0)),
                 fail_fast: true,
+                cancel: None,
             })
             .await
             .unwrap();
@@ -7239,6 +7412,7 @@ Keep your final reply to a single short sentence.";
                 read_reservations: Arc::new(AtomicUsize::new(0)),
                 files_read_count: Arc::new(AtomicUsize::new(0)),
                 fail_fast: true,
+                cancel: None,
             })
             .await
             .unwrap();
@@ -7298,6 +7472,7 @@ Keep your final reply to a single short sentence.";
                 read_reservations: Arc::new(AtomicUsize::new(0)),
                 files_read_count: Arc::new(AtomicUsize::new(0)),
                 fail_fast: true,
+                cancel: None,
             })
             .await;
 
@@ -7348,6 +7523,7 @@ Keep your final reply to a single short sentence.";
                 read_reservations: Arc::new(AtomicUsize::new(0)),
                 files_read_count: Arc::new(AtomicUsize::new(0)),
                 fail_fast: false,
+                cancel: None,
             })
             .await
             .unwrap();
@@ -7416,6 +7592,7 @@ Keep your final reply to a single short sentence.";
                 read_reservations: rr.clone(),
                 files_read_count: frc,
                 fail_fast: false,
+                cancel: None,
             })
             .await
             .unwrap();
@@ -7479,6 +7656,7 @@ Keep your final reply to a single short sentence.";
                 read_reservations: Arc::new(AtomicUsize::new(0)),
                 files_read_count: Arc::new(AtomicUsize::new(0)),
                 fail_fast: false,
+                cancel: None,
             })
             .await
             .unwrap();
@@ -7533,6 +7711,7 @@ Keep your final reply to a single short sentence.";
                 read_reservations: Arc::new(AtomicUsize::new(0)),
                 files_read_count: Arc::new(AtomicUsize::new(0)),
                 fail_fast: false,
+                cancel: None,
             })
             .await
             .unwrap();

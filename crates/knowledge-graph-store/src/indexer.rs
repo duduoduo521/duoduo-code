@@ -91,6 +91,9 @@ struct IndexRegistryEntry {
 }
 
 /// Source file extensions supported for indexing.
+/// MUST stay in lockstep with `packages/duoduo/src/file/watcher.ts`
+/// `KG_SOURCE_EXTENSIONS` (watcher.ts points back here — keep both sides in
+/// sync when either list changes).
 const SUPPORTED_EXTENSIONS: &[&str] = &[
     "rs", "ts", "tsx", "js", "jsx", "mjs", "cjs", "py", "go", "java", "c", "h", "cpp", "cc", "cxx",
     "hpp", "hh", "hxx", "cs", "rb", "php", "swift", "kt", "kts", "scala", "lua", "zig",
@@ -6388,6 +6391,35 @@ mod tests {
         assert!(indexer.is_run_cancelled(pid, gen_b));
         assert!(!indexer.is_run_cancelled(pid, gen_c));
         assert!(indexer.is_current_run(pid, gen_c));
+    }
+
+    /// P2-9 (6-2): the 1MB size cap applies to the incremental path too —
+    /// `index_file_content` (the engine behind `update_file`) must skip
+    /// oversized content entirely instead of feeding it into AST extraction.
+    #[test]
+    fn oversized_content_is_skipped_on_incremental_path() {
+        let (graph, indexer) = make_indexer();
+        let big = "x".repeat(MAX_FILE_SIZE_BYTES as usize + 1);
+        let (added, updated) = indexer
+            .index_file_content("src/big.rs", &big, "proj-oversize")
+            .expect("oversized file must be skipped, not an error");
+        assert_eq!((added, updated), (0, 0));
+        assert_eq!(
+            graph.node_count_project(Some("proj-oversize")).unwrap(),
+            0,
+            "no entity may be created from oversized content"
+        );
+
+        // Sanity: a small valid Rust file does get indexed, proving the (0,0)
+        // above comes from the size cap and not from a dead path.
+        let small = "fn hello_world() { println!(\"hi\"); }\n";
+        indexer
+            .index_file_content("src/small.rs", small, "proj-oversize")
+            .unwrap();
+        assert!(
+            graph.node_count_project(Some("proj-oversize")).unwrap() > 0,
+            "small file must produce entities"
+        );
     }
 
     /// Regression (P1-09 follow-up): a cancelled run must still release the

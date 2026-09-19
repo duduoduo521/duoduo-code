@@ -10,6 +10,8 @@ const StatsSchema = z.object({
   exists: z.boolean(),
   sizeBytes: z.number(),
   defaultPruneDays: z.number(),
+  maxFileSizeBytes: z.number(),
+  maxTotalSizeBytes: z.number(),
 })
 
 const CleanupResultSchema = z.object({

@@ -38,8 +38,14 @@ static DANGEROUS_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         r"\|bash",
         r":\(\)",           // fork bomb
         r"<\(",             // process substitution
-        r"exec\s",          // exec replacement
-        r"find\s+.*-exec",  // find -exec execution
+        // exec replacement. Word-boundary anchored so `find . -exec cmd`
+        // (hyphen-prefixed `-exec`) is NOT caught here — it is judged by
+        // [`classify`]'s find rule + the nested walk instead (13-5).
+        r"(?:^|[^\w-])exec\s",
+        // 13-5: `find\s+.*-exec` ("block any find -exec") was REMOVED from this
+        // list. Benign read payloads (`find . -exec grep x {} \;`) must pass;
+        // destructive inners are still caught by [`classify`]'s find rule and
+        // by the nested walk in [`nested_violation`] (execute_bash layer 3b).
         r"xargs\s",         // xargs execution
         r"perl\s+-e",       // perl code execution
         r"ruby\s+-e",       // ruby code execution
@@ -695,11 +701,18 @@ pub fn explore_bash_write_reason(command: &str) -> Option<String> {
     }
     static WRITE_FORM: LazyLock<Regex> = LazyLock::new(|| {
         // Write forms: `> file` / `>> file` (fd-prefixed `2> x` and `>&1`
-        // excluded — those redirect stderr, not files), `sed -i`, tee/dd/
-        // truncate/shred (write by nature). `(?:^|[^\w-])` anchors command
-        // names at word starts, including the beginning of the line.
+        // excluded — those redirect stderr, not files; explicit `1> x` IS a
+        // file write and is caught by the dedicated `1>` alternation below),
+        // `sed -i` / `sed --in-place`, tee/dd/truncate/shred (write by
+        // nature). `(?:^|[^\w-])` anchors command names at word starts,
+        // including the beginning of the line.
+        //
+        // NOTE (P1-16 known limitation): this detection is best-effort — bash
+        // write forms are not enumerable (process substitution writers, `cp`
+        // invoked via variables, etc.). It supplements the write-tool name
+        // gate; it does not replace sandboxing.
         Regex::new(
-            r"(?:(?:^|[^\d>])>{1,2}\s*[^\s&]|(?:^|[^\w-])(?:sed[^\n]*\s-i(?:\s|$)|tee\s|dd\s|truncate\s|shred\s))",
+            r"(?:(?:^|[^\d>])>{1,2}\s*[^\s&]|(?:^|\s)1>{1,2}\s*[^\s&]|(?:^|[^\w-])(?:sed[^\n]*\s(?:-i(?:\.\w+)?(?:\s|$)|--in-place)|tee\s|dd\s|truncate\s|shred\s))",
         )
         .unwrap()
     });
@@ -804,6 +817,11 @@ mod tests {
         assert!(explore_bash_write_reason("sed -i 's/a/b/' src/main.rs").is_some());
         assert!(explore_bash_write_reason("cat f | tee /tmp/out").is_some());
         assert!(explore_bash_write_reason("rm -rf /").is_some()); // via classify
+        // audit follow-ups: explicit stdout redirection and long-form in-place
+        assert!(explore_bash_write_reason("echo hi 1>/tmp/leak").is_some());
+        assert!(explore_bash_write_reason("echo hi 1>> /tmp/leak").is_some());
+        assert!(explore_bash_write_reason("sed --in-place 's/a/b/' src/main.rs").is_some());
+        assert!(explore_bash_write_reason("sed -i.bak 's/a/b/' src/main.rs").is_some());
     }
 
     #[test]

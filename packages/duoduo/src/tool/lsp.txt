@@ -17,9 +17,3 @@ All operations require:
 - character: The character offset (1-based, as shown in editors)
 
 Note: LSP servers must be configured for the file type. If no server is available, an error will be returned.
-
-Division of labor with graph_query:
-- Use this LSP tool when you need PRECISE, TYPE-AWARE results for a specific symbol at a known file/line/character: exact go-to-definition, find references, hover type info, implementation lookup, and call hierarchy (incoming/outgoing calls) at a precise position.
-- Use graph_query (knowledge graph) when you need BROAD STRUCTURAL search across the whole project: large-scale dependency discovery, similar functions, call chains between distant modules, or when you do not yet know the exact file/position of a symbol.
-- Prefer LSP for "what is THIS symbol / where is it precisely"; prefer graph_query for "what depends on / is similar to this across the codebase".
-- Both can be called in parallel; they are complementary, not exclusive.

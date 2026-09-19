@@ -65,6 +65,11 @@
     { "command": "cat <<- 'EOF'\nrm -rf /\nEOF", "ts": "block", "rust": "block", "note": "P0-3: quoted heredoc delimiter" },
     { "command": "echo $((1 << 2))", "ts": "allow", "rust": "allow", "note": "P0-3: arithmetic left shift is not a heredoc" },
     { "command": "rm -rf $TARGET", "ts": "block", "rust": "block", "note": "P0-5: destructive command with expanded (hidden) argument" },
-    { "command": "echo $HOME", "ts": "allow", "rust": "allow", "note": "P0-5: non-destructive command with expansion stays at the ask gate" }
+    { "command": "echo $HOME", "ts": "allow", "rust": "allow", "note": "P0-5: non-destructive command with expansion stays at the ask gate" },
+
+    { "command": "find . -exec grep TODO {} \\;", "ts": "allow", "rust": "allow", "note": "13-5: benign -exec payload passes the classifier (the Rust legacy find-regex was removed); destructive inners are still caught by the find rule + the nested walk" },
+    { "command": "diff <(ls a) <(ls b)", "ts": "block", "rust": "block", "note": "13-5: process substitution (unconditional rule — the inner command runs unreviewed; no benign case exists)" },
+    { "command": "chown user:group file.txt", "ts": "block", "rust": "block", "note": "13-5: any chown is hard-blocked (Rust legacy `chown\\s` parity; unconditional rule)" },
+    { "command": "exec /tmp/pwn --flag", "ts": "block", "rust": "block", "note": "13-5: exec is hard-blocked (Rust legacy `exec\\s` parity; unconditional rule)" }
   ]
 }

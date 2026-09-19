@@ -141,6 +141,7 @@ fn integration_search_fts5() {
             layers: None,
             tags: None,
             project_path: None,
+            session_id: None,
         })
         .unwrap();
 
@@ -167,6 +168,7 @@ fn integration_search_with_layer_filter() {
             layers: Some(vec!["episode".to_string()]),
             tags: None,
             project_path: None,
+            session_id: None,
         })
         .unwrap();
 
@@ -195,6 +197,7 @@ fn integration_search_with_tag_filter() {
             layers: None,
             tags: Some(vec!["architecture".to_string()]),
             project_path: None,
+            session_id: None,
         })
         .unwrap();
 
@@ -300,6 +303,7 @@ fn integration_delete_fts5_sync() {
             layers: None,
             tags: None,
             project_path: None,
+            session_id: None,
         })
         .unwrap();
     assert!(
@@ -318,6 +322,7 @@ fn integration_delete_fts5_sync() {
             layers: None,
             tags: None,
             project_path: None,
+            session_id: None,
         })
         .unwrap();
     assert!(
@@ -475,6 +480,7 @@ fn integration_transaction_store_fts5_consistency() {
             layers: None,
             tags: None,
             project_path: None,
+            session_id: None,
         })
         .unwrap();
     assert!(!results.is_empty(), "FTS5 should be in sync after store");
@@ -496,6 +502,7 @@ fn integration_transaction_delete_fts5_consistency() {
             layers: None,
             tags: None,
             project_path: None,
+            session_id: None,
         })
         .unwrap();
     assert!(!results.is_empty());
@@ -510,6 +517,7 @@ fn integration_transaction_delete_fts5_consistency() {
             layers: None,
             tags: None,
             project_path: None,
+            session_id: None,
         })
         .unwrap();
     assert!(

@@ -939,19 +939,31 @@ impl SmartLayerBridge for SmartLayerBridgeImpl {
         // requests to parity with HTTP-initiated ones.
         let context_builder = self.state.context.clone();
         let prompt_owned = prompt.to_string();
-        let assembled_result = tokio::task::spawn_blocking(move || {
-            let budget = 2000; // Budget for memory context injection
-            if has_project {
-                context_builder.assemble_with_project(&prompt_owned, budget, Some(&project_path))
-            } else {
-                context_builder.assemble(&prompt_owned, budget)
-            }
-        })
+        // M5 (8-1): bound the blocking assembly at 25s (same fixed value as
+        // the HTTP assembly sites) — a huge repo must not stall the IM agent
+        // past the point of usefulness; degrade to context-free instead.
+        let assembled_result = match tokio::time::timeout(
+            std::time::Duration::from_secs(25),
+            tokio::task::spawn_blocking(move || {
+                let budget = 2000; // Budget for memory context injection
+                if has_project {
+                    context_builder.assemble_with_project(&prompt_owned, budget, Some(&project_path))
+                } else {
+                    context_builder.assemble(&prompt_owned, budget)
+                }
+            }),
+        )
         .await
-        .unwrap_or_else(|e| {
-            tracing::warn!(error = %e, "Context assembly spawn_blocking panicked");
-            Err(anyhow::anyhow!("{} - context assembly", e))
-        });
+        {
+            Ok(joined) => joined.unwrap_or_else(|e| {
+                tracing::warn!(error = %e, "Context assembly spawn_blocking panicked");
+                Err(anyhow::anyhow!("{} - context assembly", e))
+            }),
+            Err(_) => {
+                tracing::warn!("Context assembly timed out after 25s; degrading to context-free");
+                Err(anyhow::anyhow!("context assembly timed out (25s)"))
+            }
+        };
 
         let final_prompt = match assembled_result {
             Ok(assembled) => {

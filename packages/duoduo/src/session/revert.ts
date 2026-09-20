@@ -189,7 +189,11 @@ export const layer = Layer.effect(
           files: diffs.length,
         },
       })
-      return yield* sessions.get(input.sessionID)
+      const sessionAfter = yield* sessions.get(input.sessionID)
+      // M4 (10-4): carry partial-rollback failures to the caller — the route
+      // passes the extra field through so the frontend can toast the list
+      // instead of showing an unqualified "reverted".
+      return failedFiles.length > 0 ? { ...sessionAfter, failed: failedFiles } : sessionAfter
     })
 
     const unrevert = Effect.fn("SessionRevert.unrevert")(function* (input: { sessionID: SessionID }) {
@@ -197,14 +201,18 @@ export const layer = Layer.effect(
       yield* state.assertNotBusy(input.sessionID)
       const session = yield* sessions.get(input.sessionID)
       if (!session.revert) return session
+      let unrevertFailed: string[] = []
       if (session.revert.snapshot) {
         const restored = yield* snap.restore(session.revert.snapshot)
+        unrevertFailed = restored.failed
         if (restored.failed.length > 0) {
           log.error("unrevert restore left files unrestored", { sessionID: input.sessionID, files: restored.failed })
         }
       }
       yield* sessions.clearRevert(input.sessionID)
-      return yield* sessions.get(input.sessionID)
+      const sessionAfter = yield* sessions.get(input.sessionID)
+      // M4 (10-4): same partial-failure passthrough as revert.
+      return unrevertFailed.length > 0 ? { ...sessionAfter, failed: unrevertFailed } : sessionAfter
     })
 
     const cleanup = Effect.fn("SessionRevert.cleanup")(function* (session: Session.Info) {

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import { readFileSync } from "fs"
-import { classifyCommand, commandTokens, innerPayloadOf, parse, redirectWriteTargets } from "../../src/tool/bash"
+import { classifyCommand, commandTokens, innerPayloadOf, nestedSpatialReason, parse, redirectWriteTargets } from "../../src/tool/bash"
 
 // Shared vector file — the SAME file is consumed by the Rust side
 // (crates/agent-executor/src/bash_safety.rs shared_vectors_parity test), so
@@ -94,6 +94,28 @@ describe("P0-4 nested payload recursion (capability level)", () => {
       ]),
     ).toBe("sudo rm -rf /")
   })
+
+// H1: the nested spatial gate must enforce the FULL bound — destructive AND
+// plain out-of-bounds — matching `bash_safety::nested_walk` (blocked +
+// out_of_bounds doors). The gate logic lives in the exported pure function
+// `nestedSpatialReason`, which the real `BashTool.scanNestedCommands` calls;
+// the walk itself is pinned by the Rust nested_violation tests.
+describe("H1 nested spatial gate (nestedSpatialReason)", () => {
+  test("destructive out-of-bounds is blocked", () => {
+    expect(nestedSpatialReason({ destructive: new Set(["/tmp"]), dirs: new Set() })).toBeDefined()
+  })
+
+  test("non-destructive out-of-bounds write target is now blocked (was the bypass)", () => {
+    // `bash -c 'echo x > /tmp/leak'`: redirect target lands in scan.dirs —
+    // previously only scan.destructive blocked, so Rust's hard block was
+    // delegated to TS and executed for real under auto-accept.
+    expect(nestedSpatialReason({ destructive: new Set(), dirs: new Set(["/tmp"]) })).toBeDefined()
+  })
+
+  test("in-bounds scan passes", () => {
+    expect(nestedSpatialReason({ destructive: new Set(), dirs: new Set() })).toBeUndefined()
+  })
+})
 
   test("innerPayloadOf ignores dynamic -c payload (blocked by classifier)", () => {
     expect(

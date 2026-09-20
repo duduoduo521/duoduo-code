@@ -90,6 +90,10 @@ export const EditTool = Tool.define(
           let contentOld = ""
           let contentNew = ""
           let cascadeErrorIssues: ReadonlyArray<{ severity: string; message: string; line?: number }> | undefined
+          // M2 (9-3): true when the cascade ran but could not verify (LSP
+          // unavailable/timed out) — surfaced in the tool output so the model
+          // never mistakes an unverified edit for a checked one.
+          let cascadeUnchecked = false
 
           // Blackboard integration (optional, per-prompt scope)
           const promptID = getPromptID(ctx.sessionID)
@@ -168,6 +172,7 @@ export const EditTool = Tool.define(
                   // Unified flow: the new-file branch previously skipped this,
                   // so QA issues were never injected into the tool output.
                   cascadeErrorIssues = post.report.passed ? undefined : post.report.issues
+                  cascadeUnchecked = post.report.unchecked === true
                 }
                 // P1-27: error-severity cascade issues block the stable submit.
                 yield* submitStable(
@@ -240,6 +245,7 @@ export const EditTool = Tool.define(
                 })
                 contentNew = post.content
                 cascadeErrorIssues = post.report.passed ? undefined : post.report.issues
+                cascadeUnchecked = post.report.unchecked === true
               }
               // P1-27: error-severity cascade issues block the stable submit.
               yield* submitStable(
@@ -296,6 +302,12 @@ export const EditTool = Tool.define(
             output += `\n\nCode quality issues (submission BLOCKED until fixed):\n${blockingErrors
               .map((i) => `- Line ${i.line ?? "?"}: ${i.message}`)
               .join("\n")}`
+          }
+
+          // M2 (9-3): cascade could not verify (LSP unavailable/timed out) —
+          // make the unverified status visible to the model.
+          if (cascadeUnchecked) {
+            output += `\n\n[Quality check DID NOT RUN (LSP unavailable or timed out) — this file's content is UNVERIFIED. Consider reviewing it manually.]`
           }
 
           return {

@@ -158,6 +158,30 @@ export const Info = Schema.Struct({
     description:
       "Maximum on-disk size (bytes) of the snapshot repository. When exceeded, the hourly cleanup prunes the oldest snapshots first (bounded per run) until below the limit. Snapshots pruned this way lose their rollback point. Defaults to 5368709120 (5 GB).",
   }),
+  webfetch_access_mode: Schema.optional(Schema.Union([Schema.Literal("blacklist"), Schema.Literal("whitelist")])).annotate({
+    description:
+      "Webfetch network access mode (H4). 'blacklist' (default) allows all destinations except those matching a block rule — standard reserved ranges ship as editable default rules. 'whitelist' blocks every destination that is not explicitly allowed by a rule (e.g. allow your intranet segments only).",
+  }),
+  webfetch_rules: Schema.optional(
+    Schema.mutable(
+      Schema.Array(
+        Schema.Struct({
+          pattern: Schema.String.annotate({
+            description: "IP, CIDR (v4/v6), domain, or '*.domain' pattern.",
+          }),
+          action: Schema.Union([Schema.Literal("allow"), Schema.Literal("block")]).annotate({
+            description: "'allow' exempts the target; 'block' denies it. The most specific match wins; allow beats block on equal specificity.",
+          }),
+          enabled: Schema.Boolean.annotate({
+            description: "Disabled rules are kept but not evaluated.",
+          }),
+        }),
+      ),
+    ),
+  ).annotate({
+    description:
+      "User-managed webfetch access rules (H4), re-evaluated before EVERY redirect hop. In blacklist mode the protocol-standard reserved-range default rules apply in addition to these; in whitelist mode only 'allow' rules grant access.",
+  }),
   // User-facing plugin config is stored as Specs; provenance gets attached later while configs are merged.
   plugin: Schema.optional(Schema.mutable(Schema.Array(ConfigPlugin.Spec))),
   autoupdate: Schema.optional(Schema.Union([Schema.Boolean, Schema.Literal("notify")])).annotate({

@@ -344,6 +344,12 @@ async fn list(State(state): State<AppState>) -> Result<Json<Vec<GearInfo>>> {
                 if !path.is_dir() {
                     continue;
                 }
+                // M7 (B5): interrupted installs leave `.tmp-*` / `.broken-*`
+                // staging dirs — never list them as installed gears.
+                let raw_name = entry.file_name().to_string_lossy().to_string();
+                if raw_name.contains(".tmp-") || raw_name.contains(".broken-") {
+                    continue;
+                }
                 // The directory name can differ from the gear's manifest name
                 // (e.g. marketplace skills are stored under `skill-<name>`). Read
                 // the manifest so we dedup against the real gear name rather than
@@ -684,6 +690,11 @@ async fn market(
                 let p = entry.path();
                 if p.is_dir() {
                     let name = entry.file_name().to_string_lossy().to_string();
+                    // M7 (B5): staging dirs from interrupted installs are not
+                    // installed gears — exclude them from the installed set.
+                    if name.contains(".tmp-") || name.contains(".broken-") {
+                        continue;
+                    }
                     installed_norm.insert(norm_key(&name));
                 }
             }
@@ -879,6 +890,20 @@ async fn install(
         })?;
 
     let dir = gears_dir()?;
+    // H3: `name` reaches `dir.join(name)` below — a registry-supplied name
+    // with path separators / `..` segments would point the whole install at
+    // an arbitrary directory outside the gears store. (`..`-leading names are
+    // already routed to the unified pipeline by the starts_with('.') check
+    // above; interior `..` segments are not.) Mirror the CLI discovery
+    // pipeline's contract: reject separators, `..` segments and drive letters.
+    if name.contains('\\')
+        || name.contains('/')
+        || name.split(['\\', '/']).any(|seg| seg == ".." || seg.contains(':'))
+    {
+        return Err(UnifiedError::BadRequest(format!(
+            "invalid gear name {name:?}: path separators, '..' segments and drive letters are not allowed"
+        )));
+    }
     let gear_dir = dir.join(name);
     if gear_dir.exists() {
         return Err(UnifiedError::BadRequest(format!(
@@ -893,6 +918,21 @@ async fn install(
     // black-holed registry mirror stalled the install route forever.
     let client = crate::duoduo_sync::external_http_client().clone();
     for rel in &entry.files {
+        // H3: same contract for registry-supplied file paths — `..` segments,
+        // absolute paths and drive letters must never escape `gear_dir`
+        // (mirrors the CLI discovery pipeline / discovery.ts isSafeRelPath).
+        // The joined-path prefix check below is the belt-and-suspenders
+        // backstop: `Path::starts_with` compares components, so a `..`
+        // component cannot pass it even if the segment scan were bypassed.
+        let normalized = rel.replace('\\', "/");
+        if normalized.is_empty()
+            || normalized.starts_with('/')
+            || normalized.split('/').any(|seg| seg == ".." || seg.contains(':'))
+        {
+            return Err(UnifiedError::BadRequest(format!(
+                "gear file path {rel:?} would escape the gear directory; refusing install"
+            )));
+        }
         let file_url = format!(
             "{}/gears/{}/{}",
             source.files_base.trim_end_matches('/'),
@@ -915,6 +955,11 @@ async fn install(
             .await
             .map_err(|e| UnifiedError::Internal(format!("read {rel}: {e}")))?;
         let dest = gear_dir.join(rel);
+        if !dest.starts_with(&gear_dir) {
+            return Err(UnifiedError::BadRequest(format!(
+                "gear file path {rel:?} would escape the gear directory; refusing install"
+            )));
+        }
         if let Some(parent) = dest.parent() {
             fs::create_dir_all(parent)
                 .map_err(|e| UnifiedError::Internal(format!("create dir for {rel}: {e}")))?;

@@ -15,6 +15,7 @@ import { SettingsStorage } from "./settings-storage"
 import { SettingsSnapshot } from "./settings-snapshot"
 import { SettingsConcurrency } from "./settings-concurrency"
 import { SettingsGraph } from "./settings-graph"
+import { SettingsWebfetch } from "./settings-webfetch"
 
 export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
   const language = useLanguage()
@@ -79,6 +80,10 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
                     <Icon name="graph-kanban" />
                     {language.t("settings.graph.title")}
                   </Tabs.Trigger>
+                  <Tabs.Trigger value="webfetch">
+                    <Icon name="sliders" />
+                    {language.t("settings.webfetch.title")}
+                  </Tabs.Trigger>
                 </div>
               </div>
             </div>
@@ -120,6 +125,9 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
         </Tabs.Content>
         <Tabs.Content value="graph" class="no-scrollbar overflow-y-auto">
           <SettingsGraph />
+        </Tabs.Content>
+        <Tabs.Content value="webfetch" class="no-scrollbar overflow-y-auto">
+          <SettingsWebfetch />
         </Tabs.Content>
       </Tabs>
     </Dialog>

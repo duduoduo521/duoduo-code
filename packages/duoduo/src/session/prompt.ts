@@ -1716,7 +1716,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
               permission: "mcp",
               patterns: [toolName],
               metadata: { tool: toolName, mcp: true },
-              always: [],
+              always: [toolName],
               tool: { messageID: part.messageID, callID },
               ruleset: permissionRuleset,
             })
@@ -2300,6 +2300,22 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           // error — the UI went idle with no error card at all. runError is
           // only set by loop_error (never by loop_done), so this is precise.
           if (runError) {
+            // M1: if the Rust loop already persisted a NEW assistant message
+            // carrying the failure (mid-stream partial, finish="error"), do
+            // NOT synthesize a second error message — that produced two error
+            // cards for one failure and the partial output was buried behind
+            // an empty synthetic card. Synthesize only when the loop died
+            // without writing any error-bearing assistant row (e.g. step-0
+            // HTTP failure), which is the case createRunLoopErrorMessage was
+            // built for.
+            // The error field is written by the Rust loop (NamedError shape)
+            // but is not part of the Info schema type — narrow instead.
+            if (lastAssistantMsg && lastAssistantMsg.info.id !== prevLastAssistantId) {
+              const lastInfo = lastAssistantMsg.info as { error?: unknown }
+              if (lastInfo.error) {
+                return lastAssistantMsg
+              }
+            }
             return yield* createRunLoopErrorMessage(sessionID, runError)
           }
           // Normal completion: a NEW assistant message was produced by the run.

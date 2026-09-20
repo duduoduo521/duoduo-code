@@ -1796,7 +1796,20 @@ export default function Page() {
 
       await task
         .then((result) => {
-          if (result.data) merge(result.data)
+          if (result.data) {
+            merge(result.data)
+            // M4 (10-4): the backend surfaces files it could not roll back
+            // (e.g. locked on Windows) — tell the user instead of showing an
+            // unqualified "reverted".
+            const failed = (result.data as { failed?: string[] }).failed
+            if (failed?.length) {
+              showToast({
+                variant: "error",
+                title: language.t("session.revertPartialFailed"),
+                description: failed.join("\n"),
+              })
+            }
+          }
         })
         .catch((err) => {
           batch(() => {

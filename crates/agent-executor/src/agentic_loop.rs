@@ -4330,7 +4330,15 @@ the task normally.\n\
                     let rr = rr.clone();
                     // P1-16: Explore bash write forms are hard-blocked in the
                     // parallel branch too (same gate as the serial branch).
+                    // H2: the parallel branch previously gated ONLY bash write
+                    // forms — a hallucinated write-tool call inside an
+                    // all-parallel batch skipped the write-tool-name refusal
+                    // the serial branch enforces. Same gate, same text.
                     let r = if tool_set == LoopToolSet::Explore
+                        && WRITE_TOOL_NAMES.contains(&entry.tool_name.as_str())
+                    {
+                        Ok("[Explore mode is read-only] Write tools (edit_file/write/apply_patch) are not permitted in explore mode. Use read-only tools (read_file, list_dir, grep, bash).".to_string())
+                    } else if tool_set == LoopToolSet::Explore
                         && entry.tool_name == "bash"
                         && let Some(cmd) = entry.arguments.get("command").and_then(|v| v.as_str())
                         && let Some(reason) =
@@ -7150,6 +7158,71 @@ Keep your final reply to a single short sentence.";
         assert_eq!(mk().with_tool_concurrency(100).effective_tool_concurrency(), 16);
         // 0 (or any value < 1) is lifted to 1 to avoid a deadlocking Semaphore(0)
         assert_eq!(mk().with_tool_concurrency(0).effective_tool_concurrency(), 1);
+    }
+
+    /// H2: a hallucinated write-tool call inside an all-parallel batch must
+    /// hit the same Explore refusal the serial branch enforces — previously
+    /// the parallel branch gated only bash write forms, so `edit_file` in a
+    /// parallel-safe batch reached execute_tool and mutated the worktree.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn explore_parallel_batch_refuses_write_tools() {
+        let project = std::env::temp_dir().join(format!(
+            "duo_h2_{}_{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let _ = std::fs::remove_dir_all(&project);
+        std::fs::create_dir_all(&project).unwrap();
+
+        // Mixed batch (both PARALLEL_SAFE): the write must be refused, the
+        // read must still succeed.
+        let calls = vec![
+            ToolCallEntry {
+                tool_name: "edit_file".to_string(),
+                arguments: json!({ "path": "h2.txt", "content": "should not land" }),
+            },
+            ToolCallEntry {
+                tool_name: "list_dir".to_string(),
+                arguments: json!({ "path": "." }),
+            },
+        ];
+
+        let executor = AgenticLoopExecutor::new(AgentExecutor::new().unwrap(), &project);
+        let (_tc, tool_results, _rf, _per) = executor
+            .execute_tool_batch(ToolBatchParams {
+                round: 0,
+                calls: &calls,
+                tool_set: LoopToolSet::Explore,
+                files_read: Arc::new(Mutex::new(Vec::new())),
+                read_reservations: Arc::new(AtomicUsize::new(0)),
+                files_read_count: Arc::new(AtomicUsize::new(0)),
+                fail_fast: false,
+                cancel: None,
+            })
+            .await
+            .unwrap();
+
+        assert!(
+            tool_results[0]
+                .content
+                .contains("[Explore mode is read-only] Write tools"),
+            "write tool must be refused in the parallel branch, got: {}",
+            tool_results[0].content
+        );
+        assert!(
+            !project.join("h2.txt").exists(),
+            "the write must not have executed"
+        );
+        assert!(
+            !tool_results[1].content.contains("[Explore mode is read-only]"),
+            "read tools stay functional, got: {}",
+            tool_results[1].content
+        );
+
+        let _ = std::fs::remove_dir_all(&project);
     }
 
     /// Under real parallelism the atomic reservation + RAII guard must cap the

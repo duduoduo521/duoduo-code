@@ -1008,6 +1008,33 @@ export const dict = {
     "When exceeded, the hourly cleanup prunes the oldest snapshots first; a pruned snapshot loses its rollback point.",
   "settings.snapshot.invalidSize": "Enter a valid positive number (MB / GB)",
 
+  "settings.webfetch.title": "Network Access Control",
+  "settings.webfetch.description":
+    "Control which destinations AI web fetching may reach (blacklist / whitelist). Rules are re-evaluated on every redirect hop",
+  "settings.webfetch.mode": "Access mode",
+  "settings.webfetch.modeDesc":
+    "Blacklist: public destinations are allowed unless they match a block rule (protocol-standard reserved ranges ship as editable defaults). Whitelist: only destinations matching an allow rule are reachable (e.g. restrict AI to your intranet).",
+  "settings.webfetch.modeBlacklist": "Blacklist mode",
+  "settings.webfetch.modeWhitelist": "Whitelist mode",
+  "settings.webfetch.modeBlacklistDesc": "Current: allow by default; destinations matching a \"block\" rule are denied.",
+  "settings.webfetch.modeWhitelistDesc": "Current: block by default; only destinations matching an \"allow\" rule are reachable.",
+  "settings.webfetch.rules": "Rules",
+  "settings.webfetch.rulesDesc":
+    "Supports IPs, CIDR ranges (e.g. 10.0.0.0/8), domains (e.g. example.com) and wildcard domains (e.g. *.internal). More specific rules win; on equal specificity allow beats block.",
+  "settings.webfetch.empty": "No rules yet.",
+  "settings.webfetch.patternPlaceholder": "IP / CIDR / domain / *.domain",
+  "settings.webfetch.addRule": "Add rule",
+  "settings.webfetch.allow": "Allow",
+  "settings.webfetch.block": "Block",
+  "settings.webfetch.enabled": "Enabled",
+  "settings.webfetch.disabled": "Disabled",
+  "settings.webfetch.delete": "Delete",
+  "settings.webfetch.invalidPattern": "Invalid rule format (no spaces; use IP / CIDR / domain)",
+  "settings.webfetch.save": "Save settings",
+  "settings.webfetch.saved": "Network access control settings saved",
+
+  "session.revertPartialFailed": "Some files could not be rolled back",
+
   "settings.concurrency.title": "Concurrency",
   "settings.concurrency.description": "Configure agent parallelism and LLM retry behavior",
   "settings.graph.title": "Knowledge Graph",

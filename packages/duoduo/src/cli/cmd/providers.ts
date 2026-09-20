@@ -305,6 +305,8 @@ export const ProvidersLogoutCommand = cmd({
     prompts.intro("Remove credential")
     if (credentials.length === 0) {
       prompts.log.error("No credentials found")
+      // M8 (B11): nothing to remove is a failure for scripts.
+      process.exitCode = 1
       return
     }
     // Get runtime providers from Provider.Service

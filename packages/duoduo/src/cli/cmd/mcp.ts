@@ -308,6 +308,8 @@ export const McpAuthCommand = cmd({
             process.exitCode = 1
           } else {
             spinner.stop("Unexpected status: " + status.status, 1)
+            // M8 (B11): unexpected auth status is a failure for scripts.
+            process.exitCode = 1
           }
         } catch (error) {
           spinner.stop("Authentication failed", 1)
@@ -785,6 +787,8 @@ export const McpDebugCommand = cmd({
                 }
               } else {
                 prompts.log.error(`Connection error: ${error instanceof Error ? error.message : String(error)}`)
+                // M8 (B11): a debug connection failure is a failure.
+                process.exitCode = 1
               }
             }
           } else if (response.status >= 200 && response.status < 300) {
@@ -808,6 +812,8 @@ export const McpDebugCommand = cmd({
         } catch (error) {
           spinner.stop("Connection failed", 1)
           prompts.log.error(`Error: ${error instanceof Error ? error.message : String(error)}`)
+          // M8 (B11): debug catch-all must not exit 0.
+          process.exitCode = 1
         }
 
         prompts.outro("Debug complete")

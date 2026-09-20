@@ -1095,14 +1095,21 @@ async fn execute(
     let budget = memory_inject_budget(state.executor.get_llm_config().context_window);
     let pp_owned = req.project_path.clone();
     let prompt_owned = req.prompt.clone();
-    let assembled_result = tokio::task::spawn_blocking(move || {
-        if let Some(pp) = pp_owned.as_deref() {
-            context_builder.assemble_with_project(&prompt_owned, budget, Some(pp))
-        } else {
-            context_builder.assemble(&prompt_owned, budget)
-        }
-    })
-    .await?;
+    // M5 (8-1): bound the blocking assembly at 25s (same fixed value as the
+    // scheduled-task path above) — a huge repo must not hold this route past
+    // the TS client's 30s abort with no server-side answer.
+    let assembled_result = tokio::time::timeout(
+        std::time::Duration::from_secs(25),
+        tokio::task::spawn_blocking(move || {
+            if let Some(pp) = pp_owned.as_deref() {
+                context_builder.assemble_with_project(&prompt_owned, budget, Some(pp))
+            } else {
+                context_builder.assemble(&prompt_owned, budget)
+            }
+        }),
+    )
+    .await
+    .map_err(|_| UnifiedError::Internal("memory context assembly timed out (25s)".into()))??;
     match assembled_result {
         Ok(assembled) => {
             if !assembled.assembled_context.is_empty() {
@@ -2356,12 +2363,19 @@ async fn build_fallback_context(
     base_system: String,
     project_path: String,
 ) -> Option<String> {
-    let result = tokio::task::spawn_blocking(move || {
-        context.assemble_with_project(&base_system, 500, Some(&project_path))
-    })
-    .await;
+    // M5 (8-1): same 25s bound as the other assembly sites — a hung blocking
+    // assembly degrades to no memory injection instead of stalling the route.
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(25),
+        tokio::task::spawn_blocking(move || {
+            context.assemble_with_project(&base_system, 500, Some(&project_path))
+        }),
+    )
+    .await
+    .ok()
+    .and_then(|joined| joined.ok());
     match result {
-        Ok(Ok(ctx)) if !ctx.assembled_context.is_empty() => Some(format!(
+        Some(Ok(ctx)) if !ctx.assembled_context.is_empty() => Some(format!(
             "## Relevant Memory\n{}\n\nUse these memories to provide context-aware responses.",
             ctx.assembled_context
         )),
@@ -4742,7 +4756,14 @@ async fn run_loop_handler(
                     } else if let Some(err_msg) = last_error.as_ref() {
                         // P1-2: the partial output below is persisted with the
                         // failure reason attached (finish="error").
-                        Some(serde_json::json!({ "message": err_msg }))
+                        // M1: NamedError shape — the frontend reads `error.name`
+                        // (session-turn filters MessageAbortedError) and
+                        // `error.data.message` for the card body; the previous
+                        // bare {message} produced an empty error card.
+                        Some(serde_json::json!({
+                            "name": "UnknownError",
+                            "data": { "message": err_msg },
+                        }))
                     } else {
                         None
                     },

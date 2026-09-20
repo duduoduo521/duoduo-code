@@ -812,18 +812,21 @@ pub fn explore_bash_write_reason(command: &str) -> Option<String> {
     }
     static WRITE_FORM: LazyLock<Regex> = LazyLock::new(|| {
         // Write forms: `> file` / `>> file` (fd-prefixed `2> x` and `>&1`
-        // excluded — those redirect stderr, not files; explicit `1> x` IS a
-        // file write and is caught by the dedicated `1>` alternation below),
-        // `sed -i` / `sed --in-place`, tee/dd/truncate/shred (write by
-        // nature). `(?:^|[^\w-])` anchors command names at word starts,
-        // including the beginning of the line.
+        // excluded — fd writes are handled by FD_WRITE below with target
+        // exemptions; explicit `1> x` IS a file write and is caught by the
+        // dedicated `1>` alternation below), `sed -i` / `sed --in-place`,
+        // tee/dd/truncate/shred (write by nature), plus the file-mutating
+        // command subset from FILES (H1 batch: cp/mv/touch/mkdir/rmdir/
+        // install/patch and their PowerShell aliases copy/move/del/erase/
+        // ri/rd/md/mi/ren). `(?:^|[^\w-])` anchors command names at word
+        // starts, including the beginning of the line.
         //
         // NOTE (P1-16 known limitation): this detection is best-effort — bash
         // write forms are not enumerable (process substitution writers, `cp`
         // invoked via variables, etc.). It supplements the write-tool name
         // gate; it does not replace sandboxing.
         Regex::new(
-            r"(?:(?:^|[^\d>])>{1,2}\s*[^\s&]|(?:^|\s)1>{1,2}\s*[^\s&]|(?:^|[^\w-])(?:sed[^\n]*\s(?:-i(?:\.\w+)?(?:\s|$)|--in-place)|tee\s|dd\s|truncate\s|shred\s))",
+            r"(?:(?:^|[^\d>])>{1,2}\s*[^\s&]|(?:^|\s)1>{1,2}\s*[^\s&]|(?:^|[^\w-])(?:sed[^\n]*\s(?:-i(?:\.\w+)?(?:\s|$)|--in-place)|tee\s|dd\s|truncate\s|shred\s|cp\s|mv\s|touch\s|mkdir\s|rmdir\s|install\s|patch\s|copy\s|move\s|del\s|erase\s|ri\s|rd\s|md\s|mi\s|ren\s))",
         )
         .unwrap()
     });
@@ -831,6 +834,24 @@ pub fn explore_bash_write_reason(command: &str) -> Option<String> {
         return Some(
             "bash write form (redirection / in-place edit) — Explore mode is read-only; use a write tool outside Explore or drop the redirection".to_string(),
         );
+    }
+    // H1 batch: fd-prefixed file writes (`2> err.log`, `2>> log`, `3> out`)
+    // escaped the generic `>` branch because of its digit guard. Capture the
+    // target and exempt the non-file forms instead of using look-ahead (the
+    // `regex` crate has none): `2>&1` fails the `[^\s&]` capture (dup), and
+    // `/dev/null` / `NUL` bit buckets are skipped explicitly. All matches are
+    // scanned — an exempt `2>/dev/null` must not mask a later `3> secret`.
+    static FD_WRITE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?:^|\s)\d>{1,2}\s*([^\s&]+)").unwrap());
+    for caps in FD_WRITE.captures_iter(command) {
+        if let Some(target) = caps.get(1) {
+            let normalized = target.as_str().replace('\\', "/").to_ascii_lowercase();
+            if normalized == "/dev/null" || normalized.ends_with("/dev/null") || normalized == "nul" {
+                continue;
+            }
+            return Some(
+                "bash write form (fd redirection) — Explore mode is read-only; use a write tool outside Explore or drop the redirection".to_string(),
+            );
+        }
     }
     None
 }
@@ -933,6 +954,22 @@ mod tests {
         assert!(explore_bash_write_reason("echo hi 1>> /tmp/leak").is_some());
         assert!(explore_bash_write_reason("sed --in-place 's/a/b/' src/main.rs").is_some());
         assert!(explore_bash_write_reason("sed -i.bak 's/a/b/' src/main.rs").is_some());
+        // H1 batch: fd-prefixed file writes escaped the digit guard before
+        assert!(explore_bash_write_reason("build 2>err.log").is_some());
+        assert!(explore_bash_write_reason("build 2>> err.log").is_some());
+        assert!(explore_bash_write_reason("run 3> out.bin").is_some());
+        // H1 batch: file-mutating command subset (FILES write-capable)
+        assert!(explore_bash_write_reason("cp a b").is_some());
+        assert!(explore_bash_write_reason("mv a b").is_some());
+        assert!(explore_bash_write_reason("touch new.txt").is_some());
+        assert!(explore_bash_write_reason("mkdir -p a/b").is_some());
+        assert!(explore_bash_write_reason("rmdir empty").is_some());
+        assert!(explore_bash_write_reason("install -m644 a b").is_some());
+        assert!(explore_bash_write_reason("copy a b").is_some()); // PowerShell alias
+        assert!(explore_bash_write_reason("move a b").is_some());
+        assert!(explore_bash_write_reason("del f.txt").is_some());
+        assert!(explore_bash_write_reason("md docs").is_some());
+        assert!(explore_bash_write_reason("ren a b").is_some());
     }
 
     #[test]
@@ -942,6 +979,11 @@ mod tests {
         assert!(explore_bash_write_reason("cat big.log 2>/dev/null | head").is_none());
         assert!(explore_bash_write_reason("echo hi >&2").is_none());
         assert!(explore_bash_write_reason("git log --oneline").is_none());
+        // H1 batch: fd-dup must stay allowlisted and the new command names
+        // must not trip on word-internal substrings
+        assert!(explore_bash_write_reason("build 2>&1 | head").is_none());
+        assert!(explore_bash_write_reason("md5sum file.iso").is_none());
+        assert!(explore_bash_write_reason("npm view lodash").is_none());
     }
 
     // ── A1: redirect write targets hit the spatial bound ──

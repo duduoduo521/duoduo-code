@@ -137,6 +137,25 @@ export const layer = Layer.effect(
 
             db.delete(TodoTable).where(eq(TodoTable.session_id, input.sessionID)).run()
             if (input.todos.length === 0) return []
+            // M6 (D1-1): two NEW inputs with the same content and no id each
+            // mint a fresh UUID and land as duplicate rows with distinct keys —
+            // the same shadowing symptom the seenIds check below guards, which
+            // only fires when two inputs resolve to the SAME id. Reject the
+            // input shape up front (the documented contract: update an
+            // existing task by passing its id).
+            const newWithoutId = new Set<string>()
+            for (const todo of input.todos) {
+              if (!todo.id && todo.content.length > 0) {
+                if (newWithoutId.has(todo.content)) {
+                  throw new DuoduoError({
+                    message: `Duplicate new task "${todo.content}" (no id) — pass the existing task's id to update it`,
+                    messageZh: `新任务 "${todo.content}"（无 id）重复——更新既有任务请回传其 id`,
+                    cause: undefined,
+                  })
+                }
+                newWithoutId.add(todo.content)
+              }
+            }
             // [1-1] Keep the matched row's stable id; brand-new tasks get a
             // generated one (an explicit id from the model is honored so a
             // deleted-then-recreated task keeps its identity). An empty-string

@@ -92,6 +92,13 @@ pub fn load_gears_from_dir(dir: &std::path::Path) -> GearLoadResult {
         if !path.is_dir() {
             continue;
         }
+        // M7 (B5): interrupted installs leave `<name>.tmp-*` / `<name>.broken-*`
+        // staging dirs — they must never be injected as live gear payloads
+        // (same filter as host::load_all / mcp::scan_specs / the TS loaders).
+        let dir_name_raw = entry.file_name().to_string_lossy().to_string();
+        if dir_name_raw.contains(".tmp-") || dir_name_raw.contains(".broken-") {
+            continue;
+        }
         let instructions =
             std::fs::read_to_string(path.join("instructions.md")).unwrap_or_default();
         if instructions.trim().is_empty() {

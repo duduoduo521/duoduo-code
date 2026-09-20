@@ -439,6 +439,30 @@ export function redirectWriteTargets(root: Node): string[] {
   return out
 }
 
+/**
+ * H1: the nested-payload spatial gate. Must enforce the FULL bound, matching
+ * `bash_safety::nested_walk` (blocked + out_of_bounds doors) in
+ * crates/agent-executor/src/bash_safety.rs. Previously only the destructive
+ * door blocked, so a nested non-destructive out-of-bounds write
+ * (`bash -c 'echo x > /tmp/leak'`) passed TS while Rust hard-blocked it and
+ * delegated the command back for the ask flow — the write then executed for
+ * real under auto-accept, turning the Rust hard block into a bypass.
+ * `dirs` covers FILES-argument and redirect-write targets alike (collect
+ * feeds both); `destructive` is the subset that must never reach ask.
+ * Exported as a pure function so tests pin the gate without replicating the
+ * walk (the walk itself is covered by the Rust nested_violation tests).
+ */
+export function nestedSpatialReason(scan: {
+  destructive: ReadonlySet<string>
+  dirs: ReadonlySet<string>
+}): string | undefined {
+  if (scan.destructive.size > 0)
+    return `nested command writes outside the allowed directories: ${Array.from(scan.destructive).join(", ")}`
+  if (scan.dirs.size > 0)
+    return `nested command touches paths outside the allowed directories: ${Array.from(scan.dirs).join(", ")}`
+  return undefined
+}
+
 // Resolve the effective command name: unwrap benign wrappers (env/nohup/…),
 // strip path + backslashes, and re-join whitespace-split fragments so
 // `r m -rf /` normalizes to `rm` (tree-sitter parses its name as just `r`).
@@ -858,8 +882,10 @@ export const BashTool = Tool.define(
       const verdict = classifyCommand(inner, raw, ps)
       if (verdict.blocked) return verdict.reason
       const scan = yield* collect(inner, cwd, ps, shell)
-      if (scan.destructive.size > 0)
-        return `nested command writes outside the allowed directories: ${Array.from(scan.destructive).join(", ")}`
+      // H1: full spatial bound (destructive + plain out-of-bounds), see
+      // nestedSpatialReason above.
+      if (scan.destructive.size > 0 || scan.dirs.size > 0)
+        return nestedSpatialReason(scan)
       for (const node of commands(inner)) {
         const tokens = commandTokens(node, ps)
         if (tokens.length === 0) continue

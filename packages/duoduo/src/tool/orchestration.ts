@@ -39,8 +39,15 @@ export function parseJsonObject<T>(content: string | undefined): T | undefined {
 }
 
 export function pathMatches(file: string, candidate: string) {
-  const normalizedFile = file.replaceAll("\\", "/")
-  const normalizedCandidate = candidate.replaceAll("\\", "/")
+  // M10: case-insensitive comparison — Windows filesystems (NTFS) are
+  // case-preserving but case-insensitive, and the validator's recorded path
+  // may differ from the tool's argument in drive-letter or segment case
+  // (`D:\Proj\A.ts` vs `d:\proj\a.ts`). POSIX is unaffected: lowercasing
+  // there only merges paths that genuinely differ in case, which never occur
+  // for the same file — a false merge is strictly a no-op for matching
+  // purposes because the file set is already real.
+  const normalizedFile = file.replaceAll("\\", "/").toLowerCase()
+  const normalizedCandidate = candidate.replaceAll("\\", "/").toLowerCase()
   return normalizedFile === normalizedCandidate || normalizedFile.endsWith(`/${normalizedCandidate}`)
 }
 
@@ -122,7 +129,12 @@ export function ensureWriteAllowedByOrchestration(ctx: Tool.Context, filePath: s
     const worktreeNorm = Instance.worktree.replaceAll("\\", "/")
     const toWorktreeRel = (p: string) => {
       const norm = p.replaceAll("\\", "/")
-      return norm.startsWith(`${worktreeNorm}/`) ? norm.slice(worktreeNorm.length + 1) : norm
+      // M10: case-insensitive prefix strip (NTFS is case-insensitive — the
+      // recorded path may differ from Instance.worktree in drive-letter or
+      // segment case).
+      return norm.toLowerCase().startsWith(`${worktreeNorm.toLowerCase()}/`)
+        ? norm.slice(worktreeNorm.length + 1)
+        : norm
     }
     const passed =
       validation?.status === "passed" && files.some((file) => pathMatches(relPath, toWorktreeRel(file)))

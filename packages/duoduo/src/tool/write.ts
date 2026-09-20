@@ -103,6 +103,10 @@ export const WriteTool = Tool.define(
           yield* fs.writeWithDirs(filepath, Bom.join(contentNew, desiredBom))
           // Track cascade QA error issues for tool output injection
           let cascadeErrorIssues: ReadonlyArray<{ severity: string; message: string; line?: number }> | undefined
+          // M2 (9-3): true when the cascade ran but could not verify (LSP
+          // unavailable/timed out) — surfaced in the tool output so the model
+          // never mistakes an unverified write for a checked one.
+          let cascadeUnchecked = false
           // Read cascadeQA in real-time so toggling the setting mid-session takes effect immediately
           const cascadeSvc = getCascadeQA(ctx.sessionID)
             ? yield* Effect.serviceOption(CascadeService)
@@ -127,6 +131,7 @@ export const WriteTool = Tool.define(
             })
             contentNew = post.content
             cascadeErrorIssues = post.report.passed ? undefined : post.report.issues
+            cascadeUnchecked = post.report.unchecked === true
           }
           // P1-27: error-severity cascade issues block the stable submit —
           // the blackboard keeps the draft instead of recording the write as
@@ -161,6 +166,14 @@ export const WriteTool = Tool.define(
             output += `\n\nCode quality issues (submission BLOCKED until fixed):\n${blockingErrors
               .map((i) => `- Line ${i.line ?? "?"}: ${i.message}`)
               .join("\n")}`
+          }
+
+          // M2 (9-3): when the cascade could not run (LSP unavailable /
+          // timed out), the report is passed with `unchecked` — the model
+          // MUST see that the result is unverified instead of assuming a
+          // quality gate ran.
+          if (cascadeUnchecked) {
+            output += `\n\n[Quality check DID NOT RUN (LSP unavailable or timed out) — this file's content is UNVERIFIED. Consider reviewing it manually.]`
           }
 
           return {

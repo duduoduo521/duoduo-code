@@ -304,8 +304,13 @@ export const ApplyPatchTool = Tool.define(
       // Collect them per file so they reach both the submit gate and the
       // tool output.
       const cascadeIssuesByFile = new Map<string, ReadonlyArray<{ severity: string; message: string; line?: number }>>()
-      const recordCascadeIssues = (file: string, report: { passed: boolean; issues: ReadonlyArray<{ severity: string; message: string; line?: number }> } | undefined) => {
-        if (!report || report.passed) return
+      // M2 (9-3): files whose cascade ran but could NOT verify (LSP
+      // unavailable/timed out) — surfaced in the tool output.
+      const cascadeUncheckedFiles = new Set<string>()
+      const recordCascadeIssues = (file: string, report: { passed: boolean; unchecked?: boolean; issues: ReadonlyArray<{ severity: string; message: string; line?: number }> } | undefined) => {
+        if (!report) return
+        if (report.unchecked === true) cascadeUncheckedFiles.add(file)
+        if (report.passed) return
         const prev = cascadeIssuesByFile.get(file) ?? []
         cascadeIssuesByFile.set(file, [...prev, ...report.issues])
       }
@@ -413,6 +418,12 @@ export const ApplyPatchTool = Tool.define(
         output += `\n\nCode quality issues in ${rel} (submission BLOCKED until fixed):\n${errors
           .map((i) => `- Line ${i.line ?? "?"}: ${i.message}`)
           .join("\n")}`
+      }
+
+      // M2 (9-3): make the unverified status visible to the model.
+      for (const file of cascadeUncheckedFiles) {
+        const rel = path.relative(Instance.worktree, file).replaceAll("\\", "/")
+        output += `\n\n[Quality check DID NOT RUN for ${rel} (LSP unavailable or timed out) — its content is UNVERIFIED. Consider reviewing it manually.]`
       }
 
       return {

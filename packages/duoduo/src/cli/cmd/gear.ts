@@ -233,6 +233,9 @@ const GearInstallCommand = cmd({
             spinner.stop(`Gear "${name}" not found in registry`, 1)
             prompts.log.info(`Available: ${dirs.map((d) => path.basename(d)).join(", ") || "(none)"}`)
             prompts.outro("Done")
+            // M8 (B11): a failed lookup must not exit 0 — scripts and CI
+            // branches on the exit code.
+            process.exitCode = 1
             return
           }
           // P0-6②: informed consent before the pack lands in the store —

@@ -78,6 +78,31 @@ test.describe("Tool delegation round-trip (Rust → TS)", () => {
     expect(JSON.stringify(messages)).toContain("todowrite")
   })
 
+  test("todo lifecycle flows in one round without content-variant resurrection", { tag: ["@core", "@delegation"] }, async ({ page }) => {
+    test.skip(!getRuntimeInfo().smartLayerAvailable, "Requires the Rust smart-layer sidecar")
+
+    const sessionId = await runToolPrompt(page, "success-tool-todowrite-flow", "delegation todo-flow")
+
+    const info = getRuntimeInfo()
+    const url = new URL(`/session/${sessionId}/todo`, info.backendUrl)
+    url.searchParams.set("directory", info.projectDir)
+    const res = await fetch(url.toString(), {
+      headers: { "x-duoduo-directory": encodeURIComponent(info.projectDir) },
+    })
+    if (res.status === 404) test.skip(true, "no todo REST endpoint in this build")
+    expect(res.ok).toBeTruthy()
+    const todos = (await res.json()) as Array<{ id?: string; content?: string; status?: string }>
+
+    // Round-2 update ("Write the feature" → completed, no id) matched the
+    // existing row by content: the row FLOWED to completed under the
+    // replace-all update semantics, and the content-variant call did NOT
+    // resurrect a second row — exactly one task remains, with a stable id.
+    expect(todos).toHaveLength(1)
+    expect(todos[0]!.content).toBe("Write the feature")
+    expect(todos[0]!.status).toBe("completed")
+    expect(todos[0]!.id).toBeTruthy()
+  })
+
   test("edit with replaceAll is delegated to TS and really modifies the file", { tag: ["@core", "@delegation"] }, async ({ page }) => {
     test.skip(!getRuntimeInfo().smartLayerAvailable, "Requires the Rust smart-layer sidecar")
 
@@ -86,11 +111,20 @@ test.describe("Tool delegation round-trip (Rust → TS)", () => {
     const before = readFileSync(readmePath, "utf8")
     expect(before).toContain("# E2E Test Project")
 
-    await runToolPrompt(page, "success-tool-edit-replaceall", "delegation edit-replaceall")
+    const sessionId = await runToolPrompt(page, "success-tool-edit-replaceall", "delegation edit-replaceall")
 
     // The TS edit tool wrote the replacement to disk.
     const after = readFileSync(readmePath, "utf8")
     expect(after).toContain("# E2E Test Project (edited)")
+
+    // Write-chain bookkeeping: the round-end snapshot track persists a Patch
+    // part (agent.rs "Snapshot patch after tool execution") whose files list
+    // carries the disk truth — this is the same list the summary cascade
+    // review (批7 方案甲) consumes.
+    const messages = await getMessages(sessionId)
+    const raw = JSON.stringify(messages)
+    expect(raw).toContain('"patch"')
+    expect(raw).toContain("README.md")
   })
 
   test("reading outside the project triggers the permission dock; Allow once proceeds", { tag: ["@core", "@delegation", "@permission"] }, async ({ page }) => {

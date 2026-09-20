@@ -828,7 +828,7 @@ impl FeishuApiClient {
                 code = resp.code,
                 msg = ?resp.msg,
                 chat_id = %chat_id,
-                "[DIAG] Feishu rejected welcome card: code={}, msg={}",
+                "Feishu rejected welcome card: code={}, msg={}",
                 resp.code,
                 resp.msg.clone().unwrap_or_default()
             );
@@ -838,7 +838,7 @@ impl FeishuApiClient {
                 resp.msg.unwrap_or_default()
             );
         }
-        tracing::info!(chat_id = %chat_id, code = resp.code, "[DIAG] Feishu welcome card send success");
+        tracing::info!(chat_id = %chat_id, code = resp.code, "Feishu welcome card send success");
 
         Ok(())
     }

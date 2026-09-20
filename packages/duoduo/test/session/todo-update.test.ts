@@ -57,4 +57,48 @@ describe("session.todo.update", () => {
       ),
     ),
   )
+
+  // M6 (D1-1): two NEW inputs with the same content and no id would mint two
+  // UUIDs and land duplicate rows — the whole write must be rejected up front.
+  it("rejects two new tasks with identical content and no id (M6)", () =>
+    testEffect(
+      provideTmpdirInstance(() =>
+        Effect.gen(function* () {
+          const todo = yield* Todo.Service
+          const sessionID = "ses_todo_m6"
+          const duplicated = todo.update({
+            sessionID,
+            todos: [
+              { content: "same task", status: "pending", priority: "high" },
+              { content: "same task", status: "pending", priority: "high" },
+            ],
+          })
+          const exit = yield* Effect.exit(duplicated)
+          expect(Exit.isFailure(exit)).toBe(true)
+        }),
+      ),
+    ),
+  )
+
+  // D1-1: two inputs resolving to the SAME id must also be rejected —
+  // duplicate reconcile keys would shadow a row on the next update.
+  it("rejects duplicate resolved ids (D1-1)", () =>
+    testEffect(
+      provideTmpdirInstance(() =>
+        Effect.gen(function* () {
+          const todo = yield* Todo.Service
+          const sessionID = "ses_todo_m6_ids"
+          const duplicatedId = todo.update({
+            sessionID,
+            todos: [
+              { id: "dup-id-1", content: "task a", status: "pending", priority: "high" },
+              { id: "dup-id-1", content: "task b", status: "pending", priority: "high" },
+            ],
+          })
+          const exit = yield* Effect.exit(duplicatedId)
+          expect(Exit.isFailure(exit)).toBe(true)
+        }),
+      ),
+    ),
+  )
 })

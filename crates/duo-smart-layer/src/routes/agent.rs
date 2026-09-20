@@ -1109,7 +1109,7 @@ async fn execute(
         }),
     )
     .await
-    .map_err(|_| UnifiedError::Internal("memory context assembly timed out (25s)".into()))??;
+    .map_err(|_| unified_error::UnifiedError::Internal("memory context assembly timed out (25s)".into()))??;
     match assembled_result {
         Ok(assembled) => {
             if !assembled.assembled_context.is_empty() {
@@ -2525,6 +2525,310 @@ fn completion_decision(confirm_rounds: u32, full_text: &str) -> CompletionDecisi
     }
 }
 
+/// 批7 方案甲: 汇总级联 — run the quality pipeline over the prompt's
+/// changed-file list and inject rewrite prompts into `messages` for failures.
+/// Shared by the G7 aggregation hook and the round-end mid-check;
+/// `reviewed` (file → content hash at review time) deduplicates the two call
+/// sites: a file is re-reviewed only when its content changed since its last
+/// passing review. The 9-5 rewrite cap (`quality_rewrite_counts`, fixed 3)
+/// bounds futile fix loops. `enable_llm_check` follows the 审校 switch
+/// (LoopConfig.reflect); the pipeline degrades to regex-only when no LLM is
+/// configured (quality.rs attaches the judge only `with_llm()`).
+/// 批7 方案甲: merge the round's edit-tool files with the snapshot patch
+/// files (first-appearance order, dedup) into one review list.
+fn merge_review_files(tool_files: Vec<String>, patch_files: &[String]) -> Vec<String> {
+    let mut out = tool_files;
+    for f in patch_files {
+        if !out.contains(f) {
+            out.push(f.clone());
+        }
+    }
+    out
+}
+
+// ── KG cross-file context (Rust parity of TS buildFileContract) ─────────────
+
+/// Lenient path comparison ported from TS `contract.ts fileMatches`: exact
+/// (normalized) match OR suffix match — KG absolute `properties.file` vs a
+/// caller-provided relative/absolute path.
+fn kg_file_matches(kg_file: &str, target: &str) -> bool {
+    let norm = |p: &str| {
+        p.replace('\\', "/")
+            .split('/')
+            .filter(|seg| !seg.is_empty())
+            .collect::<Vec<_>>()
+            .join("/")
+    };
+    let a = norm(kg_file);
+    let b = norm(target);
+    a == b || a.ends_with(&b) || b.ends_with(&a)
+}
+
+/// TS `crossFileRelatedEffect` parity: BFS from `roots` up to 2 hops over the
+/// neighbor relation, keeping only neighbors whose `properties.file` is a
+/// string that does NOT match the target file (no `file` ⇒ dropped, not
+/// treated as cross-file), reduced to the label's last dotted segment,
+/// deduplicated, capped at 40.
+fn kg_bfs_related<F>(roots: &[duo_types::KGNode], target_file: &str, mut neighbors: F) -> Vec<String>
+where
+    F: FnMut(&str) -> Vec<duo_types::KGNode>,
+{
+    const MAX_DEPTH: usize = 2;
+    const MAX_RELATED: usize = 40;
+    let mut related: Vec<String> = Vec::new();
+    let mut visited: std::collections::HashSet<String> =
+        roots.iter().map(|r| r.id.clone()).collect();
+    let mut frontier: Vec<String> = roots.iter().map(|r| r.id.clone()).collect();
+    for _ in 0..MAX_DEPTH {
+        if frontier.is_empty() || related.len() >= MAX_RELATED {
+            break;
+        }
+        let mut next: Vec<String> = Vec::new();
+        for id in &frontier {
+            if related.len() >= MAX_RELATED {
+                break;
+            }
+            for node in neighbors(id) {
+                if related.len() >= MAX_RELATED {
+                    break;
+                }
+                if visited.contains(&node.id) {
+                    continue;
+                }
+                visited.insert(node.id.clone());
+                let Some(file) = node
+                    .properties
+                    .as_ref()
+                    .and_then(|p| p.get("file"))
+                    .and_then(|v| v.as_str())
+                else {
+                    continue; // B: no `file` property ⇒ not cross-file
+                };
+                if kg_file_matches(file, target_file) {
+                    continue; // same-file member
+                }
+                let name = node.label.rsplit('.').next().unwrap_or(&node.label);
+                if !name.is_empty() && !related.iter().any(|r| r == name) {
+                    related.push(name.to_string());
+                    next.push(node.id); // expand this cross-file node one more hop
+                }
+            }
+        }
+        frontier = next;
+    }
+    related
+}
+
+/// Build the `kg_related` list for one target file from the in-process graph
+/// (TS `buildFileContract` round-trip, now served locally). Roots are the
+/// Class/Function/Method nodes whose `properties.file` matches `target_file`.
+/// Any KG failure ⇒ empty list (fail-open, TS parity).
+fn kg_related_for_file(
+    graph: &knowledge_graph_store::graph::KnowledgeGraphStore,
+    project_key: &str,
+    target_file: &str,
+) -> Vec<String> {
+    let mut roots: Vec<duo_types::KGNode> = Vec::new();
+    for ty in ["Class", "Function", "Method"] {
+        match graph.find_nodes_by_type_project(ty, Some(project_key)) {
+            Ok(nodes) => roots.extend(nodes.into_iter().filter(|n| {
+                n.properties
+                    .as_ref()
+                    .and_then(|p| p.get("file"))
+                    .and_then(|v| v.as_str())
+                    .map(|f| kg_file_matches(f, target_file))
+                    .unwrap_or(false)
+            })),
+            Err(_) => return vec![],
+        }
+    }
+    if roots.is_empty() {
+        return vec![];
+    }
+    kg_bfs_related(&roots, target_file, |id| {
+        graph
+            .get_neighbors_project(id, Some(project_key))
+            .map(|pairs| pairs.into_iter().map(|(n, _e)| n).collect())
+            .unwrap_or_default()
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_summary_cascade_review(
+    files: &[String],
+    project_path: &str,
+    graph: Option<&knowledge_graph_store::graph::KnowledgeGraphStore>,
+    quality: &quality_pipeline::QualityPipeline,
+    enable_llm_check: bool,
+    retry_threshold: f64,
+    quality_rewrite_counts: &mut std::collections::HashMap<String, u32>,
+    reviewed: &mut std::collections::HashMap<String, u64>,
+    messages: &mut Vec<agent_executor::LlmMessage>,
+) {
+    // TS `Flag.DUODUO_KG_ENABLED` parity (`!falsy`): default ON, explicitly
+    // "false"/"0" turns it off.
+    let kg_enabled = std::env::var("DUODUO_KG_ENABLED")
+        .map(|v| {
+            let v = v.to_lowercase();
+            v != "false" && v != "0"
+        })
+        .unwrap_or(true);
+    for file_path in files {
+        // Cross-platform path resolution (P2-37): the model may emit an
+        // absolute path or a worktree-relative one — use std::path semantics.
+        let candidate = std::path::Path::new(file_path);
+        let full_path: String = if candidate.is_absolute() {
+            file_path.clone()
+        } else {
+            let rel = file_path
+                .trim_start_matches("./")
+                .trim_start_matches(".\\");
+            std::path::Path::new(project_path)
+                .join(rel)
+                .to_string_lossy()
+                .to_string()
+        };
+        let full_path_clone = full_path.clone();
+        let Ok(content) = std::fs::read_to_string(&full_path) else {
+            continue;
+        };
+        // Dedup: skip when content is unchanged since the last passing review.
+        let content_hash = {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            content.hash(&mut hasher);
+            hasher.finish()
+        };
+        if reviewed.get(&full_path) == Some(&content_hash) {
+            continue;
+        }
+        let lang = if full_path.ends_with(".rs") {
+            "rust"
+        } else if full_path.ends_with(".ts") || full_path.ends_with(".tsx") {
+            "typescript"
+        } else if full_path.ends_with(".js") || full_path.ends_with(".jsx") {
+            "javascript"
+        } else if full_path.ends_with(".py") {
+            "python"
+        } else {
+            "unknown"
+        };
+        let quality_req = duo_types::QualityValidateRequest {
+            artifact: duo_types::CodeArtifact {
+                artifact_type: "file".to_string(),
+                content,
+                language: lang.to_string(),
+                file_path: Some(file_path.clone()),
+            },
+            quality_level: duo_types::QualityLevel::SelfCheck,
+            interface_contract: None,
+            shared_types: vec![],
+            enable_llm_check,
+            diff: None,
+            // KG cross-file context (TS buildFileContract parity): served
+            // locally from the in-process graph — same roots/BFS/cap rules as
+            // the TS contract planner. KG off or any query failure ⇒ empty
+            // (fail-open); the LLM judge renders it as "<none>".
+            kg_related: graph
+                .filter(|_| kg_enabled)
+                .map(|g| {
+                    let pkey = knowledge_graph_store::project_key(std::path::Path::new(project_path));
+                    kg_related_for_file(g, &pkey, file_path)
+                })
+                .unwrap_or_default(),
+        };
+        let Ok(report) = quality.validate(&quality_req).await else {
+            continue;
+        };
+        let failed_checks: Vec<String> = report
+            .checks
+            .iter()
+            .filter(|c| !c.passed)
+            .map(|c| format!("{} (score: {:.1})", c.name, c.score))
+            .collect();
+        if failed_checks.is_empty() {
+            // score >= 0.8 equivalent: all checks passed, normal continuation
+            // 9-5: reset the consecutive-failure counter on success.
+            quality_rewrite_counts.remove(&full_path_clone);
+            reviewed.insert(full_path.clone(), content_hash);
+            continue;
+        }
+        if report.score >= 0.8 {
+            // Overall score good, minor issues — soft hint
+            quality_rewrite_counts.remove(&full_path_clone);
+            reviewed.insert(full_path.clone(), content_hash);
+            continue;
+        }
+        let suggestions_text = if report.suggestions.is_empty() {
+            failed_checks.join("; ")
+        } else {
+            format!(
+                "{}\nSuggestions: {}",
+                failed_checks.join("; "),
+                report.suggestions.join("; ")
+            )
+        };
+        if report.score >= retry_threshold {
+            // score 0.5-0.8: inject suggestions as reflective prompt
+            // P2-12/9-5: cap consecutive failed rewrites per file.
+            let rewrite_count = quality_rewrite_counts
+                .entry(full_path_clone.clone())
+                .or_insert(0);
+            *rewrite_count += 1;
+            if *rewrite_count > 3 {
+                continue;
+            }
+            let quality_prompt = if *rewrite_count == 3 {
+                format!(
+                    "## Quality Review\n\
+                     Quality issues in {} failed 3 consecutive automatic rewrites. \
+                     Stop auto-rewriting this file and ask the user to review it manually.",
+                    full_path_clone
+                )
+            } else {
+                format!(
+                    "## Quality Review\n\
+                     Quality issues detected in {} (score: {:.2}):\n\
+                     {}\n\
+                     Consider addressing these before proceeding.",
+                    full_path_clone, report.score, suggestions_text
+                )
+            };
+            messages.push(agent_executor::LlmMessage::user(&quality_prompt));
+        } else {
+            // score < threshold: strong correction
+            // P2-12/9-5: same rewrite cap applies here.
+            let rewrite_count = quality_rewrite_counts
+                .entry(full_path_clone.clone())
+                .or_insert(0);
+            *rewrite_count += 1;
+            if *rewrite_count > 3 {
+                continue;
+            }
+            let quality_prompt = if *rewrite_count == 3 {
+                format!(
+                    "## MANDATORY QUALITY CHECK\n\
+                     Serious quality issues in {} failed 3 consecutive automatic rewrites. \
+                     Stop auto-rewriting this file and ask the user to review it manually.",
+                    full_path_clone
+                )
+            } else {
+                format!(
+                    "## MANDATORY QUALITY CHECK\n\
+                     Serious quality issues in {} (score: {:.2}):\n\
+                     {}\n\
+                     Fix these issues immediately before proceeding.\n\
+                     If you cannot fix them, revert the changes.",
+                    full_path_clone,
+                    report.score,
+                    failed_checks.join("; ")
+                )
+            };
+            messages.push(agent_executor::LlmMessage::user(&quality_prompt));
+        }
+    }
+}
+
 #[tracing::instrument(skip_all, fields(session_id = %req.session_id))]
 async fn run_loop_handler(
     State(state): State<crate::server::AppState>,
@@ -3424,6 +3728,11 @@ async fn run_loop_handler(
         // auto-rewriting, human review needed" notice and no further fix prompts.
         let mut quality_rewrite_counts: std::collections::HashMap<String, u32> =
             std::collections::HashMap::new();
+        // 批7 方案甲: file → content hash at its last PASSING summary-cascade
+        // review. Deduplicates the G7 aggregation hook and the round-end
+        // mid-check — a file is re-reviewed only when its content changed.
+        let mut quality_reviewed: std::collections::HashMap<String, u64> =
+            std::collections::HashMap::new();
         // 3-4: MAX_STEPS_PROMPT must be injected at most once per run_loop —
         // the wrap-up round terminates the loop, so a second push is dead
         // weight (and was previously re-injected on every loop-top re-entry).
@@ -3999,6 +4308,36 @@ async fn run_loop_handler(
                     "## Parallel sub-agent findings\n{}",
                     report
                 )));
+                // 批7 方案甲 (user decision: 聚合即触发): review the sub-agents'
+                // disk changes right after folding the reports — G7 sub-agent
+                // writes never appear in the round's edit-tool tool_calls, so
+                // without this hook they would only surface at the round-end
+                // mid-check (or not at all when the patch is computed before
+                // the sub-agents land their writes). Dedup against the round-end
+                // review is handled by the shared content-hash `reviewed` map.
+                if should_quality_mid_check_spawn
+                    && let (Some(svc), Some(prev_hash)) = (&snapshot_svc, &prev_snapshot_hash)
+                    && let Ok(patch_result) = svc.patch(prev_hash)
+                    && !patch_result.files.is_empty()
+                    && let Ok(quality) = state_clone.quality.get()
+                {
+                    let retry_threshold = loop_cfg
+                        .as_ref()
+                        .map(|lc| lc.quality.retry_on_score_below)
+                        .unwrap_or(0.5);
+                    run_summary_cascade_review(
+                        &patch_result.files,
+                        &project_path_spawn,
+                        Some(&state_clone.graph),
+                        &quality,
+                        should_reflect,
+                        retry_threshold,
+                        &mut quality_rewrite_counts,
+                        &mut quality_reviewed,
+                        &mut messages,
+                    )
+                    .await;
+                }
             }
         }
 
@@ -5928,6 +6267,45 @@ async fn run_loop_handler(
                             });
                             continue;
                         }
+                        // 批6 L2: bash 写形态（重定向 / sed -i / tee / cp/mv …）在
+                        // Rust 原生执行前转委派 TS —— 与写工具走同一 permission
+                        // 体系（"edit"），由 TS 弹窗确认后执行并补记黑板账本。
+                        // TS 未提供 bash 工具时不委派，保持 Rust 原生执行
+                        // （execute_bash 内有同款锁与账本兜底）。
+                        if tool_name == "bash"
+                            && let Some(cmd) = args.get("command").and_then(|v| v.as_str())
+                            && agent_executor::bash_safety::write_form_reason(cmd).is_some()
+                            && tools_for_spawn.as_ref().is_some_and(|defs| {
+                                defs.iter().any(|d| d.function.name == tool_name)
+                            })
+                        {
+                            tracing::info!(
+                                tool = %tool_name,
+                                "bash write form detected, delegating to TS for edit-permission ask"
+                            );
+                            self_transition_part_to_pending(
+                                &msg_store,
+                                &part_id,
+                                &assistant_msg_id,
+                                &session_id_spawn,
+                                &call_id,
+                                &tool_name,
+                                &tc.function.arguments,
+                            );
+                            let registry = state_clone.tool_registry.clone();
+                            let sid = session_id_spawn.clone();
+                            let cid = call_id.clone();
+                            let ct = cancel_token.clone();
+                            delegated_indices.push(tc_idx);
+                            delegated_part_ids.push(part_id.clone());
+                            tool_result_futs.push(Box::pin(async move {
+                                tokio::select! {
+                                    result = registry.wait_for_tool_result(&sid, &cid) => result,
+                                    _ = ct.cancelled() => anyhow::bail!("cancelled while waiting for tool result"),
+                                }
+                            }));
+                            continue;
+                        }
                         // Step 2: Execute tool via AgenticLoopExecutor
                         match loop_executor
                             .execute_tool(
@@ -6754,6 +7132,16 @@ async fn run_loop_handler(
             //   score >= 0.8  → passed, normal continuation
             //   score 0.5-0.8 → inject suggestions as reflective prompt
             //   score < 0.5   → inject strong correction + flag for potential rollback
+            //
+            // 批7 方案甲: the review list is the round's changed-file truth —
+            // edit-tool tool_calls ∪ snapshot patch files (disk truth; catches
+            // G7 sub-agent writes and bash writes that bypass the write tools).
+            // The G7 aggregation hook already reviewed its batch; the shared
+            // content-hash `quality_reviewed` map skips unchanged files here.
+            let round_patch: Option<agent_executor::snapshot::patch::PatchResult> = snapshot_svc
+                .as_ref()
+                .zip(prev_snapshot_hash.as_ref())
+                .and_then(|(svc, prev_hash)| svc.patch(prev_hash).ok());
             if should_quality_mid_check_spawn {
                 let edit_tool_names = ["edit_file", "write", "submit_code", "edit"];
                 let edited_files: Vec<String> = tool_calls
@@ -6773,166 +7161,42 @@ async fn run_loop_handler(
                             })
                     })
                     .collect();
+                let edited_files = merge_review_files(
+                    edited_files,
+                    round_patch.as_ref().map(|p| p.files.as_slice()).unwrap_or(&[]),
+                );
                 let retry_threshold = loop_cfg
                     .as_ref()
                     .map(|lc| lc.quality.retry_on_score_below)
                     .unwrap_or(0.5);
-                for file_path in edited_files {
-                    // Cross-platform path resolution (P2-37): the model may
-                    // emit an absolute path (`D:\proj\src\a.ts` on Windows,
-                    // `/home/u/proj/src/a.ts` on POSIX) or a worktree-relative
-                    // one. The previous string checks (`starts_with('/')` +
-                    // manual `{}/{}` join) mis-handled Windows drive letters
-                    // entirely, so mid-loop QA silently skipped every file on
-                    // Windows (`if let Ok(read_to_string)` with no logging).
-                    // Use std::path semantics instead.
-                    let candidate = std::path::Path::new(&file_path);
-                    let full_path: String = if candidate.is_absolute() {
-                        file_path.clone()
-                    } else {
-                        let rel = file_path
-                            .trim_start_matches("./")
-                            .trim_start_matches(".\\");
-                        std::path::Path::new(&project_path_spawn)
-                            .join(rel)
-                            .to_string_lossy()
-                            .to_string()
-                    };
-                    let file_path_clone = file_path.clone();
-                    let full_path_clone = full_path.clone();
-                    if let Ok(content) = std::fs::read_to_string(&full_path) {
-                        let lang = if full_path.ends_with(".rs") {
-                            "rust"
-                        } else if full_path.ends_with(".ts") || full_path.ends_with(".tsx") {
-                            "typescript"
-                        } else if full_path.ends_with(".js") || full_path.ends_with(".jsx") {
-                            "javascript"
-                        } else if full_path.ends_with(".py") {
-                            "python"
-                        } else {
-                            "unknown"
-                        };
-                        let quality_req = duo_types::QualityValidateRequest {
-                            artifact: duo_types::CodeArtifact {
-                                artifact_type: "file".to_string(),
-                                content,
-                                language: lang.to_string(),
-                                file_path: Some(file_path_clone),
-                            },
-                            quality_level: duo_types::QualityLevel::SelfCheck,
-                            interface_contract: None,
-                            shared_types: vec![],
-                            // Main-agent mid-check stays regex-only (LLM content check
-                            // is gated by the user setting and run via CascadeService).
-                            enable_llm_check: false,
-                            diff: None,
-                            kg_related: vec![],
-                        };
-                        if let Ok(quality) = state_clone.quality.get() {
-                            let q = quality.clone();
-                            // `validate` is async (may await LLM when enabled); here
-                            // `enable_llm_check` is false so it runs pure regex inline.
-                            let quality_result = q.validate(&quality_req).await;
-                            if let Ok(report) = quality_result {
-                                let failed_checks: Vec<String> = report
-                                    .checks
-                                    .iter()
-                                    .filter(|c| !c.passed)
-                                    .map(|c| format!("{} (score: {:.1})", c.name, c.score))
-                                    .collect();
-                                if failed_checks.is_empty() {
-                                    // score >= 0.8 equivalent: all checks passed, normal continuation
-                                    // 9-5: reset the consecutive-failure counter on success.
-                                    quality_rewrite_counts.remove(&full_path_clone);
-                                    continue;
-                                }
-                                if report.score >= 0.8 {
-                                    // Overall score good, minor issues — soft hint
-                                    quality_rewrite_counts.remove(&full_path_clone);
-                                    continue;
-                                }
-                                if report.score >= retry_threshold {
-                                    // score 0.5-0.8: inject suggestions as reflective prompt
-                                    // P2-12/9-5: cap consecutive failed rewrites per file.
-                                    let rewrite_count = quality_rewrite_counts
-                                        .entry(full_path_clone.clone())
-                                        .or_insert(0);
-                                    *rewrite_count += 1;
-                                    if *rewrite_count > 3 {
-                                        continue;
-                                    }
-                                    let suggestions_text = if report.suggestions.is_empty() {
-                                        failed_checks.join("; ")
-                                    } else {
-                                        format!(
-                                            "{}\nSuggestions: {}",
-                                            failed_checks.join("; "),
-                                            report.suggestions.join("; ")
-                                        )
-                                    };
-                                    let quality_prompt = if *rewrite_count == 3 {
-                                        format!(
-                                            "## Quality Review\n\
-                                             Quality issues in {} failed 3 consecutive automatic rewrites. \
-                                             Stop auto-rewriting this file and ask the user to review it manually.",
-                                            full_path_clone
-                                        )
-                                    } else {
-                                        format!(
-                                            "## Quality Review\n\
-                                             Quality issues detected in {} (score: {:.2}):\n\
-                                             {}\n\
-                                             Consider addressing these before proceeding.",
-                                            full_path_clone, report.score, suggestions_text
-                                        )
-                                    };
-                                    messages
-                                        .push(agent_executor::LlmMessage::user(&quality_prompt));
-                                } else {
-                                    // score < threshold: strong correction
-                                    // P2-12/9-5: same rewrite cap applies here.
-                                    let rewrite_count = quality_rewrite_counts
-                                        .entry(full_path_clone.clone())
-                                        .or_insert(0);
-                                    *rewrite_count += 1;
-                                    if *rewrite_count > 3 {
-                                        continue;
-                                    }
-                                    let quality_prompt = if *rewrite_count == 3 {
-                                        format!(
-                                            "## MANDATORY QUALITY CHECK\n\
-                                             Serious quality issues in {} failed 3 consecutive automatic rewrites. \
-                                             Stop auto-rewriting this file and ask the user to review it manually.",
-                                            full_path_clone
-                                        )
-                                    } else {
-                                        format!(
-                                            "## MANDATORY QUALITY CHECK\n\
-                                             Serious quality issues in {} (score: {:.2}):\n\
-                                             {}\n\
-                                             Fix these issues immediately before proceeding.\n\
-                                             If you cannot fix them, revert the changes.",
-                                            full_path_clone,
-                                            report.score,
-                                            failed_checks.join("; ")
-                                        )
-                                    };
-                                    messages
-                                        .push(agent_executor::LlmMessage::user(&quality_prompt));
-                                }
-                            }
-                        }
-                    }
+                if let Ok(quality) = state_clone.quality.get() {
+                    run_summary_cascade_review(
+                        &edited_files,
+                        &project_path_spawn,
+                        Some(&state_clone.graph),
+                        &quality,
+                        should_reflect,
+                        retry_threshold,
+                        &mut quality_rewrite_counts,
+                        &mut quality_reviewed,
+                        &mut messages,
+                    )
+                    .await;
                 }
             }
 
             // ── Snapshot patch after tool execution ──
             // If tools were executed, check if files changed since the last track.
             // Write PatchPart for the UI to display file changes.
+            // 批7 方案甲: the patch itself was computed ONCE above (round_patch)
+            // and shared with the summary cascade review — re-patching here
+            // would duplicate a tree walk and could disagree with the reviewed
+            // file list after the G7 hook advanced nothing (track still
+            // advances exactly here, once per round).
             if let Some(ref svc) = snapshot_svc
-                && let Some(ref prev_hash) = prev_snapshot_hash {
-                    match svc.patch(prev_hash) {
-                        Ok(patch_result) => {
+                && prev_snapshot_hash.is_some() {
+                    match round_patch.as_ref() {
+                        Some(patch_result) => {
                             if !patch_result.files.is_empty() {
                                 let patch_part_id = new_part_id();
                                 let patch_part =
@@ -6960,8 +7224,8 @@ async fn run_loop_handler(
                                 prev_snapshot_hash = Some(new_hash);
                             }
                         }
-                        Err(e) => {
-                            tracing::warn!(error = %e, "Snapshot patch failed (non-fatal)");
+                        None => {
+                            tracing::warn!("Snapshot patch failed (non-fatal)");
                         }
                     }
                 }
@@ -7510,6 +7774,188 @@ mod tests {
     /// Helper: a single-tool action signature "tool(args)".
     fn sig(name: &str, args: &str) -> Vec<(String, String)> {
         vec![(name.to_string(), args.to_string())]
+    }
+
+    // ── 批7 方案甲: summary cascade review ──
+
+    #[test]
+    fn merge_review_files_merges_and_dedups() {
+        assert_eq!(
+            merge_review_files(
+                vec!["a.rs".to_string(), "b.rs".to_string()],
+                &["b.rs".to_string(), "c.rs".to_string()],
+            ),
+            vec!["a.rs".to_string(), "b.rs".to_string(), "c.rs".to_string()]
+        );
+        // Empty patch source → tool list unchanged.
+        assert_eq!(
+            merge_review_files(vec!["a.rs".to_string()], &[]),
+            vec!["a.rs".to_string()]
+        );
+    }
+
+    // ── 批7 决策项: KG cross-file context (TS buildFileContract parity) ──
+
+    use duo_types::KGNode;
+
+    fn kgnode(id: &str, label: &str, file: Option<&str>) -> KGNode {
+        KGNode {
+            id: id.to_string(),
+            label: label.to_string(),
+            node_type: "Function".to_string(),
+            properties: file.map(|f| {
+                let mut m = std::collections::HashMap::new();
+                m.insert("file".to_string(), serde_json::Value::String(f.to_string()));
+                m
+            }),
+            project_id: String::new(),
+        }
+    }
+
+    #[test]
+    fn kg_file_matches_normalizes_and_suffix_matches() {
+        assert!(kg_file_matches("/proj/src/a.rs", "/proj/src/a.rs"));
+        assert!(kg_file_matches("C:\\proj\\src\\a.rs", "/proj/src/a.rs"));
+        assert!(kg_file_matches("/proj//src/a.rs/", "/proj/src/a.rs"));
+        // suffix both ways (KG absolute vs caller relative)
+        assert!(kg_file_matches("/proj/src/a.rs", "src/a.rs"));
+        assert!(kg_file_matches("src/a.rs", "/proj/src/a.rs"));
+        assert!(!kg_file_matches("/proj/src/other.rs", "src/a.rs"));
+    }
+
+    #[test]
+    fn kg_bfs_related_collects_cross_file_two_hops() {
+        // root r (file a.rs) — neighbors:
+        //   m (same file a.rs → dropped), nf (no file → dropped),
+        //   x (file b.rs → cross-file "x", expanded),
+        //   x.child (file c.rs → cross-file "child", via 2nd hop)
+        let graph: std::collections::HashMap<String, Vec<KGNode>> = [
+            (
+                "r".to_string(),
+                vec![
+                    kgnode("m", "pkg.member", Some("a.rs")),
+                    kgnode("nf", "nofile", None),
+                    kgnode("x", "pkg.x", Some("b.rs")),
+                ],
+            ),
+            ("x".to_string(), vec![kgnode("xc", "c.child", Some("c.rs"))]),
+        ]
+        .into_iter()
+        .collect();
+        let roots = vec![kgnode("r", "Root", Some("a.rs"))];
+        let related = kg_bfs_related(&roots, "a.rs", |id| {
+            graph.get(id).cloned().unwrap_or_default()
+        });
+        assert_eq!(related, vec!["x".to_string(), "child".to_string()]);
+    }
+
+    #[test]
+    fn kg_bfs_related_dedups_and_caps() {
+        let graph: std::collections::HashMap<String, Vec<KGNode>> = [(
+            "r".to_string(),
+            vec![
+                kgnode("x1", "a.dup", Some("b.rs")),
+                kgnode("x2", "b.dup", Some("c.rs")),
+            ],
+        )]
+        .into_iter()
+        .collect();
+        let roots = vec![kgnode("r", "Root", Some("a.rs"))];
+        let related = kg_bfs_related(&roots, "a.rs", |id| {
+            graph.get(id).cloned().unwrap_or_default()
+        });
+        assert_eq!(related, vec!["dup".to_string()], "same last segment dedups");
+    }
+
+    #[tokio::test]
+    async fn summary_cascade_review_cap_and_dedup() {
+        let dir = std::env::temp_dir().join(format!(
+            "duoduo-cascade-review-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        // Fails 3 of the 4 SelfCheck syntax checks (unbalanced brackets +
+        // unclosed string + missing semicolons) → mean score well below the
+        // 0.5 retry threshold → deterministic strong-correction injection.
+        let bad = dir.join("bad.rs");
+        std::fs::write(&bad, "fn main( { let s = \"unclosed").unwrap();
+        // Minimal valid content → checks pass.
+        let good = dir.join("good.rs");
+        std::fs::write(&good, "fn ok() {\n    let one = 1;\n}\n").unwrap();
+
+        let quality = quality_pipeline::QualityPipeline::new().unwrap();
+        let files = vec![bad.to_string_lossy().to_string(), good.to_string_lossy().to_string()];
+        let mut counts: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+        let mut reviewed: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+        let mut messages: Vec<agent_executor::LlmMessage> = Vec::new();
+
+        // Round 1: bad file gets an injected rewrite prompt; good file passes.
+        run_summary_cascade_review(
+            &files,
+            &dir.to_string_lossy(),
+            None,
+            &quality,
+            false,
+            0.5,
+            &mut counts,
+            &mut reviewed,
+            &mut messages,
+        )
+        .await;
+        assert_eq!(messages.len(), 1, "one failing file → one injected prompt");
+        assert_eq!(counts.get(bad.to_string_lossy().as_ref()), Some(&1));
+        assert!(
+            reviewed.contains_key(good.to_string_lossy().as_ref()),
+            "passing file must be recorded in the dedup map"
+        );
+
+        // Rounds 2-3: the bad file is re-reviewed (content unchanged → failure
+        // is never recorded in `reviewed`), prompts 2 and 3 injected.
+        for round in 2..=3 {
+            run_summary_cascade_review(
+                &files,
+                &dir.to_string_lossy(),
+                None,
+                &quality,
+                false,
+                0.5,
+                &mut counts,
+                &mut reviewed,
+                &mut messages,
+            )
+            .await;
+            assert_eq!(counts.get(bad.to_string_lossy().as_ref()), Some(&round));
+        }
+        assert_eq!(messages.len(), 3);
+
+        // Round 4+: the 9-5 rewrite cap stops further prompts for the file.
+        for _ in 0..2 {
+            run_summary_cascade_review(
+                &files,
+                &dir.to_string_lossy(),
+                None,
+                &quality,
+                false,
+                0.5,
+                &mut counts,
+                &mut reviewed,
+                &mut messages,
+            )
+            .await;
+        }
+        assert_eq!(messages.len(), 3, "cap (3) must silence further rewrites");
+
+        // The good file is never re-reviewed (dedup): its count stays absent
+        // and no prompt ever mentions it.
+        assert!(!counts.contains_key(good.to_string_lossy().as_ref()));
+        assert!(
+            !messages.iter().any(|m| m.content.contains("good.rs")),
+            "passing file must never be injected"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // ── P2-24: a first-round completion marker must be honoured ──

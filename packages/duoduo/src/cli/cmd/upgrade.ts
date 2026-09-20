@@ -49,7 +49,7 @@ export const UpgradeCommand = {
       : await AppRuntime.runPromise(Installation.Service.use((svc) => svc.latest()))
 
     if (InstallationVersion === target) {
-      prompts.log.warn(`duoduo upgrade skipped: ${target} is already installed`)
+      prompts.log.warn(`duoduocode upgrade skipped: ${target} is already installed`)
       prompts.outro("Done")
       return
     }

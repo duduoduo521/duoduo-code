@@ -55,8 +55,12 @@ test("snapshot_max_file_size setting drives per-file exclusion", async () => {
         // was never snapshotted, so it must not appear in the patch.
         await fs.rm(`${tmp.path}/small.txt`)
         const patch = await run((snapshot) => snapshot.patch(hash1!))
-        expect(patch.files).toContain(`${tmp.path}/small.txt`)
-        expect(patch.files).not.toContain(`${tmp.path}/big.txt`)
+        // Windows note: `path.join`-built expectations use backslashes while
+        // patch.files carries forward slashes — compare separator-normalized
+        // so the assertion is platform-neutral.
+        const normalized = patch.files.map((f: string) => f.replaceAll("\\", "/"))
+        expect(normalized).toContain(`${tmp.path}/small.txt`)
+        expect(normalized).not.toContain(`${tmp.path}/big.txt`)
 
         // Rolling back to hash1 restores small.txt and must NOT delete the
         // excluded big.txt (never snapshotted ⇒ never deleted on rollback).

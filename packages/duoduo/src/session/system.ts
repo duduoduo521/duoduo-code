@@ -271,7 +271,7 @@ const PARALLEL_READ_GUIDANCE = `When the user asks you to review, read, or compa
 // the prompt never asks for tools that are not in the tool set.
 export function fileToolGuidance(usePatch: boolean): string {
   const modify = usePatch ? "the apply_patch tool to create or modify files" : "the edit/write tools to create or modify files"
-  return `When working with files, you MUST prefer the dedicated file tools over the bash tool: use the read tool to read files, ${modify}, glob to locate files by name pattern, and grep to search file contents. Use bash only for commands that have no dedicated tool (running builds, tests, git, package managers, process management). Never use shell redirection (>, >>) or shell utilities as a substitute for the file tools.`
+  return `When working with files, you MUST prefer the dedicated file tools over the bash tool: use the read tool to read files, ${modify}, glob to locate files by name pattern, and grep to search file contents. Use bash only for commands that have no dedicated tool (running builds, tests, git, package managers, process management). Never use shell redirection (>, >>) or shell utilities as a substitute for the file tools. Explicit file-writing bash commands (shell redirection, sed -i, tee, cp/mv of files) are held for user approval and bypass the quality checks and concurrent-write protection the file tools provide automatically.`
 }
 
 // 4-2: shared usePatch decision (model → apply_patch tool set). Registry tool

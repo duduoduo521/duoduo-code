@@ -8,7 +8,7 @@ import { validateSession } from "./validate-session"
 
 export const AttachCommand = cmd({
   command: "attach <url>",
-  describe: "attach to a running duoduo server",
+  describe: "attach to a running duoduocode server",
   builder: (yargs) =>
     yargs
       .positional("url", {

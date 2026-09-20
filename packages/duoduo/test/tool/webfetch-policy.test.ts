@@ -91,6 +91,36 @@ describe("evaluatePolicy", () => {
     expect(evaluatePolicy({ kind: "host", host: "foo.internal" }, policy)).toBe("block")
   })
 
+  test("H4 hardening: CGNAT 100.64/10 and the rest of the reserved IPv6 set are blocked", () => {
+    const policy = { mode: "blacklist" as const, rules: [] }
+    // CGNAT range (the old isPrivateIp only knew 100.64/16-ish gaps)
+    expect(evaluatePolicy({ kind: "ip", ip: "100.64.1.1" }, policy)).toBe("block")
+    // IPv6 link-local, loopback and ULA — the old blacklist missed /10 and /16 shapes
+    expect(evaluatePolicy({ kind: "ip", ip: "fe80::1" }, policy)).toBe("block")
+    expect(evaluatePolicy({ kind: "ip", ip: "::1" }, policy)).toBe("block")
+    expect(evaluatePolicy({ kind: "ip", ip: "fc00::1" }, policy)).toBe("block")
+  })
+
+  test("H4 hardening: IPv4-mapped IPv6 targets hit the IPv4 reserved rules", () => {
+    const policy = { mode: "blacklist" as const, rules: [] }
+    // dotted mapped form
+    expect(evaluatePolicy({ kind: "ip", ip: "::ffff:10.0.0.5" }, policy)).toBe("block")
+    expect(evaluatePolicy({ kind: "ip", ip: "::ffff:127.0.0.1" }, policy)).toBe("block")
+    // public mapped target stays allowed
+    expect(evaluatePolicy({ kind: "ip", ip: "::ffff:8.8.8.8" }, policy)).toBe("allow")
+  })
+
+  test("host specificity: an exact allow rule beats a wildcard block rule", () => {
+    const policy = {
+      mode: "blacklist" as const,
+      rules: [block("*.example.com"), allow("api.example.com")],
+    }
+    expect(evaluatePolicy({ kind: "host", host: "api.example.com" }, policy)).toBe("allow")
+    expect(evaluatePolicy({ kind: "host", host: "web.example.com" }, policy)).toBe("block")
+    // bare domain is NOT captured by the wildcard subdomain rule → unmatched → allow
+    expect(evaluatePolicy({ kind: "host", host: "example.com" }, policy)).toBe("allow")
+  })
+
   test("user rules are additive", () => {
     const policy = { mode: "blacklist" as const, rules: [block("93.184.0.0/16")] }
     expect(evaluatePolicy({ kind: "ip", ip: "93.184.216.34" }, policy)).toBe("block")

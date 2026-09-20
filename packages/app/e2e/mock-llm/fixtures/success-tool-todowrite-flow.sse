@@ -1,0 +1,15 @@
+# status: 200
+# todo 流转：同一轮里两个 todowrite —— 先建 2 条，再把第一条置 completed。
+# 第二个 todowrite 不带 id：靠 content fallback（1-1/1-2）命中既有行，
+# 验证流转后 id 稳定、content 变体不会复活成重复行（P2-6/D1-1 语义）。
+data: {"id":"chatcmpl-mock-todoflow","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_mock_todoflow_a","type":"function","function":{"name":"todowrite","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-todoflow","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"todos\":[{\"content\":\"Write the feature\",\"status\":\"in_progress\",\"priority\":\"high\"},{\"content\":\"Write tests\",\"status\":\"pending\",\"priority\":\"low\"}]}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-todoflow","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"call_mock_todoflow_b","type":"function","function":{"name":"todowrite","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-todoflow","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\"todos\":[{\"content\":\"Write the feature\",\"status\":\"completed\",\"priority\":\"high\"}]}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-todoflow","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":40,"completion_tokens":30,"total_tokens":70}}
+
+data: [DONE]

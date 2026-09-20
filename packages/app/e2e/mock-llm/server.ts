@@ -53,6 +53,20 @@ interface FixturePlan {
   body: string
 }
 
+/**
+ * Round-2 tool override (`# round-2: <scenario>` directive): for a tool-call
+ * fixture, serve `<scenario>` on the SECOND agentic round instead of the
+ * plain-text fallback — lets a spec script a "tool failed → model retries
+ * with a different call" arc (e.g. bash hard-block → printf rewrite) across
+ * rounds of the SAME session. Round 3+ falls back to plain text as usual.
+ */
+function round2ScenarioFor(scenario: string): string | null {
+  const fixturePath = resolve(FIXTURES_DIR, `${scenario}.sse`)
+  if (!existsSync(fixturePath)) return null
+  const m = readFileSync(fixturePath, "utf8").match(/^#\s*round-2:\s*(\S+)\s*$/m)
+  return m ? m[1]! : null
+}
+
 function parseFixture(text: string): FixturePlan {
   // Normalize CRLF → LF: fixtures checked out with core.autocrlf or written
   // on Windows carry \r\n, which would otherwise (a) break the `# directive`
@@ -149,8 +163,14 @@ async function serveFixture(scenario: string, nodeRes: ServerResponse): Promise<
     if (evt.startsWith("data:")) dataCount++
     nodeRes.write(evt + "\n\n")
     if (plan.truncateAfter !== null && dataCount >= plan.truncateAfter) {
-      // Simulated mid-stream truncation: destroy the socket without [DONE].
-      nodeRes.destroy()
+      // Simulated mid-stream truncation: end the WRITE side without [DONE].
+      // A hard socket.destroy() sends RST, discarding the already-written
+      // chunks — the client then fails the whole REQUEST instead of seeing a
+      // stream that dropped mid-flight, and there is no partial text to
+      // persist. `socket.end()` sends FIN after the buffered chunks flush:
+      // the client receives the headers + first chunks, then sees the stream
+      // end without [DONE] — the scenario the run loop must recover from.
+      nodeRes.socket?.end()
       return
     }
     if (plan.delayMs > 0) await new Promise((r) => setTimeout(r, plan.delayMs))
@@ -262,7 +282,11 @@ export async function startMockLLM(port = 4097): Promise<MockLLMServer> {
           // on, serve the plain-text fixture instead: round 1 exercises the
           // tool round-trip, later rounds let the loop finish naturally.
           const effScenario =
-            scenario.startsWith("success-tool-") && round >= 1 ? "success-text-short" : scenario
+            scenario.startsWith("success-tool-") && round >= 1
+              ? round === 1
+                ? (round2ScenarioFor(scenario) ?? "success-text-short")
+                : "success-text-short"
+              : scenario
           await serveFixture(effScenario, nodeRes)
           return
         }

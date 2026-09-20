@@ -1150,6 +1150,7 @@ impl FeishuWsClient {
                             .clone()
                     };
                     let _gate = gate.lock().await;
+                    let _ = &_gate;
                     let chat_for_panic = chat_key.clone();
                     let api_for_panic = dispatcher.api.clone();
                     let inner = tokio::spawn(async move {

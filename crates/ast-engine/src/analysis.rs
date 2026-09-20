@@ -134,9 +134,16 @@ static KOTLIN_IMPORT_RE: LazyLock<Regex> = LazyLock::new(|| {
 // ─── OPT-17: regex fallback for markup / contract / script languages ──────
 // These have no tree-sitter grammar compiled by default; index them via regex.
 
-// SQL: CREATE FUNCTION / PROCEDURE (matches schema-level routines)
+// SQL: CREATE FUNCTION / PROCEDURE (schema-level routines) + CREATE TABLE /
+// VIEW (schema-level structures). Three alternation branches so the name lands
+// in capture group 1 (function/procedure), 2 (table), or 3 (view) — the
+// extractor follows that chain. Tables/views become Function-shaped entities
+// on the regex fallback path, exactly like the css-selector entities.
 static SQL_FN_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?im)^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)\s+([\w.]+)").expect("invariant: static regex pattern is valid")
+    Regex::new(
+        r"(?im)^\s*CREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)\s+([\w.]+)|^\s*CREATE\s+(?:GLOBAL\s+|LOCAL\s+)?(?:TEMPORARY\s+|TEMP\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?([\w.]+)|^\s*CREATE\s+(?:OR\s+REPLACE\s+)?VIEW\s+(?:IF\s+NOT\s+EXISTS\s+)?([\w.]+)",
+    )
+    .expect("invariant: static regex pattern is valid")
 });
 
 // Shell/Bash: `function name {` or `name() {`
@@ -608,6 +615,28 @@ fn main() {
         let code2 = "CREATE OR REPLACE PROCEDURE refresh() LANGUAGE plpgsql AS $$ BEGIN END; $$";
         let procs = extract_functions(code2, "sql");
         assert!(procs.iter().any(|f| f.name == "refresh"));
+    }
+
+    /// KG schema extraction: CREATE TABLE / VIEW must surface as entities on
+    /// the regex fallback path — a schema file (migration, DDL) otherwise
+    /// contributes nothing to the graph.
+    #[test]
+    fn extract_sql_tables_and_views() {
+        let code = "CREATE TABLE users (id INT PRIMARY KEY);\n\
+                    CREATE TABLE IF NOT EXISTS order_items (id INT, order_id INT);\n\
+                    create view active_users as select * from users;\n\
+                    CREATE GLOBAL TEMPORARY TABLE staging (id INT);";
+        let entities = extract_functions(code, "sql");
+        let names: Vec<&str> = entities.iter().map(|f| f.name.as_str()).collect();
+        for expected in ["users", "order_items", "active_users", "staging"] {
+            assert!(
+                names.contains(&expected),
+                "expected {expected} among {names:?}"
+            );
+        }
+        // Non-DDL lines must not produce phantom entities.
+        assert!(extract_functions("INSERT INTO users VALUES (1);", "sql").is_empty());
+        assert!(extract_functions("SELECT * FROM users;", "sql").is_empty());
     }
 
     #[test]

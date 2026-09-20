@@ -1,0 +1,11 @@
+# status: 200
+# bash 硬阻断自愈 round 1：heredoc 写文件 —— bash_safety 分类器对 heredoc
+# 载荷硬拦（cat <<EOF ... EOF），模型收到 tool error 后在 round 2 改写。
+# round-2: success-tool-bash-heal-r2
+data: {"id":"chatcmpl-mock-bashheal","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_mock_bashheal_a","type":"function","function":{"name":"bash","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-bashheal","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"description\":\"write heal file (round 1)\",\"command\":\"cat <<'EOF' > /tmp/duoduo-e2e-heal.txt\\nhello from heredoc\\nEOF\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-bashheal","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":40,"completion_tokens":20,"total_tokens":60}}
+
+data: [DONE]

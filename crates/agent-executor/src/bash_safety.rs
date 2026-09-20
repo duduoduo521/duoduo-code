@@ -810,6 +810,17 @@ pub fn explore_bash_write_reason(command: &str) -> Option<String> {
             }
         }
     }
+    write_form_reason(command)
+}
+
+/// 批6 L2/L4: write-form detection WITHOUT the Explore framing, so the same
+/// semantics drive every consumer: `explore_bash_write_reason` (read-only hard
+/// block), the main loop's pre-execution delegation to the TS edit-permission
+/// ask, and the blackboard ledger in `execute_bash`. Returns a reason when the
+/// command carries a write form (`> file` / `>> file` / fd writes / `sed -i` /
+/// tee/dd/truncate/shred / the file-mutating FILES subset + PowerShell
+/// aliases).
+pub fn write_form_reason(command: &str) -> Option<String> {
     static WRITE_FORM: LazyLock<Regex> = LazyLock::new(|| {
         // Write forms: `> file` / `>> file` (fd-prefixed `2> x` and `>&1`
         // excluded — fd writes are handled by FD_WRITE below with target
@@ -831,9 +842,7 @@ pub fn explore_bash_write_reason(command: &str) -> Option<String> {
         .unwrap()
     });
     if WRITE_FORM.is_match(command) {
-        return Some(
-            "bash write form (redirection / in-place edit) — Explore mode is read-only; use a write tool outside Explore or drop the redirection".to_string(),
-        );
+        return Some("bash write form (redirection / in-place edit)".to_string());
     }
     // H1 batch: fd-prefixed file writes (`2> err.log`, `2>> log`, `3> out`)
     // escaped the generic `>` branch because of its digit guard. Capture the
@@ -848,12 +857,99 @@ pub fn explore_bash_write_reason(command: &str) -> Option<String> {
             if normalized == "/dev/null" || normalized.ends_with("/dev/null") || normalized == "nul" {
                 continue;
             }
-            return Some(
-                "bash write form (fd redirection) — Explore mode is read-only; use a write tool outside Explore or drop the redirection".to_string(),
-            );
+            return Some("bash write form (fd redirection)".to_string());
         }
     }
     None
+}
+
+/// 批6 L4: extract the explicit write targets a command names on its command
+/// line — redirect targets (`> out.log`, `2>err`, …) plus the static argument
+/// paths of write-capable commands (`tee f`, `cp a b`, `sed -i s f`). Dynamic
+/// (variable-expanded) arguments stay unscanned — those are the indirect-write
+/// case the snapshot cascade covers. Bit buckets (`/dev/null`, `NUL`) and fd
+/// dups (`&1`) are excluded. Returned paths are absolute, resolved against
+/// `cwd`, deduplicated in first-appearance order.
+pub fn explicit_write_targets(command: &str, cwd: &std::path::Path) -> Vec<std::path::PathBuf> {
+    // Write-capable subset of FILES — commands whose arguments can name a file
+    // the command creates/modifies. Read-only FILES entries (ls/grep/cat/…)
+    // are excluded: their args are sources, not targets.
+    const WRITE_ARG_FILES: &[&str] = &[
+        "cp", "mv", "install", "touch", "mkdir", "tee", "dd", "truncate", "shred", "ln", "patch",
+        // PowerShell cmdlets + aliases
+        "copy", "move", "del", "erase", "ri", "rd", "md", "mi", "ren",
+        "new-item", "set-content", "add-content", "out-file", "tee-object",
+    ];
+
+    let mut found: Vec<std::path::PathBuf> = Vec::new();
+    let push = |text: &str, found: &mut Vec<std::path::PathBuf>| {
+        // Same exemptions as flag_oob: fd dups and bit buckets are not files.
+        if text == "&1"
+            || text == "&2"
+            || (!text.is_empty() && text.chars().all(|c| c.is_ascii_digit()))
+        {
+            return;
+        }
+        let resolved = normalize(&resolve_against(cwd, text));
+        let lower = resolved.to_string_lossy().replace('\\', "/").to_lowercase();
+        if lower == "/dev/null" || lower.ends_with("/dev/null") || lower == "nul" {
+            return;
+        }
+        if !found.iter().any(|f| f == &resolved) {
+            found.push(resolved);
+        }
+    };
+
+    for pipeline in pipelines(command) {
+        for stage in pipeline {
+            let toks = tokenize(&stage);
+            let mut expect_target = false;
+            // Write-capable command → its static args are candidate targets
+            // (sources included on purpose: the post-run disk diff filters
+            // unchanged paths out, so `cp a b` only ever ledgers `b`).
+            if let NameResolution::Resolved(name, args_start) = resolve_name(&toks)
+                && WRITE_ARG_FILES.contains(&name.as_str())
+            {
+                for tok in &toks[args_start.min(toks.len())..] {
+                    if tok.dynamic || tok.text.starts_with('-') {
+                        continue;
+                    }
+                    let text = unquote(&tok.text)
+                        .trim_end_matches([')', ';', ',', '"', '\''])
+                        .to_string();
+                    if text.is_empty() {
+                        continue;
+                    }
+                    push(&text, &mut found);
+                }
+            }
+            for tok in &toks {
+                let split = redirect_split(&tok.text);
+                match split {
+                    RedirectSplit::None => {
+                        if expect_target {
+                            expect_target = false;
+                            if tok.dynamic || tok.text.starts_with('-') {
+                                continue;
+                            }
+                            push(&unquote(&tok.text), &mut found);
+                        }
+                    }
+                    RedirectSplit::Operator => {
+                        expect_target = true;
+                    }
+                    RedirectSplit::Target(target) => {
+                        expect_target = false;
+                        if tok.dynamic || target.starts_with('-') {
+                            continue;
+                        }
+                        push(&unquote(target), &mut found);
+                    }
+                }
+            }
+        }
+    }
+    found
 }
 
 /// `out_of_bounds_paths`, with the same `cwd`/`allowed` arguments.
@@ -989,6 +1085,58 @@ mod tests {
     // ── A1: redirect write targets hit the spatial bound ──
     fn oob(command: &str) -> Vec<String> {
         out_of_bounds_paths(command, std::path::Path::new("/proj"), &[std::path::PathBuf::from("/proj")])
+    }
+
+    // ── 批6 L2/L4: write_form_reason (Explore-framing-free detection) ──
+    #[test]
+    fn write_form_reason_matches_write_forms() {
+        assert!(write_form_reason("echo x > out.log").is_some());
+        assert!(write_form_reason("echo x >> out.log").is_some());
+        assert!(write_form_reason("build 2>err.log").is_some());
+        assert!(write_form_reason("build 2>> err.log").is_some());
+        assert!(write_form_reason("run 3> out.bin").is_some());
+        assert!(write_form_reason("sed -i 's/a/b/' src/main.rs").is_some());
+        assert!(write_form_reason("cat f | tee /tmp/out").is_some());
+        assert!(write_form_reason("cp a b").is_some());
+        assert!(write_form_reason("mv a b").is_some());
+        assert!(write_form_reason("touch new.txt").is_some());
+        assert!(write_form_reason("copy a b").is_some());
+        assert!(write_form_reason("del f.txt").is_some());
+    }
+
+    #[test]
+    fn write_form_reason_allows_reads_and_benign_forms() {
+        assert!(write_form_reason("ls -la").is_none());
+        assert!(write_form_reason("grep -r TODO src").is_none());
+        assert!(write_form_reason("echo hi >&2").is_none());
+        assert!(write_form_reason("cat big.log 2>/dev/null | head").is_none());
+        assert!(write_form_reason("build 2>&1 | head").is_none());
+        assert!(write_form_reason("git log --oneline").is_none());
+    }
+
+    // ── 批6 L4: explicit_write_targets ──
+    fn targets(command: &str) -> Vec<String> {
+        explicit_write_targets(command, std::path::Path::new("/proj"))
+            .iter()
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .collect()
+    }
+
+    #[test]
+    fn explicit_write_targets_extracts_redirect_and_args() {
+        assert_eq!(targets("echo x > out.log"), vec!["/proj/out.log"]);
+        assert_eq!(targets("echo a >> log; echo b > log"), vec!["/proj/log"]);
+        // `cp a b` scans both args; unchanged sources are filtered later by
+        // the post-run disk diff — here extraction just lists candidates.
+        assert_eq!(targets("cp src.txt dst.txt"), vec!["/proj/src.txt", "/proj/dst.txt"]);
+        assert_eq!(targets("tee /tmp/tee-out"), vec!["/tmp/tee-out"]);
+        // bit buckets and fd dups are never targets
+        assert!(targets("echo x > /dev/null").is_empty());
+        assert!(targets("cmd 2>&1").is_empty());
+        // dynamic targets stay unscanned
+        assert!(targets("echo x > $OUT").is_empty());
+        // read-only FILES commands contribute nothing
+        assert!(targets("cat a.txt b.txt").is_empty());
     }
 
     #[test]

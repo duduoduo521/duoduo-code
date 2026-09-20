@@ -1,0 +1,11 @@
+# status: 200
+# 调用智械 gear MCP 工具 `mcp__e2emcp__echo`（Rust ensure_gear_mcp 注入）。
+# Rust 对 MCP 工具的 Ask 权限自动放行（桌面无交互通道），dispatch 走
+# agent-executor mcp.rs 的 stdio JSON-RPC → e2e/mock-mcp/server.ts。
+data: {"id":"chatcmpl-mock-mcp","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_mock_mcp_001","type":"function","function":{"name":"mcp__e2emcp__echo","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-mcp","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"text\":\"from gear mcp\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-mcp","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":40,"completion_tokens":20,"total_tokens":60}}
+
+data: [DONE]

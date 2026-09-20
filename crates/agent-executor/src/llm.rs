@@ -1952,6 +1952,36 @@ fn spawn_sse_parser(
             let resolved_model = model_id.unwrap_or_else(|| model_fallback.clone());
             let total_tool_calls: Vec<duo_types::ToolCall> =
                 tool_calls_accumulator.into_iter().flatten().collect();
+            // 截断防护: a stream that ends without [DONE] AND without any
+            // finish_reason is a MID-RESPONSE provider failure (protocol
+            // violation — OpenAI-compatible providers always send a final
+            // finish_reason). Silently assembling it as a successful "stop"
+            // response delivered a truncated answer with no user-visible
+            // signal. Route it through the error path instead — the partial
+            // text already streamed is persisted by the run loop's partial
+            // handling, so the user sees what arrived plus a retryable error.
+            // P1-6 tolerance still applies when a finish_reason WAS received
+            // (providers that skip [DONE] but finish cleanly).
+            if finish_reason.is_none() {
+                tracing::warn!(
+                    total_chars = total_content.len(),
+                    tool_calls = total_tool_calls.len(),
+                    "SSE stream ended without [DONE] and without finish_reason — treating as truncated"
+                );
+                let _ = tx
+                    .send(LlmStreamChunk::Error(
+                        unified_error::UnifiedError::LlmApi {
+                            message: format!(
+                                "Provider stream ended unexpectedly mid-response (no finish_reason); {} chars received are preserved as a partial answer",
+                                total_content.len()
+                            ),
+                            status_code: None,
+                            retryable: false,
+                        },
+                    ))
+                    .await;
+                return;
+            }
             tracing::warn!(
                 "SSE stream ended without [DONE] marker, assembling response from accumulated deltas"
             );
@@ -2155,6 +2185,129 @@ mod fallback_tests {
         assert_eq!(calls[0].function.name, "read_file");
         assert_eq!(calls[0].function.arguments, r#"{"path":"a.txt"}"#);
     }
+
+    /// 截断防护: a stream that ends WITHOUT [DONE] and WITHOUT any
+    /// finish_reason is a mid-response provider failure — it must surface as
+    /// an Error chunk (the run loop persists the partial text), never as a
+    /// silent Done/stop.
+    #[tokio::test]
+    async fn sse_truncated_without_finish_reason_yields_error() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let body = concat!(
+            r#"data: {"choices":[{"delta":{"role":"assistant","content":""}}]}"#,
+            "\n\n",
+            r#"data: {"choices":[{"delta":{"content":"Partial answer that gets cut"}}]}"#,
+            "\n\n",
+        );
+        let server = tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let mut buf = vec![0u8; 8192];
+            let _ = sock.read(&mut buf).await.unwrap();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            sock.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let req = LlmRequest {
+            model: "test-model".to_string(),
+            ..Default::default()
+        };
+        let mut stream = call_llm_stream(
+            &format!("http://{addr}/v1/chat/completions"),
+            None,
+            &req,
+            tokio_util::sync::CancellationToken::new(),
+            1,
+        )
+        .await
+        .expect("connection must succeed");
+        server.await.unwrap();
+
+        use futures::StreamExt;
+        let mut error: Option<unified_error::UnifiedError> = None;
+        while let Some(chunk) = stream.next().await {
+            match chunk {
+                LlmStreamChunk::Error(e) => {
+                    error = Some(e);
+                    break;
+                }
+                LlmStreamChunk::Done(_) => {
+                    panic!("truncated stream must NOT be assembled into a Done/stop response")
+                }
+                _ => {}
+            }
+        }
+        let err = error.expect("truncated stream must end with an Error chunk");
+        assert!(
+            !err.is_retryable(),
+            "a truncated stream is not retryable as-is"
+        );
+    }
+
+    /// P1-6 tolerance preserved: a stream that ends without [DONE] but WITH a
+    /// finish_reason (provider finished cleanly, skipped the marker) still
+    /// assembles into Done.
+    #[tokio::test]
+    async fn sse_stream_without_done_but_with_finish_reason_yields_done() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let body = concat!(
+            r#"data: {"choices":[{"delta":{"content":"clean finish"}}]}"#,
+            "\n\n",
+            r#"data: {"choices":[{"delta":{},"finish_reason":"stop"}]}"#,
+            "\n\n",
+        );
+        let server = tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.unwrap();
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let mut buf = vec![0u8; 8192];
+            let _ = sock.read(&mut buf).await.unwrap();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            sock.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let req = LlmRequest {
+            model: "test-model".to_string(),
+            ..Default::default()
+        };
+        let mut stream = call_llm_stream(
+            &format!("http://{addr}/v1/chat/completions"),
+            None,
+            &req,
+            tokio_util::sync::CancellationToken::new(),
+            1,
+        )
+        .await
+        .expect("connection must succeed");
+        server.await.unwrap();
+
+        use futures::StreamExt;
+        let mut done: Option<LlmResponse> = None;
+        while let Some(chunk) = stream.next().await {
+            match chunk {
+                LlmStreamChunk::Done(r) => {
+                    done = Some(r);
+                    break;
+                }
+                LlmStreamChunk::Error(e) => {
+                    panic!("clean finish without [DONE] must not error: {e:?}")
+                }
+                _ => {}
+            }
+        }
+        let done = done.expect("stream must end with Done");
+        assert_eq!(done.content, "clean finish");
+        assert_eq!(done.finish_reason.as_deref(), Some("stop"));
+    }
 }
 
 #[cfg(test)]
@@ -2238,6 +2391,18 @@ mod retry_tests {
     fn is_not_retryable_403() {
         let status = reqwest::StatusCode::from_u16(403).unwrap();
         assert!(!is_retryable_error(status, b"forbidden"));
+    }
+
+    /// P2-1: HTTP 402 is a HARD billing failure — even a body that would
+    /// otherwise read as a retryable quota keyword must not retry (OpenAI
+    /// insufficient_quota arrives as 402; retrying burns paid requests).
+    #[test]
+    fn is_not_retryable_402_hard_billing_gate() {
+        let status = reqwest::StatusCode::from_u16(402).unwrap();
+        assert!(!is_retryable_error(status, b""));
+        assert!(!is_retryable_error(status, b"insufficient_quota"));
+        assert!(!is_retryable_error(status, b"NotEnoughCvError"));
+        assert!(!is_retryable_error(status, b"code: 10050"));
     }
 
     #[test]

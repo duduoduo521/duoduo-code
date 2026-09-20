@@ -21,7 +21,7 @@ export const ServeCommand = cmd({
         type: "string" as const,
         describe: "fixed working directory",
       }),
-  describe: "starts a headless duoduo server",
+  describe: "starts a headless duoduocode server",
   handler: async (args) => {
     if (args.directory) {
       process.env.DUODUO_FIXED_DIRECTORY = args.directory
@@ -42,7 +42,7 @@ export const ServeCommand = cmd({
       cors: [],
     })
     const server = await Server.listen(opts)
-    console.log(`duoduo server listening on http://${server.hostname}:${server.port}`)
+    console.log(`duoduocode server listening on http://${server.hostname}:${server.port}`)
 
     await new Promise<void>((resolve) => {
       const handler = () => {

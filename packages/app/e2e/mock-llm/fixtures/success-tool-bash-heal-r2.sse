@@ -1,0 +1,10 @@
+# status: 200
+# bash 硬阻断自愈 round 2：printf 重定向写同一文件 —— 非 Explore 主循环的
+# 显式写形态（批 6 L2）会转 permission "edit" ask 弹窗；用户 Allow 后落盘。
+data: {"id":"chatcmpl-mock-bashheal2","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_mock_bashheal_b","type":"function","function":{"name":"bash","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-bashheal2","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"description\":\"write heal file (round 2)\",\"command\":\"printf 'hello from printf' > /tmp/duoduo-e2e-heal.txt\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-mock-bashheal2","object":"chat.completion.chunk","created":1700000000,"model":"mock-model","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":40,"completion_tokens":20,"total_tokens":60}}
+
+data: [DONE]

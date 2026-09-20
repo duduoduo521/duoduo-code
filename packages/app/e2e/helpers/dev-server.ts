@@ -15,6 +15,7 @@
  */
 import { spawn, type ChildProcess } from "node:child_process"
 import { writeFileSync, mkdirSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { startMockLLM, type MockLLMServer } from "../mock-llm/server"
@@ -36,6 +37,8 @@ export interface RuntimeInfo {
   smartLayerUrl: string | null
   /** Whether the sidecar is running (gates sidecar-backed specs). */
   smartLayerAvailable: boolean
+  /** 智械 gear packs dir exposed to the backend as DUODUO_GEARS_DIR. */
+  gearsDir: string
 }
 
 // Parse --port argument
@@ -46,6 +49,11 @@ async function main() {
   // 1. Start mock LLM
   const mock = await startMockLLM(0)
   console.log(`[e2e:dev-server] mock-llm at ${mock.url}`)
+
+  // 智械 gear packs dir: specs install gear packs (incl. MCP servers) here.
+  // Created BEFORE the sidecar so both processes get DUODUO_GEARS_DIR.
+  const gearsDir = join(tmpdir(), `duoduo-e2e-gears-${process.pid}`)
+  mkdirSync(gearsDir, { recursive: true })
 
   // 2. Start the Rust smart-layer sidecar (when built) with XDG dirs shared
   //    with the backend, so both agree on the per-project data dir.
@@ -60,6 +68,7 @@ async function main() {
       sidecar = await startSmartLayerSidecar({
         xdgEnv: sharedXdg.env,
         logDir: join(sharedXdg.root, "logs"),
+        gearsDir,
       })
       console.log(`[e2e:dev-server] smart-layer sidecar at ${sidecar.url}`)
     } catch (err) {
@@ -77,8 +86,13 @@ async function main() {
   }
 
   // 3. Start isolated backend (wired to the sidecar when present)
-  const backend = await startIsolatedBackend({ mockLlmUrl: mock.url, smartLayerUrl: sidecar?.url, xdg: sharedXdg })
-  console.log(`[e2e:dev-server] backend at ${backend.url}`)
+  const backend = await startIsolatedBackend({
+    mockLlmUrl: mock.url,
+    smartLayerUrl: sidecar?.url,
+    xdg: sharedXdg,
+    gearsDir,
+  })
+  console.log(`[e2e:dev-server] backend at ${backend.url} (gears: ${gearsDir})`)
 
   // 4. Write runtime info
   const info: RuntimeInfo = {
@@ -89,6 +103,7 @@ async function main() {
     projectPathEncoded: encodeProjectPath(backend.projectDir),
     smartLayerUrl: sidecar?.url ?? null,
     smartLayerAvailable: sidecar !== null,
+    gearsDir,
   }
   mkdirSync(dirname(RUNTIME_INFO_PATH), { recursive: true })
   writeFileSync(RUNTIME_INFO_PATH, JSON.stringify(info, null, 2))

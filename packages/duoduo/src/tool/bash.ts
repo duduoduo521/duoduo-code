@@ -21,6 +21,11 @@ import { Bus } from "../bus"
 import { FileWatcher } from "../file/watcher"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
+import * as Bom from "@/util/bom"
+import { getPromptID } from "@/session/prompt-id-registry"
+import { createSmartLayerClients } from "@/smart-layer"
+import { fetchSkipSyntaxCheck } from "./blackboard"
+import { makeSubmitStable } from "./cascade-flow"
 
 const MAX_METADATA_LENGTH = 30_000
 const DEFAULT_TIMEOUT = Flag.DUODUO_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS || 2 * 60 * 1000
@@ -437,6 +442,25 @@ export function redirectWriteTargets(root: Node): string[] {
     if (write && target) out.push(target)
   }
   return out
+}
+
+// 批6 L2: TS mirror of Rust `bash_safety::write_form_reason` — the SAME
+// write-form semantics must drive the Rust main-loop delegation decision and
+// this TS edit-permission ask, so a delegated write-form bash call can never
+// skip the ask. Keep both sides in lockstep (regex + fd-write scan, with the
+// /dev/null, NUL and `2>&1` exemptions).
+const WRITE_FORM_RE =
+  /(?:(?:^|[^\d>])>{1,2}\s*[^\s&]|(?:^|\s)1>{1,2}\s*[^\s&]|(?:^|[^\w-])(?:sed[^\n]*\s(?:-i(?:\.\w+)?(?:\s|$)|--in-place)|tee\s|dd\s|truncate\s|shred\s|cp\s|mv\s|touch\s|mkdir\s|rmdir\s|install\s|patch\s|copy\s|move\s|del\s|erase\s|ri\s|rd\s|md\s|mi\s|ren\s))/
+const FD_WRITE_RE = /(?:^|\s)\d>{1,2}\s*([^\s&]+)/g
+
+export function bashWriteFormReason(command: string): string | undefined {
+  if (WRITE_FORM_RE.test(command)) return "bash write form (redirection / in-place edit)"
+  for (const m of command.matchAll(FD_WRITE_RE)) {
+    const normalized = m[1]!.replaceAll("\\", "/").toLowerCase()
+    if (normalized === "/dev/null" || normalized.endsWith("/dev/null") || normalized === "nul") continue
+    return "bash write form (fd redirection)"
+  }
+  return undefined
 }
 
 /**
@@ -883,8 +907,14 @@ export const BashTool = Tool.define(
       if (verdict.blocked) return verdict.reason
       const scan = yield* collect(inner, cwd, ps, shell)
       // H1: full spatial bound (destructive + plain out-of-bounds), see
-      // nestedSpatialReason above.
-      if (scan.destructive.size > 0 || scan.dirs.size > 0)
+      // nestedSpatialReason above — but ONLY for a real nested payload
+      // (depth > 0). The depth-0 call re-parses the TOP-LEVEL command: its
+      // out-of-bounds paths must keep the ask flow (reads outside the project
+      // ask; they are not hard-blocked), matching Rust nested_walk which only
+      // walks -c/-exec payloads. Inside a payload the ask flow cannot see the
+      // paths, so there the bound is a hard block that auto-accept cannot
+      // wave through.
+      if (depth > 0 && (scan.destructive.size > 0 || scan.dirs.size > 0))
         return nestedSpatialReason(scan)
       for (const node of commands(inner)) {
         const tokens = commandTokens(node, ps)
@@ -1217,7 +1247,56 @@ export const BashTool = Tool.define(
                 }
               }
 
-              yield* ask(ctx, scan)
+              // 批6 L2: explicit file-writing bash forms go through the SAME
+              // permission system as the write tools (permission "edit") —
+              // same ask flow, rules and auto-accept behavior as edit/write.
+              // Patterns are the redirect targets when statically visible,
+              // otherwise the working directory. The generic bash ask is
+              // skipped for write forms so the command prompts exactly once.
+              const writeFormReason = bashWriteFormReason(params.command)
+              const redirectTargets = redirectWriteTargets(root)
+              const isWriteForm = Boolean(writeFormReason) || redirectTargets.length > 0
+              if (isWriteForm) {
+                const patterns =
+                  redirectTargets.length > 0
+                    ? Array.from(
+                        new Set(
+                          redirectTargets.map((t) => path.relative(Instance.worktree, path.resolve(cwd, t))),
+                        ),
+                      )
+                    : [path.relative(Instance.worktree, cwd)]
+                yield* ctx.ask({
+                  permission: "edit",
+                  patterns,
+                  always: [],
+                  metadata: {},
+                })
+              } else {
+                yield* ask(ctx, scan)
+              }
+
+              // 批6 L4: explicit redirect targets enter the blackboard ledger
+              // via the same makeSubmitStable primitive the write tools use —
+              // bash writes then share the write tools' concurrency safety
+              // (FileLockManager + optimistic version check). Best-effort:
+              // unchanged/binary/unreadable targets are skipped and failures
+              // never roll the executed command back (the per-round snapshot
+              // cascade covers every file on disk regardless).
+              const promptID = getPromptID(ctx.sessionID)
+              const smartClients = promptID ? createSmartLayerClients() : null
+              const skipSyntaxCheck = yield* fetchSkipSyntaxCheck(smartClients)
+              const submitStable = makeSubmitStable({
+                blackboard: smartClients?.blackboard,
+                promptID,
+                agentId: ctx.agent,
+                skipSyntaxCheck,
+              })
+              const ledgerTargets = Array.from(new Set(redirectTargets.map((t) => path.resolve(cwd, t))))
+              const preRead = new Map<string, string>()
+              for (const t of ledgerTargets) {
+                const pre = yield* Bom.readFile(fs, t).pipe(Effect.catch(() => Effect.succeed(null)))
+                if (pre) preRead.set(t, pre.text)
+              }
 
               let result = yield* run(
                 {
@@ -1251,6 +1330,17 @@ export const BashTool = Tool.define(
                     ctx,
                   )
                 }
+              }
+
+              // 批6 L4: post-run ledger reconciliation — only targets whose
+              // text actually changed are submitted (sources of cp/mv, bit
+              // buckets and deletions fall out naturally).
+              for (const t of ledgerTargets) {
+                const pre = preRead.get(t)
+                if (pre === undefined) continue
+                const post = yield* Bom.readFile(fs, t).pipe(Effect.catch(() => Effect.succeed(null)))
+                if (!post || post.text === pre || post.text.includes("\u0000") || post.text.includes("\uFFFD")) continue
+                yield* submitStable(t, post.text)
               }
 
               yield* bus.publish(FileWatcher.Event.Updated, {

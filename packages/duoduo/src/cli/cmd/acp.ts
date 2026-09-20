@@ -84,7 +84,16 @@ export const AcpCommand = cmd({
       } finally {
         process.off("SIGINT", shutdown)
         process.off("SIGTERM", shutdown)
-        await server.stop()
+        // stdin EOF means the ACP client disconnected — the process MUST
+        // exit deterministically. Observed defect: a lingering event-loop
+        // handle kept the process alive after `server.stop()` resolved
+        // (client hangs up → orphaned acp process). Graceful teardown gets
+        // a bounded window, then we exit explicitly.
+        await Promise.race([
+          server.stop(),
+          new Promise<void>((resolve) => setTimeout(resolve, 3_000)),
+        ])
+        process.exit(0)
       }
     })
   },

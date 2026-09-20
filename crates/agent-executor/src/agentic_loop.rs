@@ -1349,6 +1349,20 @@ impl Drop for SessionGuard {
     }
 }
 
+/// 批6 L4: outcome of reconciling one explicit bash-write target into the
+/// blackboard ledger (see `bash_write_ledger_entry`).
+#[derive(Debug)]
+pub(crate) enum BashLedgerEntry {
+    /// Content changed — submit as (relative_path, old_text, new_text).
+    Submit(String, String, String),
+    /// Content identical to the pre-run snapshot — nothing to record.
+    Unchanged,
+    /// Post-run read failed (deleted, or no longer valid UTF-8).
+    Unreadable,
+    /// Target resolves outside the project root — no relative path.
+    OutsideProject,
+}
+
 impl AgenticLoopExecutor {
     /// Create a new AgenticLoopExecutor.
     pub fn new(executor: AgentExecutor, project_path: impl Into<PathBuf>) -> Self {
@@ -5472,6 +5486,21 @@ the task normally.\n\
         // 4. Timeout (default 30s, max 120s)
         let timeout = std::time::Duration::from_secs(timeout_secs.unwrap_or(30).min(120));
 
+        // 批6 L4: explicit write targets of this command enter the blackboard
+        // ledger (same primitive as the write tools). Snapshot the pre-run
+        // text so only genuinely changed files are submitted after execution.
+        let pre_state: Vec<(std::path::PathBuf, Option<String>)> = if self.blackboard.is_some() {
+            crate::bash_safety::explicit_write_targets(command, &self.project_path)
+                .into_iter()
+                .map(|p| {
+                    let text = std::fs::read_to_string(&p).ok().filter(|t| !t.contains('\0'));
+                    (p, text)
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+
         // 4. Spawn child process
         //
         // Windows runs PowerShell (pwsh 7+ preferred, Windows PowerShell 5.1 as
@@ -5595,6 +5624,77 @@ the task normally.\n\
             }
         };
 
+        // 批6 L4: post-run reconciliation — every target whose text actually
+        // changed is submitted through the same blackboard primitive the
+        // write tools use (FileLockManager exclusive lock + optimistic version
+        // check + ledger). Failures are warnings, never rollbacks: the write
+        // already happened, and the per-round snapshot cascade still covers
+        // every file on disk.
+        if !pre_state.is_empty()
+            && let Some(bb) = &self.blackboard
+        {
+            for (path, old_text) in &pre_state {
+                match Self::bash_write_ledger_entry(&self.project_path, path, old_text) {
+                    BashLedgerEntry::Submit(rel_str, old_text, new_text) => {
+                        match bb
+                            .submit_stable_with_write(blackboard_coordinator::StableWriteSubmission {
+                                agent_id: &self.agent_id,
+                                file_path: &rel_str,
+                                old_text: &old_text,
+                                new_text: &new_text,
+                                project_path: Some(self.project_path.as_path()),
+                                pipeline_id: None,
+                                enable_format: false,
+                                format_callback: None,
+                                skip_syntax_check: !self.syntax_check,
+                            })
+                            .await
+                        {
+                            Ok(blackboard_coordinator::StableSubmitResult::Success { new_version }) => {
+                                tracing::info!(
+                                    target: "bash_audit",
+                                    file = %rel_str,
+                                    version = new_version,
+                                    "bash write reconciled into blackboard ledger"
+                                );
+                            }
+                            Ok(other) => {
+                                tracing::warn!(
+                                    target: "bash_audit",
+                                    file = %rel_str,
+                                    result = ?other,
+                                    "bash write ledger submission rejected — keeping disk content, snapshot cascade covers it"
+                                );
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    target: "bash_audit",
+                                    file = %rel_str,
+                                    error = %e,
+                                    "bash write ledger submission failed — keeping disk content, snapshot cascade covers it"
+                                );
+                            }
+                        }
+                    }
+                    BashLedgerEntry::OutsideProject => {
+                        tracing::warn!(
+                            target: "bash_audit",
+                            file = %path.display(),
+                            "bash write target outside project — ledger skipped"
+                        );
+                    }
+                    BashLedgerEntry::Unreadable => {
+                        tracing::warn!(
+                            target: "bash_audit",
+                            file = %path.display(),
+                            "bash write target no longer readable as text — ledger skipped (snapshot cascade still covers it)"
+                        );
+                    }
+                    BashLedgerEntry::Unchanged => {}
+                }
+            }
+        }
+
         if let Ok(output) = &bash_result
             && let Some(ref graph) = self.graph
                 && let Some(annotated) = self
@@ -5605,6 +5705,36 @@ the task normally.\n\
                 }
 
         bash_result
+    }
+
+    /// 批6 L4: ledger reconciliation decision for one explicit bash-write
+    /// target. `old_text` is the pre-run snapshot (`None` = pre-read failed —
+    /// binary/missing, never submitted). Reads the post-run disk truth and
+    /// yields the relative-path + content pair to submit, or the reason it is
+    /// skipped. Deletions surface as `Unreadable` (best-effort by design: the
+    /// per-round snapshot cascade still covers every file on disk).
+    pub(crate) fn bash_write_ledger_entry(
+        project_path: &std::path::Path,
+        path: &std::path::Path,
+        old_text: &Option<String>,
+    ) -> BashLedgerEntry {
+        let Some(old_text) = old_text else {
+            return BashLedgerEntry::Unchanged;
+        };
+        let Ok(new_text) = std::fs::read_to_string(path) else {
+            return BashLedgerEntry::Unreadable;
+        };
+        if &new_text == old_text {
+            return BashLedgerEntry::Unchanged;
+        }
+        match path.strip_prefix(project_path) {
+            Ok(rel) => BashLedgerEntry::Submit(
+                rel.to_string_lossy().replace('\\', "/"),
+                old_text.clone(),
+                new_text,
+            ),
+            Err(_) => BashLedgerEntry::OutsideProject,
+        }
     }
 
     /// Terminate a spawned shell **and every descendant** it started.
@@ -6546,6 +6676,60 @@ mod tests {
             "a grandchild survived the process-tree kill and performed its side effect"
         );
         let _ = std::fs::remove_file(&marker);
+    }
+
+    // ── 批6 L4: bash write ledger reconciliation decisions ──
+    #[test]
+    fn bash_write_ledger_entry_decisions() {
+        let dir = std::env::temp_dir().join(format!("duoduo-ledger-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("out.txt");
+
+        // Pre-read failed (None) — never submitted.
+        let none_old = None;
+        std::fs::write(&file, "changed").unwrap();
+        assert!(matches!(
+            AgenticLoopExecutor::bash_write_ledger_entry(&dir, &file, &none_old),
+            BashLedgerEntry::Unchanged
+        ));
+
+        // Changed content → Submit with a clean relative path.
+        let old = Some("before".to_string());
+        std::fs::write(&file, "after").unwrap();
+        match AgenticLoopExecutor::bash_write_ledger_entry(&dir, &file, &old) {
+            BashLedgerEntry::Submit(rel, old_text, text) => {
+                assert_eq!(rel.replace('\\', "/"), "out.txt");
+                assert_eq!(old_text, "before");
+                assert_eq!(text, "after");
+            }
+            other => panic!("expected Submit, got {other:?}"),
+        }
+
+        // Unchanged content → nothing to record.
+        let same = Some("after".to_string());
+        assert!(matches!(
+            AgenticLoopExecutor::bash_write_ledger_entry(&dir, &file, &same),
+            BashLedgerEntry::Unchanged
+        ));
+
+        // Deleted file → Unreadable (best-effort; snapshot cascade covers it).
+        std::fs::remove_file(&file).unwrap();
+        assert!(matches!(
+            AgenticLoopExecutor::bash_write_ledger_entry(&dir, &file, &old),
+            BashLedgerEntry::Unreadable
+        ));
+
+        // Target outside the project root → OutsideProject.
+        let outside = dir.parent().unwrap().join("elsewhere-ledger-test.txt");
+        std::fs::write(&outside, "changed-outside").unwrap();
+        assert!(matches!(
+            AgenticLoopExecutor::bash_write_ledger_entry(&dir, &outside, &old),
+            BashLedgerEntry::OutsideProject
+        ));
+        let _ = std::fs::remove_file(&outside);
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // ── Layer A (B2): dispatch-only tool schema baselines ──
@@ -7795,23 +7979,20 @@ Keep your final reply to a single short sentence.";
             .unwrap();
 
         assert_eq!(tool_results.len(), 2, "write 批次结果数量须与调用数一致");
-        // 无 blackboard → write 返回 Err，但须被捕获为 "Error:" 而非 panic/崩溃。
-        assert!(
-            tool_results[0].content.contains("Error:"),
-            "write without blackboard must surface as Error, got: {}",
-            tool_results[0].content
-        );
-        assert!(
-            tool_results[1].content.contains("Error:"),
-            "write without blackboard must surface as Error, got: {}",
-            tool_results[1].content
-        );
-        assert!(per[0].is_err() && per[1].is_err(), "per_results 须为 Err");
-        assert!(
-            tool_results[0].content.contains("blackboard unavailable")
-                || tool_results[0].content.contains("write"),
-            "错误应源自 write 路径"
-        );
+        // H2 contract (reversal): the Explore parallel-branch WRITE_TOOL_NAMES
+        // gate denies write tools BEFORE execution — they never reach the
+        // blackboard-less write path, so the result is the read-only deny
+        // string, not an execution error.
+        for result in tool_results.iter() {
+            assert!(
+                result
+                    .content
+                    .contains("[Explore mode is read-only] Write tools"),
+                "Explore write must be denied by the parallel-branch gate, got: {}",
+                result.content
+            );
+        }
+        assert!(per[0].is_ok() && per[1].is_ok(), "gate denial is an Ok string");
 
         let _ = std::fs::remove_dir_all(&project);
     }

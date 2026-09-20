@@ -27,6 +27,8 @@ export interface IsolatedBackend {
   homeDir: string
   configDir: string
   projectDir: string
+  /** DUODUO_GEARS_DIR exposed to the backend, or null when not configured. */
+  gearsDir: string | null
   stop: () => Promise<void>
 }
 
@@ -49,6 +51,11 @@ export interface BackendOptions {
    * caller). When omitted, fresh isolated XDG dirs are created internally.
    */
   xdg?: { root: string; env: Record<string, string> }
+  /**
+   * Directory exposed to the backend as DUODUO_GEARS_DIR (智械 gear packs).
+   * When set, specs can install gear packs (incl. MCP servers) into it.
+   */
+  gearsDir?: string
 }
 
 export interface IsolatedXdgDirs {
@@ -92,6 +99,9 @@ function buildMockProviderConfig(mockLlmUrl: string, defaultModel: string) {
     "success-tool-edit",
     "success-tool-edit-replaceall",
     "success-tool-todowrite",
+    "success-tool-todowrite-flow",
+    "success-tool-bash-heal",
+    "success-tool-mcp-echo",
     "success-tool-read-external",
     "success-tool-malformed-args",
     "error-401-html-gateway",
@@ -227,6 +237,8 @@ export async function startIsolatedBackend(opts: BackendOptions): Promise<Isolat
         // the well-known URL file, and setting it at process start avoids the
         // startup race where clients are created before the sidecar is ready.
         ...(opts.smartLayerUrl ? { DUO_SMART_LAYER_URL: opts.smartLayerUrl } : {}),
+        // 智械 gear packs (incl. MCP servers) for the gear-MCP E2E specs.
+        ...(opts.gearsDir ? { DUODUO_GEARS_DIR: opts.gearsDir } : {}),
         // Prevent telemetry / network calls.
         DUODUO_DISABLE_AUTOUPDATE: "1",
         NO_COLOR: "1",
@@ -290,7 +302,7 @@ export async function startIsolatedBackend(opts: BackendOptions): Promise<Isolat
     throw err
   }
 
-  return { port, url, homeDir, configDir, projectDir, stop }
+  return { port, url, homeDir, configDir, projectDir, gearsDir: opts.gearsDir ?? null, stop }
 }
 
 /**

@@ -319,3 +319,20 @@ impl MemorySystem {
         .map_err(Into::into)
     }
 }
+
+#[cfg(test)]
+mod b19_tests {
+    use super::strip_date_prefix;
+
+    /// B19: dedup must compare the logical fact across days — the
+    /// `[YYYY-MM-DD] ` date prefix the store prepends to L4 content is
+    /// stripped before comparison; content without a prefix passes through.
+    #[test]
+    fn strip_date_prefix_variants() {
+        assert_eq!(strip_date_prefix("[2026-09-20] use rate limiting"), "use rate limiting");
+        assert_eq!(strip_date_prefix("[1999-01-01]old"), "old");
+        assert_eq!(strip_date_prefix("plain fact"), "plain fact");
+        assert_eq!(strip_date_prefix(""), "");
+        assert_eq!(strip_date_prefix("[no-close"), "[no-close");
+    }
+}

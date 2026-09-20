@@ -79,6 +79,10 @@ export interface SidecarOptions {
   logDir?: string
   /** Fixed port (defaults to a random free port). */
   port?: number
+  /** 智械 gear packs dir (DUODUO_GEARS_DIR) — the run loop runs INSIDE the
+   * sidecar, so gear/MCP discovery needs the env HERE, not only on the TS
+   * backend process. */
+  gearsDir?: string
 }
 
 export async function startSmartLayerSidecar(opts: SidecarOptions = {}): Promise<SmartLayerSidecar> {
@@ -95,6 +99,7 @@ export async function startSmartLayerSidecar(opts: SidecarOptions = {}): Promise
       DUODUO_DEV: "1",
       ...(opts.logDir ? { DUODUO_LOG_DIR: opts.logDir } : {}),
       ...(opts.xdgEnv ?? {}),
+      ...(opts.gearsDir ? { DUODUO_GEARS_DIR: opts.gearsDir } : {}),
       NO_COLOR: "1",
     },
     stdio: ["ignore", "pipe", "pipe"],

@@ -3,7 +3,7 @@ Execute a bash command in a persistent shell session, with optional timeout and 
 Be aware: OS: ${os}, Shell: ${shell}
 All commands run in the current working directory by default. Use the `workdir` parameter instead of `cd <dir> && <cmd>`.
 
-IMPORTANT: For terminal operations only (git, npm, docker, etc). Do NOT use it for file operations (read/write/edit/search) — use the dedicated tools.
+IMPORTANT: For terminal operations only (git, npm, docker, etc). Do NOT use it for file operations (read/write/edit/search) — use the dedicated tools. Explicit file-writing commands (redirection, sed -i, tee, cp/mv) trigger a user approval prompt and skip the quality checks and concurrent-write protection the file tools provide — another reason to prefer them.
 
 ## Before executing
 1. Directory verification: if creating files/dirs, first `ls` the parent to confirm it exists.

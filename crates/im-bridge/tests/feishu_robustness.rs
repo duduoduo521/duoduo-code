@@ -158,6 +158,13 @@ fn pong_frame() -> Message {
 /// A minimal valid Feishu `im.message.receive_v1` event with a single text part,
 /// carrying `message_id` and content `text`. Used as a complete (sum=1) message.
 fn clean_event(message_id: &str, text: &str) -> Vec<u8> {
+    clean_event_in_chat(message_id, text, "oc_1")
+}
+
+/// Same as `clean_event` but with an explicit chat id — instances that must
+/// stay isolated must NOT share a chat id (the per-chat serial gate would
+/// serialize their dispatches).
+fn clean_event_in_chat(message_id: &str, text: &str, chat_id: &str) -> Vec<u8> {
     let payload = json!({
         "schema": "2.0",
         "header": {
@@ -171,7 +178,7 @@ fn clean_event(message_id: &str, text: &str) -> Vec<u8> {
         "event": {
             "message": {
                 "message_id": message_id,
-                "chat_id": "oc_1",
+                "chat_id": chat_id,
                 "content_type": "text",
                 "content": json!({ "text": text }).to_string()
             }
@@ -238,39 +245,51 @@ async fn spawn_fake_feishu_inner(
             let script = script.clone();
             let dual_phase = dual_phase.clone();
             tokio::spawn(async move {
-                if let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await {
-                    match (&script, &dual_phase) {
-                        (_, Some((p1, p2, delay))) => {
-                            for f in p1 {
-                                let _ = ws.send(f.clone()).await;
-                            }
-                            tokio::time::sleep(*delay).await;
-                            for f in p2 {
-                                let _ = ws.send(f.clone()).await;
-                            }
+                let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else {
+                    return;
+                };
+                // Split read/write so a dedicated task ALWAYS drains the
+                // inbound direction while the script writes. The client
+                // ACKs every data frame (official SDK parity); a script
+                // that only writes (dual-phase sleep / pong loop) would
+                // let 1205 ACKs fill its TCP receive buffer and
+                // back-pressure the client's send path into a deadlock
+                // that only the heartbeat timeout can break. A real Feishu
+                // server reads ACKs concurrently -- so must the mock.
+                let (mut write, mut read) = ws.split();
+                let drain = tokio::spawn(async move {
+                    while read.next().await.is_some() {}
+                });
+                match (&script, &dual_phase) {
+                    (_, Some((p1, p2, delay))) => {
+                        for f in p1 {
+                            let _ = write.send(f.clone()).await;
+                        }
+                        tokio::time::sleep(*delay).await;
+                        for f in p2 {
+                            let _ = write.send(f.clone()).await;
+                        }
+                        loop {
+                            let _ = write.send(pong_frame()).await;
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                        }
+                    }
+                    (ServerScript::Idle, None) => {}
+                    (ServerScript::Scripted(frames), None) => {
+                        for f in frames {
+                            let _ = write.send(f.clone()).await;
+                        }
+                        if close_after_script {
+                            let _ = write.close().await;
+                        } else {
                             loop {
-                                let _ = ws.send(pong_frame()).await;
+                                let _ = write.send(pong_frame()).await;
                                 tokio::time::sleep(Duration::from_secs(1)).await;
-                            }
-                        }
-                        (ServerScript::Idle, None) => {
-                            while ws.next().await.is_some() {}
-                        }
-                        (ServerScript::Scripted(frames), None) => {
-                            for f in frames {
-                                let _ = ws.send(f.clone()).await;
-                            }
-                            if close_after_script {
-                                let _ = ws.close(None).await;
-                            } else {
-                                loop {
-                                    let _ = ws.send(pong_frame()).await;
-                                    tokio::time::sleep(Duration::from_secs(1)).await;
-                                }
                             }
                         }
                     }
                 }
+                let _ = drain.await;
             });
         }
     });
@@ -298,6 +317,20 @@ async fn spawn_fake_feishu_inner(
                             "ReconnectNonce": 0
                         }
                     }
+                }))
+            }),
+        )
+        .route(
+            // IM-02 send_message_raw target (welcome cards + text replies).
+            // Without it the client's bounded retry loop (5 attempts, ~6s of
+            // backoff per dispatch) serializes the per-chat gate and starves
+            // the test window.
+            "/open-apis/im/v1/messages",
+            post(|| async {
+                Json(json!({
+                    "code": 0,
+                    "msg": "ok",
+                    "data": { "message_id": "om_mock" }
                 }))
             }),
         )
@@ -526,8 +559,8 @@ async fn multiple_instances_stay_isolated() {
     // event exactly once. (This test used to reuse one id for both instances
     // and assert double dispatch, which is precisely the P2-45 duplicate-agent
     // bug the global dedup table exists to prevent.)
-    let frames_a = vec![event_frame("shared", 0, 1, true, &clean_event("shared_a", "from_a"))];
-    let frames_b = vec![event_frame("shared", 0, 1, true, &clean_event("shared_b", "from_b"))];
+    let frames_a = vec![event_frame("shared", 0, 1, true, &clean_event_in_chat("shared_a", "from_a", "oc_a"))];
+    let frames_b = vec![event_frame("shared", 0, 1, true, &clean_event_in_chat("shared_b", "from_b", "oc_b"))];
     let base_a = spawn_fake_feishu(state_a.clone(), ServerScript::Scripted(frames_a)).await;
     let base_b = spawn_fake_feishu(state_b.clone(), ServerScript::Scripted(frames_b)).await;
 

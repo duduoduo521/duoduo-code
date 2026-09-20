@@ -3,7 +3,7 @@ import { Effect, Layer, ManagedRuntime } from "effect"
 import os from "os"
 import path from "path"
 import { Shell } from "../../src/shell/shell"
-import { BashTool } from "../../src/tool/bash"
+import { BashTool, bashWriteFormReason } from "../../src/tool/bash"
 import { Instance } from "../../src/project/instance"
 import { Filesystem } from "../../src/util"
 import { tmpdir } from "../fixture/fixture"
@@ -140,6 +140,30 @@ const mustTruncate = (result: {
   )
 }
 
+describe("tool.bash write-form detection", () => {
+  // 批6 L2: TS mirror of Rust bash_safety::write_form_reason — the delegation
+  // decision (Rust) and the edit-permission ask (TS) must agree.
+  test("detects write forms", () => {
+    expect(bashWriteFormReason("echo x > out.log")).toBeDefined()
+    expect(bashWriteFormReason("echo x >> out.log")).toBeDefined()
+    expect(bashWriteFormReason("build 2>err.log")).toBeDefined()
+    expect(bashWriteFormReason("run 3> out.bin")).toBeDefined()
+    expect(bashWriteFormReason("sed -i 's/a/b/' src/main.rs")).toBeDefined()
+    expect(bashWriteFormReason("cat f | tee out")).toBeDefined()
+    expect(bashWriteFormReason("cp a b")).toBeDefined()
+    expect(bashWriteFormReason("touch new.txt")).toBeDefined()
+  })
+
+  test("allows reads and benign forms", () => {
+    expect(bashWriteFormReason("ls -la")).toBeUndefined()
+    expect(bashWriteFormReason("grep -r TODO src")).toBeUndefined()
+    expect(bashWriteFormReason("echo hi >&2")).toBeUndefined()
+    expect(bashWriteFormReason("cat big.log 2>/dev/null | head")).toBeUndefined()
+    expect(bashWriteFormReason("build 2>&1 | head")).toBeUndefined()
+    expect(bashWriteFormReason("echo $((1 << 2))")).toBeUndefined()
+  })
+})
+
 describe("tool.bash", () => {
   each("basic", async () => {
     await Instance.provide({
@@ -163,6 +187,77 @@ describe("tool.bash", () => {
 })
 
 describe("tool.bash permissions", () => {
+  // 批6 L2: explicit write-form bash goes through the edit permission (same
+  // ruleset as write tools) and prompts exactly once.
+  each("asks edit permission for write-form bash and skips the bash ask", async () => {
+    await using tmp = await tmpdir()
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const bash = await initBash()
+        const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+        await runPromise(
+          bash.execute(
+            {
+              command: "echo hello > out.txt",
+              description: "Write hello to out.txt",
+            },
+            capture(requests),
+          ),
+        )
+        expect(requests.length).toBe(1)
+        expect(requests[0].permission).toBe("edit")
+        expect(requests[0].patterns.length).toBe(1)
+        expect(requests[0].patterns[0]).toContain("out.txt")
+      },
+    })
+  })
+
+  each("asks edit permission for fd-redirection write form", async () => {
+    await using tmp = await tmpdir()
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const bash = await initBash()
+        const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+        await runPromise(
+          bash.execute(
+            {
+              command: "echo hello 2>err.log",
+              description: "Write stderr to err.log",
+            },
+            capture(requests),
+          ),
+        )
+        expect(requests.length).toBe(1)
+        expect(requests[0].permission).toBe("edit")
+        expect(requests[0].patterns[0]).toContain("err.log")
+      },
+    })
+  })
+
+  each("redirect-free commands keep the plain bash ask", async () => {
+    await using tmp = await tmpdir()
+    await Instance.provide({
+      directory: tmp.path,
+      fn: async () => {
+        const bash = await initBash()
+        const requests: Array<Omit<Permission.Request, "id" | "sessionID" | "tool">> = []
+        await runPromise(
+          bash.execute(
+            {
+              command: "echo hello",
+              description: "Echo hello",
+            },
+            capture(requests),
+          ),
+        )
+        expect(requests.length).toBe(1)
+        expect(requests[0].permission).toBe("bash")
+      },
+    })
+  })
+
   each("asks for bash permission with correct pattern", async () => {
     await using tmp = await tmpdir()
     await Instance.provide({
@@ -955,7 +1050,10 @@ describe("tool.bash permissions", () => {
     })
   })
 
-  each("matches redirects in permission pattern", async () => {
+  // 批6 L2 (contract reversal): write-form bash now goes through the EDIT
+  // permission with the redirect target as pattern (same ruleset as write
+  // tools) — it no longer surfaces a bash-permission ask.
+  each("write-form redirect asks edit permission with the target as pattern", async () => {
     await using tmp = await tmpdir()
     await Instance.provide({
       directory: tmp.path,
@@ -972,9 +1070,10 @@ describe("tool.bash permissions", () => {
             ),
           ),
         ).rejects.toThrow(err.message)
-        const bashReq = requests.find((r) => r.permission === "bash")
-        expect(bashReq).toBeDefined()
-        expect(bashReq!.patterns).toContain("echo test > output.txt")
+        const editReq = requests.find((r) => r.permission === "edit")
+        expect(editReq).toBeDefined()
+        expect(editReq!.patterns).toContain("output.txt")
+        expect(requests.find((r) => r.permission === "bash")).toBeUndefined()
       },
     })
   })

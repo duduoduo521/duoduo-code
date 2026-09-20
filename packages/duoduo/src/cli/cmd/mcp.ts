@@ -126,7 +126,7 @@ export const McpListCommand = cmd({
 
         if (servers.length === 0) {
           prompts.log.warn("No MCP servers configured")
-          prompts.outro("Add servers with: duoduo mcp add")
+          prompts.outro("Add servers with: duoduocode mcp add")
           return
         }
 

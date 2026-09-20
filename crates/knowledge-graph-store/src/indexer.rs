@@ -7621,4 +7621,45 @@ macro_rules! say_hello {
         fs::remove_dir_all(&root).ok();
         fs::remove_dir_all(&sibling).ok();
     }
+
+    /// 6-1/6-3: KG_SOURCE_EXTENSIONS parity — the TS watcher's incremental
+    /// index set (packages/duoduo/src/file/watcher.ts) must list EXACTLY the
+    /// same extensions as SUPPORTED_EXTENSIONS, item for item. Any drift means
+    /// incremental edits leave the graph stale until the next full re-index.
+    #[test]
+    fn kg_source_extensions_match_ts_watcher_set() {
+        let ts = include_str!(
+            "../../../packages/duoduo/src/file/watcher.ts"
+        );
+        let start = ts
+            .find("KG_SOURCE_EXTENSIONS = new Set([")
+            .expect("watcher.ts must declare KG_SOURCE_EXTENSIONS");
+        let open = ts[start..].find('[').unwrap() + start;
+        let close = ts[open..].find("])").expect("set literal must close") + open;
+        let body = &ts[open..close];
+        let ts_exts: Vec<&str> = body
+            .split('"')
+            .enumerate()
+            .filter(|(i, _)| i % 2 == 1)
+            .map(|(_, s)| s)
+            .collect();
+        assert_eq!(
+            ts_exts.len(),
+            SUPPORTED_EXTENSIONS.len(),
+            "extension COUNT drift between watcher.ts and indexer.rs"
+        );
+        for ext in SUPPORTED_EXTENSIONS {
+            assert!(
+                ts_exts.contains(ext),
+                "watcher.ts is missing {ext:?} — incremental KG updates would skip it"
+            );
+        }
+        for ext in &ts_exts {
+            assert!(
+                SUPPORTED_EXTENSIONS.contains(ext),
+                "watcher.ts lists {ext:?} which the Rust indexer does not support"
+            );
+        }
+    }
+
 }

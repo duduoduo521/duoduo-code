@@ -499,7 +499,7 @@ export const GithubRunCommand = cmd({
           await addReaction(commentType)
         }
 
-        // Setup duoduo session
+        // Setup duoduocode session
         const repoData = await fetchRepo()
         session = await AppRuntime.runPromise(
           Session.Service.use((svc) =>
@@ -515,7 +515,7 @@ export const GithubRunCommand = cmd({
           ),
         )
         await subscribeSessionEvents()
-        console.log("duoduo session", session.id)
+        console.log("duoduocode session", session.id)
 
         // Handle event types:
         // REPO_EVENTS (schedule, workflow_dispatch): no issue/PR context, output to logs/PR only

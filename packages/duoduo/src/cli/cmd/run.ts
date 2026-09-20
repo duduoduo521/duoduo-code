@@ -259,7 +259,7 @@ export const RunCommand = cmd({
       })
       .option("attach", {
         type: "string",
-        describe: "attach to a running duoduo server (e.g., http://localhost:4096)",
+        describe: "attach to a running duoduocode server (e.g., http://localhost:4096)",
       })
       .option("password", {
         alias: ["p"],

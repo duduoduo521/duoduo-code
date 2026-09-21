@@ -1,6 +1,7 @@
 import { Component, Show, createMemo, createSignal, onMount } from "solid-js"
 import { useParams } from "@solidjs/router"
 import { Button } from "@duoduo-ai/ui/button"
+import { Switch } from "@duoduo-ai/ui/switch"
 import { TextField } from "@duoduo-ai/ui/text-field"
 import { showToast } from "@duoduo-ai/ui/toast"
 import { useLanguage } from "@/context/language"
@@ -48,6 +49,12 @@ export const SettingsSnapshot: Component = () => {
   // until stats load, same prefill policy as retention.
   const [maxFileSizeMb, setMaxFileSizeMb] = createSignal("")
   const [maxTotalSizeGb, setMaxTotalSizeGb] = createSignal("")
+  // Context compaction (config.json compaction.auto / compaction.prune).
+  // Undefined until loaded so the switches never render a wrong default that
+  // an immediate toggle would persist.
+  const [compactionAuto, setCompactionAuto] = createSignal<boolean>()
+  const [compactionPrune, setCompactionPrune] = createSignal<boolean>()
+  const [compactionSaving, setCompactionSaving] = createSignal(false)
 
   // Backend `POST /snapshot/cleanup` validates 1..=3650; mirror it client-side
   // with an explicit toast instead of silently dropping invalid input.
@@ -144,7 +151,50 @@ export const SettingsSnapshot: Component = () => {
     }
   }
 
-  onMount(fetchStats)
+  const fetchCompaction = async () => {
+    const url = endpoint("/config")
+    if (!url) return
+    try {
+      const response = await fetch(url, { headers: authHeaders() })
+      if (!response.ok) return
+      const data = (await response.json()) as {
+        compaction?: { auto?: boolean; prune?: boolean }
+      }
+      // Field defaults live backend-side (auto/prune default true) — only
+      // prefill what the config actually carries.
+      if (typeof data.compaction?.auto === "boolean") setCompactionAuto(data.compaction.auto)
+      if (typeof data.compaction?.prune === "boolean") setCompactionPrune(data.compaction.prune)
+    } catch {
+      // leave unset — switches render disabled until a save succeeds
+    }
+  }
+
+  const saveCompaction = async (next: { auto?: boolean; prune?: boolean }) => {
+    const url = endpoint("/config")
+    if (!url) return
+    setCompactionSaving(true)
+    try {
+      const response = await fetch(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        // Deep-merged server-side (Config.update mergeDeep) — tail_turns and
+        // other compaction fields survive.
+        body: JSON.stringify({ compaction: next }),
+      })
+      if (!response.ok) throw new Error(await response.text())
+      showToast({ variant: "success", title: language.t("settings.snapshot.compactionSaved") })
+    } catch (e: any) {
+      showToast({ variant: "error", title: language.t("common.requestFailed"), description: e?.message })
+      await fetchCompaction()
+    } finally {
+      setCompactionSaving(false)
+    }
+  }
+
+  onMount(() => {
+    void fetchStats()
+    void fetchCompaction()
+  })
 
   const handleCleanup = async () => {
     const url = endpoint("/snapshot/cleanup")
@@ -306,6 +356,33 @@ export const SettingsSnapshot: Component = () => {
               {cleanupLoading() ? language.t("common.loading.ellipsis") : language.t("settings.snapshot.cleanup")}
             </Button>
           </div>
+        </div>
+      </SettingsList>
+
+      {/* Context compaction (config.json compaction.auto / compaction.prune) */}
+      <SettingsList>
+        <div class="flex flex-col gap-4 py-3">
+          <div class="text-13-medium text-text-strong">{language.t("settings.snapshot.compaction")}</div>
+          <Switch
+            checked={compactionAuto() ?? true}
+            disabled={compactionSaving() || compactionAuto() === undefined}
+            onChange={(v) => {
+              setCompactionAuto(v)
+              void saveCompaction({ auto: v })
+            }}
+          >
+            {language.t("settings.snapshot.compactionAuto")}
+          </Switch>
+          <Switch
+            checked={compactionPrune() ?? true}
+            disabled={compactionSaving() || compactionPrune() === undefined}
+            onChange={(v) => {
+              setCompactionPrune(v)
+              void saveCompaction({ prune: v })
+            }}
+          >
+            {language.t("settings.snapshot.compactionPrune")}
+          </Switch>
         </div>
       </SettingsList>
     </SettingsPage>

@@ -1000,6 +1000,10 @@ export const dict = {
     "Snapshots older than this many days are pruned during the hourly cleanup. A larger value keeps more history for review (e.g. to look back at last week's changes).",
   "settings.snapshot.retentionSave": "Save",
   "settings.snapshot.retentionSaved": "Snapshot retention saved",
+  "settings.snapshot.compaction": "Context compaction",
+  "settings.snapshot.compactionAuto": "Auto compaction",
+  "settings.snapshot.compactionPrune": "Prune old tool outputs",
+  "settings.snapshot.compactionSaved": "Compaction settings saved",
   "settings.snapshot.maxFileSize": "Per-file Snapshot Limit (MB)",
   "settings.snapshot.maxFileSizeDesc":
     "Untracked files larger than this are excluded from snapshots and rollback (they are never deleted by a rollback); changes only apply to new files.",

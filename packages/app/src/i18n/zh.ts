@@ -1070,6 +1070,13 @@ export const dict = {
   "settings.concurrency.toolConcurrency.title": "单轮工具并发数",
   "settings.concurrency.toolConcurrency.description": "同一轮 Agent 循环内多个工具调用的最大并发数（1–16，默认 4）",
 
+  "settings.concurrency.multiAgent.title": "多智能体模式",
+  "settings.concurrency.multiAgent.description": "任务的分解与协同方式：自适应分解、固定四路流水线，或单智能体",
+  "settings.concurrency.multiAgent.adaptive": "自适应",
+  "settings.concurrency.multiAgent.fixed4": "固定四路",
+  "settings.concurrency.multiAgent.off": "关闭",
+  "settings.concurrency.multiAgent.saved": "多智能体模式已保存",
+
   "settings.permissions.tool.read.title": "读取",
   "settings.permissions.tool.read.description": "读取文件（匹配文件路径）",
   "settings.permissions.tool.edit.title": "编辑",

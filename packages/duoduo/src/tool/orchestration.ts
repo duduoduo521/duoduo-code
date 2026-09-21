@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import * as path from "path"
 import type * as Tool from "./tool"
 import { Instance } from "@/project/instance"
-import { Flag } from "@/flag/flag"
+import { Config } from "@/config"
 import { createSmartLayerClients } from "@/smart-layer"
 import { CASCADE_BLOCK_PREFIX } from "./cascade-blackboard"
 import { getPromptID } from "@/session/prompt-id-registry"
@@ -23,8 +23,10 @@ type ValidationResult = {
   checkedAt?: number
 }
 
-export function orchestrationMode() {
-  const value = String(Flag.DUODUO_MULTI_AGENT_MODE ?? "adaptive").toLowerCase()
+export function orchestrationMode(cfg: Config.Info | undefined) {
+  // config.json `multi_agent_mode` is the user-facing surface (settings page);
+  // the env var is folded into the config value at load time (config.ts).
+  const value = String(cfg?.multi_agent_mode ?? "adaptive").toLowerCase()
   return value === "off" || value === "fixed4" ? value : "adaptive"
 }
 
@@ -73,7 +75,13 @@ export function ensureWriteAllowedByOrchestration(ctx: Tool.Context, filePath: s
     const promptID = getPromptID(ctx.sessionID)
     if (!promptID) return
 
-    const currentMode = orchestrationMode()
+    // serviceOption keeps the Effect requirements unchanged for every tool
+    // caller; when the config service is absent (bare unit-test context) the
+    // default mode applies.
+    const cfgOption = yield* Effect.serviceOption(Config.Service)
+    const currentMode = orchestrationMode(
+      cfgOption && cfgOption._tag === "Some" ? yield* cfgOption.value.get() : undefined,
+    )
     if (currentMode === "off") return
 
     const clients = createSmartLayerClients()

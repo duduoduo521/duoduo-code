@@ -1,15 +1,90 @@
-import { Component, Show, onCleanup, onMount } from "solid-js"
+import { Component, Show, createSignal, onCleanup, onMount } from "solid-js"
 import { createStore } from "solid-js/store"
+import { useParams } from "@solidjs/router"
 import { TextField } from "@duoduo-ai/ui/text-field"
+import { Select } from "@duoduo-ai/ui/select"
+import { showToast } from "@duoduo-ai/ui/toast"
 import { useLanguage } from "@/context/language"
 import { useSmartLayer } from "@/addons/smart-layer/context"
-import { showToast } from "@duoduo-ai/ui/toast"
+import { useGlobalSDK } from "@/context/global-sdk"
+import { useServer } from "@/context/server"
+import { decode64 } from "@/utils/base64"
 import { SettingsList } from "./settings-list"
 import { SettingsPage } from "./settings-page"
+
+type MultiAgentMode = "adaptive" | "fixed4" | "off"
+const MULTI_AGENT_MODES: MultiAgentMode[] = ["adaptive", "fixed4", "off"]
 
 export const SettingsConcurrency: Component = () => {
   const language = useLanguage()
   const sl = useSmartLayer()
+  const globalSDK = useGlobalSDK()
+  const server = useServer()
+  const params = useParams()
+
+  // multi_agent_mode lives in the per-project config.json — every request
+  // must carry the directory the instance middleware resolves config with.
+  const directory = () => (params.dir ? decode64(params.dir) : undefined)
+
+  const configEndpoint = (path: string) => {
+    const dir = directory()
+    if (!dir) return
+    return `${globalSDK.url}${path}?directory=${encodeURIComponent(dir)}`
+  }
+
+  const authHeaders = (): Record<string, string> => {
+    const http = server.current?.http
+    if (!http?.password) return {}
+    return {
+      Authorization: `Basic ${btoa(`${http.username ?? "duoduocode"}:${http.password}`)}`,
+    }
+  }
+
+  const [multiAgentMode, setMultiAgentMode] = createSignal<MultiAgentMode | undefined>(undefined)
+  const [modeLoaded, setModeLoaded] = createSignal(false)
+
+  const modeLabel = (mode: MultiAgentMode) => language.t(`settings.concurrency.multiAgent.${mode}`)
+
+  onMount(async () => {
+    // Prefill from config.json. The GET /config route is shadowed only when
+    // the experimental HTTP API is enabled (not the default) — on failure we
+    // leave the value unset so the Select shows a placeholder instead of a
+    // wrong default that a later save would persist.
+    const url = configEndpoint("/config")
+    if (!url) {
+      setModeLoaded(true)
+      return
+    }
+    try {
+      const response = await fetch(url, { headers: authHeaders() })
+      if (response.ok) {
+        const data = (await response.json()) as { multi_agent_mode?: MultiAgentMode }
+        if (data.multi_agent_mode) setMultiAgentMode(data.multi_agent_mode)
+      }
+    } catch {
+      // keep unset — placeholder shows
+    }
+    setModeLoaded(true)
+  })
+
+  const saveMultiAgentMode = async (mode: MultiAgentMode) => {
+    const url = configEndpoint("/config")
+    if (!url) return
+    const previous = multiAgentMode()
+    setMultiAgentMode(mode)
+    try {
+      const response = await fetch(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ multi_agent_mode: mode }),
+      })
+      if (!response.ok) throw new Error(await response.text())
+      showToast({ variant: "success", title: language.t("settings.concurrency.multiAgent.saved") })
+    } catch (e: any) {
+      setMultiAgentMode(previous)
+      showToast({ variant: "error", title: language.t("common.requestFailed"), description: e?.message })
+    }
+  }
 
   const [config, setConfig] = createStore({
     maxConcurrentAgents: 5,
@@ -113,6 +188,30 @@ export const SettingsConcurrency: Component = () => {
 
       <SettingsList>
         <div class="flex flex-col gap-4 py-3">
+          {/* Multi-agent orchestration mode (config.json multi_agent_mode) */}
+          <div class="flex flex-wrap items-center gap-4 sm:flex-nowrap">
+            <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span class="text-14-medium text-text-strong">
+                {language.t("settings.concurrency.multiAgent.title")}
+              </span>
+              <span class="text-12-regular text-text-weak">
+                {language.t("settings.concurrency.multiAgent.description")}
+              </span>
+            </div>
+            <div class="flex w-full justify-end sm:w-auto sm:shrink-0">
+              <Select
+                options={MULTI_AGENT_MODES}
+                current={multiAgentMode()}
+                value={(m) => m}
+                label={modeLabel}
+                disabled={!modeLoaded() || !directory()}
+                onSelect={(m) => {
+                  if (m) void saveMultiAgentMode(m)
+                }}
+              />
+            </div>
+          </div>
+
           {/* Max Concurrent Agents */}
           <div class="flex flex-wrap items-center gap-4 sm:flex-nowrap">
             <div class="flex min-w-0 flex-1 flex-col gap-0.5">

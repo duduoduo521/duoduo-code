@@ -282,6 +282,10 @@ export const Info = Schema.Struct({
       }),
     }),
   ),
+  multi_agent_mode: Schema.optional(Schema.Literals(["adaptive", "fixed4", "off"])).annotate({
+    description:
+      "Multi-agent orchestration mode: adaptive (default — decompose when warranted), fixed4 (always four parallel sub-agents for code-write prompts), off (single agent, no orchestration gate).",
+  }),
   experimental: Schema.optional(
     Schema.Struct({
       disable_paste_summary: Schema.optional(Schema.Boolean),
@@ -728,6 +732,13 @@ export const layer = Layer.effect(
         }
         if (Flag.DUODUO_DISABLE_PRUNE) {
           result.compaction = { ...result.compaction, prune: false }
+        }
+        // Multi-agent orchestration mode: config.json is the user-facing
+        // surface (settings page); the env var remains a dev escape hatch
+        // that overrides it — same pattern as the compaction flags above.
+        const envMultiAgentMode = Flag.DUODUO_MULTI_AGENT_MODE?.toLowerCase()
+        if (envMultiAgentMode === "off" || envMultiAgentMode === "fixed4" || envMultiAgentMode === "adaptive") {
+          result.multi_agent_mode = envMultiAgentMode
         }
 
         return {

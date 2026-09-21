@@ -112,8 +112,10 @@ function promptLooksLikeCodeWrite(text: string): boolean {
   ].some((keyword) => lower.includes(keyword))
 }
 
-function multiAgentMode() {
-  const value = String(Flag.DUODUO_MULTI_AGENT_MODE ?? "adaptive").toLowerCase()
+function multiAgentMode(cfg: Config.Info | undefined) {
+  // config.json `multi_agent_mode` is the user-facing surface (settings page);
+  // the env var is folded into the config value at load time (config.ts).
+  const value = String(cfg?.multi_agent_mode ?? "adaptive").toLowerCase()
   return value === "off" || value === "fixed4" ? value : "adaptive"
 }
 
@@ -1138,7 +1140,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         Effect.map((x) => x.flat().map(assign)),
       )
 
-      const mode = multiAgentMode()
+      const mode = multiAgentMode(yield* cfgService.get())
       const promptText = input.parts
         .filter((part): part is MessageV2.TextPartInput => part.type === "text")
         .map((part) => part.text)
@@ -1213,7 +1215,7 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       const clients = createSmartLayerClients()
       if (!clients?.blackboard) return
 
-      const currentMode = multiAgentMode()
+      const currentMode = multiAgentMode(yield* cfgService.get())
       if (currentMode !== "off" && promptLooksLikeCodeWrite(query)) {
         yield* Effect.tryPromise({
           try: () =>

@@ -1037,6 +1037,13 @@ export const dict = {
 
   "settings.concurrency.title": "Concurrency",
   "settings.concurrency.description": "Configure agent parallelism and LLM retry behavior",
+  "settings.concurrency.multiAgent.title": "Multi-agent mode",
+  "settings.concurrency.multiAgent.description":
+    "How tasks are decomposed and coordinated: adaptive decomposition, a fixed four-agent pipeline, or single-agent",
+  "settings.concurrency.multiAgent.adaptive": "Adaptive",
+  "settings.concurrency.multiAgent.fixed4": "Fixed four",
+  "settings.concurrency.multiAgent.off": "Off",
+  "settings.concurrency.multiAgent.saved": "Multi-agent mode saved",
   "settings.graph.title": "Knowledge Graph",
   "settings.gear.title": "IntelGear",
   "settings.gear.description": "Manage IntelGears — the unified instructions / tools / strategies / plugins capability package that supersedes the legacy Skill, MCP and Tool concepts. They are unified under the name IntelGear with no distinction.",

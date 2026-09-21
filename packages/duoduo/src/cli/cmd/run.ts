@@ -399,7 +399,13 @@ export const RunCommand = cmd({
         }
       }
 
+      // Part ids whose terminal form was already emitted (live loop or the
+      // deterministic tail below) — prevents double output in both formats.
+      const emittedParts = new Set<string>()
+
       function emit(type: string, data: Record<string, unknown>) {
+        const part = (data as { part?: { id?: string } }).part
+        if (part?.id) emittedParts.add(part.id)
         if (args.format === "json") {
           writeStdout(JSON.stringify({ type, timestamp: Date.now(), sessionID, ...data }) + EOL)
           return true
@@ -409,21 +415,45 @@ export const RunCommand = cmd({
 
       const events = await sdk.event.subscribe()
       let error: string | undefined
+      // Terminal-failure dedup shared by the live loop and the deterministic
+      // tail (both report the same assistant `error` field once at most).
+      const seenErrors = new Set<string>()
 
       async function loop() {
         const toggles = new Map<string, boolean>()
 
         for await (const event of events.stream) {
-          if (
-            event.type === "message.updated" &&
-            event.properties.info.role === "assistant" &&
-            args.format !== "json" &&
-            toggles.get("start") !== true
-          ) {
-            UI.empty()
-            UI.println(`> ${event.properties.info.agent} · ${event.properties.info.modelID}`)
-            UI.empty()
-            toggles.set("start", true)
+          if (event.type === "message.updated" && event.properties.info.role === "assistant") {
+            // Surface a delegated (Rust runLoop) failure: that path carries the
+            // error on the assistant message's `error` field and NEVER emits a
+            // `session.error` event (unlike the TS-direct path), so `--format
+            // json` consumers would otherwise see exit 0 with no error event.
+            // Dedup by message id — the message can be updated multiple times.
+            const info = event.properties.info as {
+              id?: string
+              sessionID?: string
+              error?: { name?: string; data?: { message?: string } }
+            }
+            if (info.sessionID === sessionID && info.error && info.id) {
+              const message = info.error.data?.message ?? info.error.name ?? "unknown error"
+              if (!toggles.get(`err:${info.id}`) && !seenErrors.has(message)) {
+                toggles.set(`err:${info.id}`, true)
+                seenErrors.add(message)
+                error = error ? error + EOL + message : message
+                if (emit("error", { error: info.error })) continue
+                UI.error(message)
+              }
+            }
+
+            if (
+              args.format !== "json" &&
+              toggles.get("start") !== true
+            ) {
+              UI.empty()
+              UI.println(`> ${event.properties.info.agent} · ${event.properties.info.modelID}`)
+              UI.empty()
+              toggles.set("start", true)
+            }
           }
 
           if (event.type === "message.part.updated") {
@@ -432,6 +462,7 @@ export const RunCommand = cmd({
 
             if (part.type === "tool" && (part.state.status === "completed" || part.state.status === "error")) {
               if (emit("tool_use", { part })) continue
+              if (part.id) emittedParts.add(part.id)
               if (part.state.status === "completed") {
                 tool(part)
                 continue
@@ -464,6 +495,7 @@ export const RunCommand = cmd({
 
             if (part.type === "text" && part.time?.end) {
               if (emit("text", { part })) continue
+              if (part.id) emittedParts.add(part.id)
               const text = part.text.trim()
               if (!text) continue
               if (!process.stdout.isTTY) {
@@ -477,6 +509,7 @@ export const RunCommand = cmd({
 
             if (part.type === "reasoning" && part.time?.end && args.thinking) {
               if (emit("reasoning", { part })) continue
+              if (part.id) emittedParts.add(part.id)
               const text = part.text.trim()
               if (!text) continue
               const line = `Thinking: ${text}`
@@ -497,6 +530,11 @@ export const RunCommand = cmd({
             if ("data" in props.error && props.error.data && "message" in props.error.data) {
               err = String(props.error.data.message)
             }
+            // The TS-direct path publishes BOTH a `session.error` event and an
+            // assistant message carrying the same `error` field (handled above);
+            // report each failure once.
+            if (seenErrors.has(err)) continue
+            seenErrors.add(err)
             error = error ? error + EOL + err : err
             if (emit("error", { error: props.error })) continue
             UI.error(err)
@@ -657,6 +695,67 @@ export const RunCommand = cmd({
           process.exitCode = 2
         })
       ])
+
+      // ── Deterministic tail ──
+      // The delegated (Rust runLoop) path persists the assistant's terminal
+      // parts (text/tool/step, carrying time.end) to the DB at the end of each
+      // round but emits no completion event for them, and the SSE republish
+      // races with process teardown — so with `--format json` the pipe could
+      // end up empty and with the default format the answer could be missing.
+      // The session state is the source of truth: pull it and emit whatever
+      // the live loop missed (dedup by part id makes this idempotent).
+      try {
+        const res = await sdk.session.messages({ sessionID })
+        for (const m of (res.data ?? []) as Array<{
+          info: { role: string; error?: { name?: string; data?: { message?: string } } }
+          parts: Array<Record<string, any> & { id?: string; type?: string }>
+        }>) {
+          if (m.info.role !== "assistant") continue
+          // Terminal failures travel on the assistant message's `error` field
+          // (the delegated runLoop path never emits `session.error`), and no
+          // message-level event reliably reaches the live loop — so the tail
+          // is the one guaranteed hop that surfaces them.
+          const infoError = m.info.error
+          if (infoError) {
+            const message = infoError.data?.message ?? infoError.name ?? "unknown error"
+            if (!seenErrors.has(message)) {
+              seenErrors.add(message)
+              error = error ? error + EOL + message : message
+              if (!emit("error", { error: infoError })) UI.error(message)
+            }
+          }
+          for (const part of m.parts) {
+            if (part.id && emittedParts.has(part.id)) continue
+            if (part.id) emittedParts.add(part.id)
+            if (part.type === "text" && part.time?.end) {
+              if (emit("text", { part })) continue
+              const text = String(part.text ?? "").trim()
+              if (!text) continue
+              if (!process.stdout.isTTY) {
+                writeStdout(text + EOL)
+                continue
+              }
+              UI.empty()
+              UI.println(text)
+              UI.empty()
+            } else if (part.type === "tool" && (part.state?.status === "completed" || part.state?.status === "error")) {
+              if (emit("tool_use", { part })) continue
+              if (part.state.status === "completed") {
+                tool(part as ToolPart)
+                continue
+              }
+              inline({
+                icon: "✗",
+                title: `${part.tool} failed`,
+              })
+              UI.error(part.state.error)
+            }
+          }
+        }
+      } catch {
+        // Session fetch failed (e.g. attach target went away) — the live loop
+        // output above is already the best effort; nothing else to do here.
+      }
 
       // Surface session errors to the caller via the process exit code so
       // automation (CI/pipes) can detect failures instead of seeing exit 0.

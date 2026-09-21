@@ -6,25 +6,64 @@ import { getRuntimeInfo } from "./helpers/sdk"
 /**
  * E2E scenario e: KG incremental indexing of the OPT-17 extension set.
  *
- * Drives the SAME endpoint the watcher's flushKGUpdatesFor uses
- * (POST /graph/update-file) — i.e. the incremental path, as opposed to a
- * full re-index — and asserts the entities land in the graph.
+ * Both tests drive the FULL watcher delivery chain, not just the endpoint:
+ *   file write → @parcel/watcher event → flushEvents → scheduleKGUpdate →
+ *   flushKGUpdatesFor → POST /graph/update-file → entity in the graph.
+ *
+ * The file watcher only exists once the project's Instance has been
+ * bootstrapped (InstanceBootstrap forks FileWatcher.init). Opening any
+ * instance-scoped route (e.g. GET /session?directory=…) with the project
+ * directory triggers that bootstrap. Empirically (isolated-process probe):
+ * a file written BEFORE such a request is never indexed (no observer), and
+ * a file written AFTER it is indexed and queryable — hence the explicit
+ * open step below; without it this spec silently tested nothing.
  *
  * Empirical entity shapes (probe-verified against the sidecar):
  *   - .css selector  → node `function:<selector>@<file>` (regex fallback)
- *   - .sql CREATE TABLE → currently yields NO entity (tree-sitter sequel AST
- *     extractor does not map table definitions) — pinned as the known
- *     behavior; flagged as a suspected gap for the indexer backlog.
- *
- * KNOWN GAP (separate investigation): the watcher → GlobalBus →
- * flushKGUpdatesFor chain does not fire in the e2e environment (a file write
- * followed by a 90s poll finds nothing, while the direct endpoint call
- * works). Every link was code-verified; the silent break needs in-process
- * instrumentation. This spec therefore pins the incremental ENDPOINT, not
- * the watcher delivery.
+ *   - .sql CREATE TABLE → extracted as a Function-shaped entity
+ *     (`function:<table>@<file>`) via the SQL_FN_RE regex extractor
+ *     (tree-sitter-sequel AST matchers have no sql cases, so extraction
+ *     falls back to the regex path).
  */
+
+/** Open the project in the backend so the watcher chain gets bootstrapped. */
+async function openProject(backendUrl: string, projectDir: string) {
+  const url = new URL("/session", backendUrl)
+  url.searchParams.set("directory", projectDir)
+  const res = await fetch(url, { headers: { "x-duoduo-directory": encodeURIComponent(projectDir) } })
+  if (!res.ok) throw new Error(`project open failed: ${res.status}`)
+  await res.text().catch(() => "")
+  // InstanceBootstrap returns before the detached watcher fiber finishes
+  // subscribing — give it a moment before writing probe files.
+  await new Promise((r) => setTimeout(r, 3_000))
+}
+
+/**
+ * Wait until the sidecar's initial full index for the project has settled.
+ * While it reports `indexing`, the watcher's flush defers every update
+ * (2s retry loop) — writing probe files before this settles just pushes
+ * their incremental updates past the test's poll window.
+ */
+async function waitIndexSettled(sidecar: string, projectDir: string, timeoutMs = 90_000) {
+  const t0 = Date.now()
+  while (Date.now() - t0 < timeoutMs) {
+    try {
+      const res = await fetch(
+        `${sidecar}/graph/index-status?project_path=${encodeURIComponent(projectDir)}`,
+      )
+      if (res.ok) {
+        const status = (await res.json()) as { status?: string }
+        if (status?.status !== "indexing") return
+      }
+    } catch {
+      // transient — keep waiting
+    }
+    await new Promise((r) => setTimeout(r, 2_000))
+  }
+}
+
 test.describe("KG incremental indexing (css/sql)", () => {
-  test.setTimeout(120_000)
+  test.setTimeout(240_000)
 
   const probe = async (sidecar: string, projectDir: string, query: string) => {
     const res = await fetch(`${sidecar}/graph/query`, {
@@ -41,22 +80,7 @@ test.describe("KG incremental indexing (css/sql)", () => {
     return await res.text()
   }
 
-  const updateFile = async (
-    sidecar: string,
-    projectDir: string,
-    path: string,
-    content: string,
-    language: string,
-  ) => {
-    const res = await fetch(`${sidecar}/graph/update-file`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ path, content, language, projectPath: projectDir }),
-    })
-    return res
-  }
-
-  test("an incrementally indexed css selector lands in the graph", async () => {
+  test("a written css file flows through the watcher into the graph", async () => {
     const info = getRuntimeInfo()
     test.skip(!info.smartLayerAvailable, "Requires the Rust smart-layer sidecar")
     const sidecar = info.smartLayerUrl!
@@ -64,17 +88,31 @@ test.describe("KG incremental indexing (css/sql)", () => {
     const health = await fetch(`${sidecar}/health`).catch(() => null)
     test.skip(!health || !health.ok, "sidecar not reachable")
 
+    // Bootstrap the project instance — without this the file watcher does
+    // not exist and the write below would have no observer.
+    await openProject(info.backendUrl, info.projectDir)
+    await waitIndexSettled(sidecar, info.projectDir)
+
     const rel = "e2e-kg-incremental.css"
     const abs = join(info.projectDir, rel)
     rmSync(abs, { force: true })
     writeFileSync(abs, ".kg-e2e-marker-btn { color: red; }\n")
     try {
-      const res = await updateFile(sidecar, info.projectDir, rel, ".kg-e2e-marker-btn { color: red; }\n", "css")
-      expect(res.ok).toBeTruthy()
-
+      // The polled value doubles as diagnostics: until the entity lands we
+      // surface the live index-status so a timeout shows WHERE it stalled.
+      let lastStatus = ""
       await expect
-        .poll(async () => probe(sidecar, info.projectDir, "kg-e2e-marker-btn"), {
-          timeout: 30_000,
+        .poll(async () => {
+          const hit = await probe(sidecar, info.projectDir, "kg-e2e-marker-btn")
+          if (hit) return "kg-e2e-marker-btn"
+          try {
+            lastStatus = await (
+              await fetch(`${sidecar}/graph/index-status?project_path=${encodeURIComponent(info.projectDir)}`)
+            ).text()
+          } catch {}
+          return `pending; index-status=${lastStatus}`
+        }, {
+          timeout: 60_000,
           intervals: [1_000, 2_000],
         })
         .toContain("kg-e2e-marker-btn")
@@ -83,29 +121,26 @@ test.describe("KG incremental indexing (css/sql)", () => {
     }
   })
 
-  test("an incrementally indexed sql CREATE TABLE lands in the graph", async () => {
+  test("a written sql CREATE TABLE flows through the watcher into the graph", async () => {
     const info = getRuntimeInfo()
     test.skip(!info.smartLayerAvailable, "Requires the Rust smart-layer sidecar")
     const sidecar = info.smartLayerUrl!
+
+    const health = await fetch(`${sidecar}/health`).catch(() => null)
+    test.skip(!health || !health.ok, "sidecar not reachable")
+
+    await openProject(info.backendUrl, info.projectDir)
+    await waitIndexSettled(sidecar, info.projectDir)
 
     const rel = "e2e-kg-incremental.sql"
     const abs = join(info.projectDir, rel)
     rmSync(abs, { force: true })
     writeFileSync(abs, "CREATE TABLE kg_e2e_marker_users (id INT);\n")
     try {
-      const res = await updateFile(
-        sidecar,
-        info.projectDir,
-        rel,
-        "CREATE TABLE kg_e2e_marker_users (id INT);",
-        "sql",
-      )
-      expect(res.ok).toBeTruthy()
-
-      // The regex fallback now maps CREATE TABLE / VIEW to graph entities.
+      // The regex fallback maps CREATE TABLE / VIEW to graph entities.
       await expect
         .poll(async () => probe(sidecar, info.projectDir, "kg_e2e_marker_users"), {
-          timeout: 30_000,
+          timeout: 60_000,
           intervals: [1_000, 2_000],
         })
         .toContain("kg_e2e_marker_users")

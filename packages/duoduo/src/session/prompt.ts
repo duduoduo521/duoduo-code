@@ -1889,6 +1889,15 @@ NOTE: At any point in time through this workflow you should feel free to ask the
       // PartUpdated SSE events. This set prevents re-publishing the same part.
       const toolPartsPublished = new Set<string>()
 
+      // Track which terminal (text/reasoning/step) part IDs have been
+      // published. The Rust runLoop persists these parts WITH time.end
+      // directly to the DB at the end of each round but emits no completion
+      // event for them (only streaming deltas while in flight) — without this
+      // republish, consumers that key on `part.time?.end` (the CLI `run`
+      // command's --format json NDJSON pipe, and the non-TTY default format)
+      // never see the assistant's answer at all.
+      const terminalPartsPublished = new Set<string>()
+
       function ensurePlaceholder(sessionID: SessionID, messageID: string, partID: string, type: "text" | "reasoning") {
         const key = `${messageID}:${partID}`
         if (placeholderCreated.has(key)) return
@@ -2063,6 +2072,38 @@ NOTE: At any point in time through this workflow you should feel free to ask the
                   // Parse failure is non-fatal — runError stays null and the
                   // poll loop falls back to the last known assistant message.
                 }
+              }
+              // ── Republish terminal parts BEFORE the idle status ──
+              // Rust persists text/reasoning/step parts (carrying time.end) to
+              // the per-project DB at the end of each round but emits no
+              // completion event for them (only streaming deltas while in
+              // flight). Consumers keying on part.time?.end — the CLI `run`
+              // command's --format json NDJSON pipe, and the non-TTY default
+              // format — would never see the assistant's answer. The poll loop
+              // below also republishes, but it can race ahead of loop_done and
+              // return before these events reach consumers; this is the last
+              // ordered hop: parts first, idle last, on the same reliable
+              // bridge fiber that delivered the streaming deltas.
+              try {
+                for (const msg of MessageV2.stream(sessionID)) {
+                  if (msg.info.role !== "assistant") continue
+                  for (const part of msg.parts) {
+                    if (part.type === "tool") continue
+                    const key = `${msg.info.id}:${part.id}`
+                    if (terminalPartsPublished.has(key)) continue
+                    terminalPartsPublished.add(key)
+                    await Bus.publish(MessageV2.Event.PartUpdated as any, {
+                      sessionID,
+                      part: { ...part, sessionID },
+                      time: Date.now(),
+                    })
+                  }
+                }
+              } catch (e) {
+                log.warn("terminal part republish failed", {
+                  sessionID,
+                  error: e instanceof Error ? e.message : String(e),
+                })
               }
               // Eagerly publish session status idle via Bus so the frontend
               // receives it immediately via SSE. This complements the
@@ -2279,6 +2320,36 @@ NOTE: At any point in time through this workflow you should feel free to ask the
             }),
           )
         }
+        // ── Republish terminal parts written by the Rust runLoop ──
+        // Rust persists text/reasoning/step parts (all carrying time.end) to
+        // the per-project DB at the end of each round, but the SSE bridge only
+        // emits streaming placeholders + deltas and the loop below only
+        // republishes TOOL parts. Without this republish the "part is done"
+        // signal never reaches consumers: `duoduocode run`'s event loop keys
+        // on part.time?.end to emit text/step events, so the --format json
+        // NDJSON pipe (and the default UI format) printed NOTHING for
+        // delegated prompts. Publishing the DB state (the source of truth)
+        // also reconciles the streaming placeholder part by id, which is
+        // harmless for the frontend reducer (identical content, and the
+        // time.end guard stops further delta application).
+        // Runs BEFORE the sseDone early-return below so the final round's
+        // parts are not skipped when the loop completes.
+        const msgs = yield* MessageV2.filterCompactedEffect(sessionID)
+        for (const msg of msgs) {
+          if (msg.info.role !== "assistant") continue
+          for (const part of msg.parts) {
+            if (part.type === "tool") continue
+            const key = `${msg.info.id}:${part.id}`
+            if (terminalPartsPublished.has(key)) continue
+            terminalPartsPublished.add(key)
+            void Bus.publish(MessageV2.Event.PartUpdated as any, {
+              sessionID,
+              part: { ...part, sessionID },
+              time: Date.now(),
+            })
+          }
+        }
+
         // If SSE signaled completion (loop_done/loop_error), return immediately
         // without waiting for the next poll — but only if a NEW assistant message
         // exists (not the previous round's stale one). Rust emits loop_done only
@@ -2290,7 +2361,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         // Requiring "stop" here made the poll spin until its 2400-attempt budget
         // (~17 min) before returning — the "auto stop / hangs forever" symptom.
         if (sseDone) {
-          const msgs = yield* MessageV2.filterCompactedEffect(sessionID)
           const lastAssistantMsg = msgs.findLast((m) => m.info.role === "assistant")
           // Run ended with an error (loop_error). This branch MUST run BEFORE
           // the new-assistant early-return below: when a multi-round run dies
@@ -2332,8 +2402,6 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           yield* elog.debug("poll: sseDone fallback exit (no new assistant, no error)", { sessionID, attempt })
           return yield* lastAssistant(sessionID)
         }
-
-        const msgs = yield* MessageV2.filterCompactedEffect(sessionID)
 
         // Fingerprint the DB layout for the no-progress watchdog. Any new
         // message or part row (Rust writes tool parts continuously while it

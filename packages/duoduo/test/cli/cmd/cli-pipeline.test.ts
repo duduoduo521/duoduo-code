@@ -23,6 +23,10 @@ const SSE_BODY = [
   "",
 ].join("\n")
 
+// Prompts containing this marker make the mock LLM reject the request with a
+// 401 (non-retryable auth error) so the run loop fails fast.
+const FAIL_MARKER = "fail please"
+
 let server: ReturnType<typeof Bun.serve>
 let llmUrl: string
 let homeDir: string
@@ -56,12 +60,20 @@ beforeAll(async () => {
   // Minimal OpenAI-compatible mock: one content chunk, finish stop, [DONE].
   server = Bun.serve({
     port: 0,
-    fetch(req) {
+    async fetch(req) {
       const url = new URL(req.url)
+      console.log(`[mock] ${req.method} ${url.pathname}${url.search}`)
       if (url.pathname === "/v1/models") {
         return Response.json({ object: "list", data: [] })
       }
       if (url.pathname.endsWith("/chat/completions")) {
+        // The failing-LLM test variant: a 401 auth error is non-retryable, so
+        // the run loop fails fast and the terminal error must still surface
+        // through the pipe (see the `fail please` test below).
+        const body = await req.text()
+        if (body.includes(FAIL_MARKER)) {
+          return Response.json({ error: { message: "mock auth failure", type: "invalid_request_error" } }, { status: 401 })
+        }
         return new Response(SSE_BODY, {
           headers: { "content-type": "text/event-stream" },
         })
@@ -116,7 +128,13 @@ beforeAll(async () => {
   // `run` delegates the prompt to the run loop inside this process.
   // test/cli/cmd → duoduo → packages → repo root (4 levels up)
   const repoRoot = join(import.meta.dir, "../../../..")
-  const sidecarBin = join(repoRoot, "..", "target", "debug", "duo-smart-layer")
+  const sidecarBin = join(
+    repoRoot,
+    "..",
+    "target",
+    "debug",
+    process.platform === "win32" ? "duo-smart-layer.exe" : "duo-smart-layer",
+  )
   const binExists = await Bun.file(sidecarBin).exists()
   if (!binExists) {
     console.warn(`[cli-pipeline] sidecar binary not found at ${sidecarBin} — run tests will fail`)
@@ -130,6 +148,9 @@ beforeAll(async () => {
         XDG_STATE_HOME: stateDir,
         HOME: homeDir,
         DUODUO_LOG_DIR: join(homeDir, "sidecar-logs"),
+        // The run use-case exercises the prompt pipe, not the knowledge
+        // graph — indexing the repo would slow every round by minutes.
+        DUODUO_KG_ENABLED: "false",
         NO_COLOR: "1",
       },
       stdin: "ignore",
@@ -186,10 +207,15 @@ describe("CLI pipeline (--format json / acp)", () => {
   test(
     "run --format json emits a clean NDJSON pipe on stdout",
     async () => {
+      // Run the CLI from a scratch directory: the instance directory drives
+      // project-side work (KG indexing, snapshot tracking) that would
+      // otherwise target this repo and slow every runLoop round by minutes.
+      const workDir = join(homeDir, "work")
+      mkdirSync(workDir, { recursive: true })
       const child = Bun.spawn(
-        ["bun", "src/index.ts", "run", "--format", "json", "--model", "mock/test", "say hi"],
+        ["bun", join(import.meta.dir, "../../..", "src/index.ts"), "run", "--format", "json", "--model", "mock/test", "say hi"],
         {
-        cwd: import.meta.dir + "/../../..",
+        cwd: workDir,
         env: cliEnv(),
         stdin: "ignore",
         stdout: "pipe",
@@ -240,6 +266,72 @@ describe("CLI pipeline (--format json / acp)", () => {
       // The assistant answer must be part of the pipe.
       expect(stdout).toContain("hello from mock")
       // P2-15: stderr is message-only — it must not carry JSON events.
+      for (const line of stderr.split("\n").filter((l) => l.trim().startsWith("{"))) {
+        expect(() => JSON.parse(line)).toThrow()
+      }
+    },
+    120_000,
+  )
+
+  test(
+    "run --format json surfaces LLM failures as error events with exit code 1",
+    async () => {
+      const workDir = join(homeDir, "work-fail")
+      mkdirSync(workDir, { recursive: true })
+      const child = Bun.spawn(
+        ["bun", join(import.meta.dir, "../../..", "src/index.ts"), "run", "--format", "json", "--model", "mock/test", FAIL_MARKER],
+        {
+          cwd: workDir,
+          env: cliEnv(),
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      )
+      let stdout = ""
+      let stderr = ""
+      await Promise.all([
+        (async () => {
+          const t = new TextDecoder()
+          const r = child.stdout.getReader()
+          while (true) {
+            const { done, value } = await r.read()
+            if (done) break
+            stdout += t.decode(value)
+          }
+        })(),
+        (async () => {
+          const t = new TextDecoder()
+          const r = child.stderr.getReader()
+          while (true) {
+            const { done, value } = await r.read()
+            if (done) break
+            stderr += t.decode(value)
+          }
+        })(),
+      ])
+      const code = await child.exited
+      if (code !== 1) {
+        console.error("[diag] fail-case code:", code)
+        console.error("[diag] fail-case stderr:", stderr.slice(0, 2000))
+        console.error("[diag] fail-case stdout:", stdout.slice(0, 800))
+      }
+      // Automation (CI/pipes) must be able to detect the failure via the exit
+      // code — exit 0 on a failed run would make `run` useless for pipelines.
+      expect(code).toBe(1)
+
+      // The terminal failure must be visible in the pipe as an error event
+      // (the delegated runLoop path never emits session.error — the error
+      // travels on the assistant message's `error` field instead).
+      const lines = stdout.split("\n").filter((l) => l.trim().length > 0)
+      const events = lines.map((l) => JSON.parse(l))
+      expect(events.some((e) => e.type === "error")).toBe(true)
+      for (const line of lines) {
+        const parsed = JSON.parse(line)
+        expect(typeof parsed.type).toBe("string")
+        expect(typeof parsed.timestamp).toBe("number")
+      }
+      // P2-15: stderr stays message-only.
       for (const line of stderr.split("\n").filter((l) => l.trim().startsWith("{"))) {
         expect(() => JSON.parse(line)).toThrow()
       }

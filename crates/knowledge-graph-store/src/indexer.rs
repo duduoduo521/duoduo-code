@@ -6422,6 +6422,32 @@ mod tests {
         );
     }
 
+    /// OPT-17: `CREATE TABLE` in a .sql file must surface as a graph entity on
+    /// the incremental (`update_file`) path. `sql` HAS a tree-sitter grammar
+    /// (tree-sitter-sequel), so `extract_via_ast` runs first — but its node
+    /// matchers have no sql cases, producing an EMPTY extraction that must fall
+    /// back to the regex extractor (SQL_FN_RE). Guards against the fallback
+    /// being silently bypassed (which left every DDL file graph-empty).
+    #[test]
+    fn update_file_sql_create_table_falls_back_to_regex() {
+        let (graph, indexer) = make_indexer();
+        let pid = "proj-sql-fallback";
+        indexer
+            .update_file("probe.sql", "CREATE TABLE kg_probe_users (id INT);\n", pid)
+            .expect("sql update_file must succeed");
+        assert!(
+            graph.node_count_project(Some(pid)).unwrap() > 0,
+            "a CREATE TABLE must produce at least a file entity + table entity"
+        );
+        // The table entity itself (Function-shaped on the regex fallback path).
+        let nodes = graph.search_nodes("kg_probe_users", None, Some(pid), 10).unwrap();
+        assert!(
+            nodes.iter().any(|n| n.label == "kg_probe_users"),
+            "CREATE TABLE kg_probe_users must be extracted, got {:?}",
+            nodes.iter().map(|n| &n.label).collect::<Vec<_>>()
+        );
+    }
+
     /// Regression (P1-09 follow-up): a cancelled run must still release the
     /// lock it owns and publish a terminal status. Making the guard's release
     /// conditional on "is this still the current run" (instead of "do I still

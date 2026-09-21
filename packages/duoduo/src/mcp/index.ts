@@ -364,6 +364,13 @@ interface State {
   status: Record<string, Status>
   clients: Record<string, MCPClient>
   defs: Record<string, MCPToolDef[]>
+  /** Servers added at runtime (HTTP `POST /mcp/:name` → `add`/`storeClient`)
+   *  rather than discovered from config/gears. They are NOT in
+   *  `mergedMcpConfig(cfg)`, so the B6 config-membership filter would
+   *  otherwise hide their tools forever — a regression that made every
+   *  dynamically added server useless. The set dies with the instance,
+   *  matching the in-memory lifetime of such servers. */
+  runtime: Set<string>
 }
 
 export interface Interface {
@@ -693,6 +700,7 @@ export const layer = Layer.effect(
           status: {},
           clients: {},
           defs: {},
+          runtime: new Set<string>(),
         }
 
         yield* Effect.forEach(
@@ -769,6 +777,10 @@ export const layer = Layer.effect(
       s.status[name] = { status: "connected" }
       s.clients[name] = client
       s.defs[name] = listed
+      // Every storeClient caller is a runtime add (HTTP add endpoint,
+      // reconnect, finishAuth) — mark it so the tools() config-membership
+      // filter cannot hide it (B6 regression fix).
+      s.runtime.add(name)
       watch(s, name, client, bridge, timeout)
       return s.status[name]
     })
@@ -826,6 +838,7 @@ export const layer = Layer.effect(
       const s = yield* InstanceState.get(state)
       yield* closeClient(s, name)
       delete s.clients[name]
+      s.runtime.delete(name)
       s.status[name] = { status: "disabled" }
     })
 
@@ -842,8 +855,10 @@ export const layer = Layer.effect(
           s.status[clientName]?.status === "connected" &&
           // B6: a gear uninstalled (or a server removed from config) must stop
           // exposing its tools even while its connection lingers until the
-          // next reconnect cycle prunes it.
-          config[clientName] !== undefined,
+          // next reconnect cycle prunes it. Runtime-added servers (HTTP add
+          // endpoint) are exempt — they never come from config in the first
+          // place, and hiding them made every dynamic add useless.
+          (config[clientName] !== undefined || s.runtime.has(clientName)),
       )
 
       yield* Effect.forEach(

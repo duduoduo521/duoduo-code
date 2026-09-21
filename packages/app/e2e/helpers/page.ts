@@ -34,6 +34,17 @@ export async function gotoProject(page: Page) {
   await expect(page.locator('[data-component="sidebar-rail"]').first()).toBeVisible({
     timeout: process.env.CI ? 30_000 : 10_000,
   })
+  // The sidebar rail can be visible while the main project surface is still
+  // mounting — click handlers on rail buttons are not reliably wired at that
+  // point (observed: sidebar settings button silently no-ops when clicked
+  // immediately, while the Ctrl+, keybind path works). Waiting for the main
+  // surface's search button makes rail interactions deterministic.
+  await expect(
+    page.getByRole("button", { name: "Search files" }).first(),
+    "main project surface should render before interactions",
+  ).toBeVisible({
+    timeout: process.env.CI ? 30_000 : 15_000,
+  })
 }
 
 /**

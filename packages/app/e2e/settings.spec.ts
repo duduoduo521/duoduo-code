@@ -51,36 +51,46 @@ test.describe("Settings", () => {
     await openSettings(page)
 
     const dialog = page.locator('[data-component="dialog"]')
-    const switchEl = dialog
-      .locator("[data-action='settings-line-wrapping'] button, [data-action='settings-line-wrapping'] [role='switch']")
+    // Click the visible Kobalte control (the hidden checkbox input sits
+    // outside the viewport and force-clicking it fails with "outside of
+    // viewport" once the dialog renders at full height); read the state from
+    // the input's aria-checked.
+    const switchControl = dialog
+      .locator("[data-action='settings-line-wrapping'] [data-slot='switch-control']")
       .first()
-    await expect(switchEl).toBeVisible({ timeout: 5_000 })
+    const switchInput = dialog
+      .locator("[data-action='settings-line-wrapping'] input[role='switch']")
+      .first()
+    await expect(switchControl).toBeVisible({ timeout: 5_000 })
 
-    const initialState = (await switchEl.getAttribute("aria-checked")) ?? "false"
-    await switchEl.click({ force: true })
-    await expect(switchEl).not.toHaveAttribute("aria-checked", initialState, { timeout: 2_000 })
+    const initialState = (await switchInput.getAttribute("aria-checked")) ?? "false"
+    await switchControl.click()
+    await expect(switchInput).not.toHaveAttribute("aria-checked", initialState, { timeout: 2_000 })
 
-    const newState = await switchEl.getAttribute("aria-checked")
+    const newState = await switchInput.getAttribute("aria-checked")
     expect(newState).not.toBe(initialState)
 
     // Toggle back to restore original state
-    await switchEl.click({ force: true })
-    await expect(switchEl).toHaveAttribute("aria-checked", initialState, { timeout: 2_000 })
+    await switchControl.click()
+    await expect(switchInput).toHaveAttribute("aria-checked", initialState, { timeout: 2_000 })
   })
 
   test("settings persist after page reload", { tag: ["@smoke"] }, async ({ page }) => {
     await openSettings(page)
 
     const dialog = page.locator('[data-component="dialog"]')
-    const switchEl = dialog
-      .locator("[data-action='settings-line-wrapping'] button, [data-action='settings-line-wrapping'] [role='switch']")
+    const switchControl = dialog
+      .locator("[data-action='settings-line-wrapping'] [data-slot='switch-control']")
       .first()
-    await expect(switchEl).toBeVisible({ timeout: 5_000 })
+    const switchInput = dialog
+      .locator("[data-action='settings-line-wrapping'] input[role='switch']")
+      .first()
+    await expect(switchControl).toBeVisible({ timeout: 5_000 })
 
-    const initialState = (await switchEl.getAttribute("aria-checked")) ?? "false"
-    await switchEl.click({ force: true })
-    await expect(switchEl).not.toHaveAttribute("aria-checked", initialState, { timeout: 2_000 })
-    const changedState = await switchEl.getAttribute("aria-checked")
+    const initialState = (await switchInput.getAttribute("aria-checked")) ?? "false"
+    await switchControl.click()
+    await expect(switchInput).not.toHaveAttribute("aria-checked", initialState, { timeout: 2_000 })
+    const changedState = await switchInput.getAttribute("aria-checked")
 
     // Close dialog and reload
     await closeDialog(page)
@@ -90,17 +100,20 @@ test.describe("Settings", () => {
     // Re-open settings and verify persistence
     await openSettings(page)
     const dialogAfterReload = page.locator('[data-component="dialog"]')
-    const switchAfterReload = dialogAfterReload
-      .locator("[data-action='settings-line-wrapping'] button, [data-action='settings-line-wrapping'] [role='switch']")
+    const controlAfterReload = dialogAfterReload
+      .locator("[data-action='settings-line-wrapping'] [data-slot='switch-control']")
       .first()
-    await expect(switchAfterReload).toBeVisible({ timeout: 5_000 })
+    const inputAfterReload = dialogAfterReload
+      .locator("[data-action='settings-line-wrapping'] input[role='switch']")
+      .first()
+    await expect(controlAfterReload).toBeVisible({ timeout: 5_000 })
 
-    const persistedState = await switchAfterReload.getAttribute("aria-checked")
+    const persistedState = await inputAfterReload.getAttribute("aria-checked")
     expect(persistedState).toBe(changedState)
 
     // Restore original state
     if (persistedState !== initialState) {
-      await switchAfterReload.click({ force: true })
+      await controlAfterReload.click()
     }
   })
 

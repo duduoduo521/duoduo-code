@@ -245,7 +245,7 @@ async fn spawn_fake_feishu_inner(
             let script = script.clone();
             let dual_phase = dual_phase.clone();
             tokio::spawn(async move {
-                let Ok(mut ws) = tokio_tungstenite::accept_async(stream).await else {
+                let Ok(ws) = tokio_tungstenite::accept_async(stream).await else {
                     return;
                 };
                 // Split read/write so a dedicated task ALWAYS drains the

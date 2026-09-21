@@ -218,7 +218,24 @@ export function applyDirectoryEvent(input: {
     }
     case "message.updated": {
       const info = clean((event.properties as { info: Message }).info)
-      const messages = input.store.message[info.sessionID]
+      // Abort-marker backstop: the optimistic per-message marker applied when
+      // Stop is pressed (prompt-input submit.ts) can land before the assistant
+      // message itself exists in the store — delegated (Rust run-loop) turns
+      // surface their assistant row only after a poll cycle — in which case
+      // the marker finds no target and the interrupted divider never renders
+      // (flaky prompt-stop e2e). While the session is in its post-stop aborted
+      // window (cleared by the next send), any assistant message arriving
+      // without an error carries the marker instead. Server-persisted abort
+      // markers (Rust MessageAbortedError rows) always win via the !info.error
+      // guard.
+      if (
+        info.role === "assistant" &&
+        !info.error &&
+        input.isAborted?.(info.sessionID)
+      ) {
+        info.error = { name: "MessageAbortedError", data: { message: "Interrupted by user" } }
+      }
+      const messages = input.store.message?.[info.sessionID]
       if (!messages) {
         input.setStore("message", info.sessionID, [info])
         break

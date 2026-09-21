@@ -5209,6 +5209,21 @@ async fn run_loop_handler(
                         Some("tool-calls".to_string())
                     },
                 });
+            // The cancellation/teardown path can race with the session row's
+            // lifetime (e.g. the client deleting the session right after
+            // aborting), which used to make this best-effort persist — and
+            // with it the MessageAbortedError marker the interrupted divider
+            // renders — fail with FOREIGN KEY, flaking prompt-stop e2e.
+            // ensure_session is an idempotent upsert: cheap, and guarantees
+            // the FK target exists for this write and every part write below.
+            if let Err(e) = msg_store.ensure_session(
+                &session_id_spawn,
+                "smart-layer",
+                &format!("Session {}", &session_id_spawn[..8.min(session_id_spawn.len())]),
+                &project_path_spawn,
+            ) {
+                tracing::warn!(error = %e, "ensure_session before round persist failed (non-fatal)");
+            }
             if let Err(e) = msg_store.insert_message(
                 &assistant_msg_id,
                 &session_id_spawn,

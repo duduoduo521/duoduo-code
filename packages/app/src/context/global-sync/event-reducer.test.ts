@@ -57,7 +57,9 @@ describe("preserveToolMetadata", () => {
 })
 
 function makeStore(): [Store<State>, SetStoreFunction<State>] {
-  const [store, setStore] = createStore<State>({ part: {} } as unknown as State)
+  // Mirrors the production store shape (global-sync.tsx) — `message` must
+  // exist so message.updated's path-set doesn't blow up on a missing key.
+  const [store, setStore] = createStore<State>({ part: {}, message: {} } as unknown as State)
   return [store, setStore]
 }
 
@@ -144,6 +146,75 @@ describe("message.part.updated + message.part.delta", () => {
     })
     const part = store.part["m1"]!.find((p) => p.id === "part1")!
     expect((part as { text: string }).text).toBe("")
+  })
+
+  // Abort-marker backstop: the optimistic marker applied on Stop can land
+  // before the assistant message exists in the store (delegated turns surface
+  // their row only after a poll cycle), leaving the interrupted divider with
+  // no target. The first assistant message.updated arriving while the session
+  // is still in its post-stop aborted window must carry the marker instead.
+  test("assistant message.updated in aborted session carries the abort marker", () => {
+    const [store, setStore] = makeStore()
+    applyDirectoryEvent({
+      event: {
+        type: "message.updated",
+        properties: {
+          info: { id: "m1", sessionID: "s1", role: "assistant", time: {} },
+        },
+      },
+      store,
+      setStore,
+      push: () => {},
+      directory: "",
+      loadLsp: () => {},
+      refreshMcp: () => {},
+      isAborted: (sessionID: string) => sessionID === "s1",
+    })
+    const message = store.message["s1"]!.find((m) => m.id === "m1")!
+    expect((message as { error?: { name: string } }).error?.name).toBe("MessageAbortedError")
+  })
+
+  test("assistant message.updated in aborted session keeps a server-provided error", () => {
+    const [store, setStore] = makeStore()
+    const serverError = { name: "MessageAbortedError", data: { message: "Interrupted by user" } }
+    applyDirectoryEvent({
+      event: {
+        type: "message.updated",
+        properties: {
+          info: { id: "m1", sessionID: "s1", role: "assistant", time: {}, error: serverError },
+        },
+      },
+      store,
+      setStore,
+      push: () => {},
+      directory: "",
+      loadLsp: () => {},
+      refreshMcp: () => {},
+      isAborted: (sessionID: string) => sessionID === "s1",
+    })
+    const message = store.message["s1"]!.find((m) => m.id === "m1")!
+    expect((message as { error?: { name: string } }).error).toEqual(serverError)
+  })
+
+  test("assistant message.updated in a live session gets no abort marker", () => {
+    const [store, setStore] = makeStore()
+    applyDirectoryEvent({
+      event: {
+        type: "message.updated",
+        properties: {
+          info: { id: "m1", sessionID: "s1", role: "assistant", time: {} },
+        },
+      },
+      store,
+      setStore,
+      push: () => {},
+      directory: "",
+      loadLsp: () => {},
+      refreshMcp: () => {},
+      isAborted: () => false,
+    })
+    const message = store.message["s1"]!.find((m) => m.id === "m1")!
+    expect((message as { error?: unknown }).error).toBeUndefined()
   })
 
   test("updated preserves tool metadata from existing part", () => {

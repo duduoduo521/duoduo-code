@@ -4,7 +4,7 @@ import * as Session from "./session"
 import { MessageV2 } from "./message-v2"
 import { SessionTable, MessageTable, PartTable } from "./session.sql"
 import { Log } from "../util"
-import { Flag } from "@/flag/flag"
+import { ownership } from "./ownership"
 
 const log = Log.create({ service: "session.projector" })
 
@@ -80,62 +80,73 @@ export default [
     db.delete(SessionTable).where(eq(SessionTable.id, data.sessionID)).run()
   }),
 
-  // Message/part projectors are conditionally registered:
-  // When RUST_SINGLE_WRITE is enabled, Rust handles persistence and these
-  // TS projectors are skipped to avoid double-writes.
-  ...(Flag.RUST_SINGLE_WRITE
-    ? []
-    : [
-        SyncEvent.project(MessageV2.Event.Updated, (db, data) => {
-          const time_created = data.info.time.created
-          const { id, sessionID, ...rest } = data.info
+  // Message/part projectors are ALWAYS registered so SyncEvent.run keeps
+  // writing the event log and publishing on every path (the old env-flag
+  // variant unregistered them entirely, which both broke event sourcing and
+  // made the TS-owned fallback path unable to persist).
+  //
+  // Whether the projector itself persists the row depends on the session's
+  // runtime persistence ownership (session/ownership.ts): while a delegated
+  // Rust runLoop owns the session it writes the ASSISTANT rows itself, and
+  // the TS projector must skip them — otherwise TS would clobber Rust's
+  // authoritative writes with stale event snapshots (the original silent
+  // double-write race: WAL + busy_timeout swallowed SQLITE_BUSY, the loser's
+  // write silently won, tool results / finish state vanished). USER rows are
+  // always written by TS directly (Rust has no user-message upsert route).
+  //
+  // Deletions stay unconditional: they target the same shared SQLite file
+  // and cannot "overwrite" anything.
+  SyncEvent.project(MessageV2.Event.Updated, (db, data) => {
+    if (ownership.isRust(data.sessionID)) return
+    const time_created = data.info.time.created
+    const { id, sessionID, ...rest } = data.info
 
-          try {
-            db.insert(MessageTable)
-              .values({
-                id,
-                session_id: sessionID,
-                time_created,
-                data: rest,
-              })
-              .onConflictDoUpdate({ target: MessageTable.id, set: { data: rest } })
-              .run()
-          } catch (err) {
-            if (!foreign(err)) throw err
-            log.warn("ignored late message update", { messageID: id, sessionID })
-          }
-        }),
+    try {
+      db.insert(MessageTable)
+        .values({
+          id,
+          session_id: sessionID,
+          time_created,
+          data: rest,
+        })
+        .onConflictDoUpdate({ target: MessageTable.id, set: { data: rest } })
+        .run()
+    } catch (err) {
+      if (!foreign(err)) throw err
+      log.warn("ignored late message update", { messageID: id, sessionID })
+    }
+  }),
 
-        SyncEvent.project(MessageV2.Event.Removed, (db, data) => {
-          db.delete(MessageTable)
-            .where(and(eq(MessageTable.id, data.messageID), eq(MessageTable.session_id, data.sessionID)))
-            .run()
-        }),
+  SyncEvent.project(MessageV2.Event.Removed, (db, data) => {
+    db.delete(MessageTable)
+      .where(and(eq(MessageTable.id, data.messageID), eq(MessageTable.session_id, data.sessionID)))
+      .run()
+  }),
 
-        SyncEvent.project(MessageV2.Event.PartRemoved, (db, data) => {
-          db.delete(PartTable)
-            .where(and(eq(PartTable.id, data.partID), eq(PartTable.session_id, data.sessionID)))
-            .run()
-        }),
+  SyncEvent.project(MessageV2.Event.PartRemoved, (db, data) => {
+    db.delete(PartTable)
+      .where(and(eq(PartTable.id, data.partID), eq(PartTable.session_id, data.sessionID)))
+      .run()
+  }),
 
-        SyncEvent.project(MessageV2.Event.PartUpdated, (db, data) => {
-          const { id, messageID, sessionID, ...rest } = data.part
+  SyncEvent.project(MessageV2.Event.PartUpdated, (db, data) => {
+    if (ownership.isRust(data.sessionID)) return
+    const { id, messageID, sessionID, ...rest } = data.part
 
-          try {
-            db.insert(PartTable)
-              .values({
-                id,
-                message_id: messageID,
-                session_id: sessionID,
-                time_created: data.time,
-                data: rest,
-              })
-              .onConflictDoUpdate({ target: PartTable.id, set: { data: rest } })
-              .run()
-          } catch (err) {
-            if (!foreign(err)) throw err
-            log.warn("ignored late part update", { partID: id, messageID, sessionID })
-          }
-        }),
-      ]),
+    try {
+      db.insert(PartTable)
+        .values({
+          id,
+          message_id: messageID,
+          session_id: sessionID,
+          time_created: data.time,
+          data: rest,
+        })
+        .onConflictDoUpdate({ target: PartTable.id, set: { data: rest } })
+        .run()
+    } catch (err) {
+      if (!foreign(err)) throw err
+      log.warn("ignored late part update", { partID: id, messageID, sessionID })
+    }
+  }),
 ]

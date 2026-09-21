@@ -17,6 +17,7 @@ import { Storage } from "@/storage"
 import { Log } from "../util"
 import { updateSchema } from "../util/update-schema"
 import { MessageV2 } from "./message-v2"
+import { ownership } from "./ownership"
 import { Instance } from "../project/instance"
 import { InstanceState } from "@/effect"
 import { Snapshot } from "@/snapshot"
@@ -472,8 +473,8 @@ export const layer: Layer.Layer<Service, never, Bus.Service | Storage.Service> =
 
     const updateMessage = <T extends MessageV2.Info>(msg: T): Effect.Effect<T> =>
       Effect.gen(function* () {
-        if (Flag.RUST_SINGLE_WRITE) {
-          // RUST_SINGLE_WRITE ownership invariant: Rust persists ASSISTANT
+        if (ownership.isRust(msg.sessionID)) {
+          // Rust-owned session invariant: Rust persists ASSISTANT
           // messages (written during its runLoop); TS persists USER messages.
           // Rust has NO upsert route for user messages and its runLoop reads
           // history from the project DB — without this direct write the user
@@ -510,8 +511,8 @@ export const layer: Layer.Layer<Service, never, Bus.Service | Storage.Service> =
         if ("state" in part && part.state && typeof part.state === "object") cloned.state = { ...part.state }
         if ("metadata" in part && part.metadata && typeof part.metadata === "object")
           cloned.metadata = { ...part.metadata }
-        if (Flag.RUST_SINGLE_WRITE) {
-          // RUST_SINGLE_WRITE ownership invariant: Rust persists parts of
+        if (ownership.isRust(part.sessionID)) {
+          // Rust-owned session invariant: Rust persists parts of
           // ASSISTANT messages (text/reasoning/tool parts written during its
           // runLoop); TS persists parts of USER messages (the prompt text and
           // attachments). Without this, the user's text part never reaches the
@@ -635,10 +636,10 @@ export const layer: Layer.Layer<Service, never, Bus.Service | Storage.Service> =
           ...(parentID && { parentID }),
         }
 
-        if (Flag.RUST_SINGLE_WRITE) {
+        if (ownership.isRust(session.id)) {
           // Fork is new-session initialization — must write to DB directly because
-          // Rust does not know about these cloned messages. Under RUST_SINGLE_WRITE,
-          // SyncEvent projectors are not registered, so SyncEvent.run won't persist.
+          // Rust does not know about these cloned messages. Under Rust ownership,
+          // the projector skips persistence, so SyncEvent.run won't persist.
           // Use Drizzle insert directly, plus publish SSE for frontend sync.
           yield* Effect.sync(() => {
             const time_created = clonedInfo.time.created
@@ -664,7 +665,7 @@ export const layer: Layer.Layer<Service, never, Bus.Service | Storage.Service> =
             sessionID: session.id,
           }
 
-          if (Flag.RUST_SINGLE_WRITE) {
+          if (ownership.isRust(session.id)) {
             yield* Effect.sync(() => {
               const { id, messageID, sessionID, ...rest } = clonedPart
               Database.useProject((db) =>
@@ -754,10 +755,10 @@ export const layer: Layer.Layer<Service, never, Bus.Service | Storage.Service> =
       sessionID: SessionID
       messageID: MessageID
     }) {
-      if (Flag.RUST_SINGLE_WRITE) {
-        // RUST_SINGLE_WRITE: TS projectors for Removed/PartRemoved are skipped,
-        // so SyncEvent.run would not persist the delete to DB.
-        // Call Rust sidecar to delete from DB, then publish via Bus for frontend sync.
+      if (ownership.isRust(input.sessionID)) {
+        // Rust-owned session: the Rust sidecar may hold in-memory caches for
+        // these rows, so route the delete through it. Then publish via Bus
+        // for frontend sync.
         const clients = createSmartLayerClients()
         if (clients?.agent) {
           yield* Effect.tryPromise({
@@ -790,10 +791,10 @@ export const layer: Layer.Layer<Service, never, Bus.Service | Storage.Service> =
       messageID: MessageID
       partID: PartID
     }) {
-      if (Flag.RUST_SINGLE_WRITE) {
-        // RUST_SINGLE_WRITE: TS projectors for Removed/PartRemoved are skipped,
-        // so SyncEvent.run would not persist the delete to DB.
-        // Call Rust sidecar to delete from DB, then publish via Bus for frontend sync.
+      if (ownership.isRust(input.sessionID)) {
+        // Rust-owned session: the Rust sidecar may hold in-memory caches for
+        // these rows, so route the delete through it. Then publish via Bus
+        // for frontend sync.
         const clients = createSmartLayerClients()
         if (clients?.agent) {
           yield* Effect.tryPromise({

@@ -96,11 +96,6 @@ export const Flag = {
   DUODUO_SKIP_MIGRATIONS: truthy("DUODUO_SKIP_MIGRATIONS"),
   DUODUO_STRICT_CONFIG_DEPS: truthy("DUODUO_STRICT_CONFIG_DEPS"),
 
-  // Rust single-write: when enabled, TS skips writing message/part to SQLite,
-  // relying on Rust to handle persistence. TS still publishes SSE events
-  // so the frontend stays in sync.
-  RUST_SINGLE_WRITE: truthy("DUODUO_RUST_SINGLE_WRITE"),
-
   // Progressive tool disclosure on the Rust run-loop: send non-core tools as
   // name-only stubs and let the model pull their JSON-Schema on demand via the
   // synthetic `expand_tools` tool. Cuts the fixed per-round tool payload; the

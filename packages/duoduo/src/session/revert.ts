@@ -235,10 +235,10 @@ export const layer = Layer.effect(
         remove.push(msg)
       }
       for (const msg of remove) {
-        // Route through Session.removeMessage so the RUST_SINGLE_WRITE flag is
-        // honored. Calling SyncEvent.run directly would throw "Projector not
-        // found" when the flag is on (Removed/PartRemoved projectors are not
-        // registered) and the delete would never reach the DB.
+        // Route through Session.removeMessage so the session's runtime
+        // persistence ownership (session/ownership.ts) is honored: a
+        // Rust-owned session routes the delete through the sidecar (its
+        // in-memory caches must stay consistent) before publishing to the Bus.
         yield* sessions.removeMessage({
           sessionID,
           messageID: msg.info.id,

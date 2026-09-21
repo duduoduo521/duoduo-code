@@ -294,7 +294,8 @@ export class AgentClient {
 
   /**
    * Delete a message (and its parts) from the project DB via Rust sidecar.
-   * Used when RUST_SINGLE_WRITE is enabled so the DB delete is not skipped.
+   * Used when the session is Rust-owned (session/ownership.ts) so its
+   * in-memory caches stay consistent with the delete.
    */
   deleteMessage(messageID: string): Promise<{ ok: boolean }> {
     return this.client.post("/agent/messages/delete", { message_id: messageID })
@@ -302,7 +303,8 @@ export class AgentClient {
 
   /**
    * Delete a single part from the project DB via Rust sidecar.
-   * Used when RUST_SINGLE_WRITE is enabled so the DB delete is not skipped.
+   * Used when the session is Rust-owned (session/ownership.ts) so its
+   * in-memory caches stay consistent with the delete.
    */
   deletePart(partID: string): Promise<{ ok: boolean }> {
     return this.client.post("/agent/parts/delete", { part_id: partID })

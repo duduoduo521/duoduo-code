@@ -7726,7 +7726,8 @@ async fn tool_result_handler(
 
 // ── /agent/messages/delete ──
 // Deletes a message (and its parts via ON DELETE CASCADE) from the project DB.
-// Called by TS when RUST_SINGLE_WRITE is enabled and the user deletes a message.
+// Called by TS when the session is Rust-owned (persistence ownership) and the
+// user deletes a message — the sidecar's in-memory caches must stay consistent.
 
 #[derive(serde::Deserialize)]
 struct DeleteMessageRequest {
@@ -7749,7 +7750,8 @@ async fn delete_message_handler(
 
 // ── /agent/parts/delete ──
 // Deletes a single part from the project DB.
-// Called by TS when RUST_SINGLE_WRITE is enabled and the user deletes a part.
+// Called by TS when the session is Rust-owned (persistence ownership) and the
+// user deletes a part.
 
 #[derive(serde::Deserialize)]
 struct DeletePartRequest {

@@ -5,6 +5,7 @@ import os from "os"
 import z from "zod"
 import { SessionID, MessageID, PartID } from "./schema"
 import { MessageV2 } from "./message-v2"
+import { ownership } from "./ownership"
 import { Log } from "../util"
 import { SessionRevert } from "./revert"
 import * as Session from "./session"
@@ -1531,17 +1532,18 @@ NOTE: At any point in time through this workflow you should feel free to ask the
         }
         // Persist + surface the error to the frontend.
         //
-        // In RUST_SINGLE_WRITE mode Rust never writes this synthesized message
-        // (it only emitted `loop_error` and broke), and `sessions.updateMessage`
-        // in that mode merely publishes on the lowercase `bus` (a SyncEvent)
-        // which the frontend's global-sdk SSE filter drops — so the user would
-        // see NOTHING. We therefore (a) write the row directly to the project
-        // DB here (mirrors the fork path, which also writes directly because
-        // Rust knows nothing about the message), and (b) publish on the capital
-        // `Bus` whose payload type is "message.updated" — the only channel the
-        // global SSE bridge actually delivers to the frontend (see
-        // `ensureAssistantPlaceholder` for the same pattern).
-        if (Flag.RUST_SINGLE_WRITE) {
+        // While a Rust runLoop owns the session it never writes this
+        // synthesized message (it only emitted `loop_error` and broke), and
+        // `sessions.updateMessage` in that mode merely publishes on the
+        // lowercase `bus` (a SyncEvent) which the frontend's global-sdk SSE
+        // filter drops — so the user would see NOTHING. We therefore (a) write
+        // the row directly to the project DB here (mirrors the fork path,
+        // which also writes directly because Rust knows nothing about the
+        // message), and (b) publish on the capital `Bus` whose payload type is
+        // "message.updated" — the only channel the global SSE bridge actually
+        // delivers to the frontend (see `ensureAssistantPlaceholder` for the
+        // same pattern).
+        if (ownership.isRust(sessionID)) {
           yield* Effect.sync(() => {
             const { id, sessionID: sid, ...rest } = msg
             Database.useProject((db) =>
@@ -1583,9 +1585,9 @@ NOTE: At any point in time through this workflow you should feel free to ask the
      * TS detects these pending parts, executes the tool, and POSTs
      * the result back to `/agent/tool_result` to unblock Rust.
      *
-     * In RUST_SINGLE_WRITE mode, `sessions.updatePart` only publishes
-     * SSE events (Rust handles DB persistence). We publish the state
-     * transition (pending → running → completed/error) so the frontend
+     * While the Rust runLoop owns the session, `sessions.updatePart` only
+     * publishes SSE events (Rust handles DB persistence). We publish the
+     * state transition (pending → running → completed/error) so the frontend
      * stays in sync. Rust writes the completed tool part to DB separately.
      */
     const executePendingToolPart = Effect.fnUntraced(function* (
@@ -2922,6 +2924,11 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           // NOTE: `ensureSession` is now performed concurrently (above) and
           // has already completed BEFORE this gen runs, so the Rust
           // session-exists precondition still holds — behaviour identical.
+          // Mark the session Rust-owned for the duration of the delegated
+          // turn: from here on Rust writes the ASSISTANT rows and the TS
+          // projectors must skip them (session/ownership.ts). The `ensuring`
+          // below restores TS ownership on every exit path.
+          ownership.markRust(sessionID)
           yield* elog.info("delegateToRustRunLoop: posting to Rust /agent/run_loop", { sessionID })
           yield* Effect.tryPromise({
             try: () =>
@@ -3002,8 +3009,15 @@ NOTE: At any point in time through this workflow you should feel free to ask the
           // Poll DB with pending-tool detection until the Rust runLoop completes.
           return yield* rustRunLoopPoll(sessionID)
         }).pipe(
-          // 无论成功/失败/中断，都恢复 idle（镜像 processor.ts:794 的 cleanup() 模式）
-          Effect.ensuring(status.set(sessionID, { type: "idle" })),
+          // 无论成功/失败/中断，都恢复 idle（镜像 processor.ts:794 的 cleanup() 模式），
+          // 同时把持久化归属还给 TS：Rust 循环结束后，错误消息合成、compaction、
+          // 记忆存储等 TS 收尾写入必须重新正常落库（ownership 默认 ts）。
+          Effect.ensuring(
+            Effect.gen(function* () {
+              yield* status.set(sessionID, { type: "idle" })
+              ownership.markTs(sessionID)
+            }),
+          ),
         )
 
         // Post-delegation side effects (preserved from old TS runLoop path)

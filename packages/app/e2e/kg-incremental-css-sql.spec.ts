@@ -138,8 +138,21 @@ test.describe("KG incremental indexing (css/sql)", () => {
     writeFileSync(abs, "CREATE TABLE kg_e2e_marker_users (id INT);\n")
     try {
       // The regex fallback maps CREATE TABLE / VIEW to graph entities.
+      // Diagnostics mirror the css test: the polled value surfaces the live
+      // index-status so a CI timeout shows WHERE the chain stalled
+      // (watcher event → flush → update-file vs. search tokenization).
+      let lastStatus = ""
       await expect
-        .poll(async () => probe(sidecar, info.projectDir, "kg_e2e_marker_users"), {
+        .poll(async () => {
+          const hit = await probe(sidecar, info.projectDir, "kg_e2e_marker_users")
+          if (hit) return "kg_e2e_marker_users"
+          try {
+            lastStatus = await (
+              await fetch(`${sidecar}/graph/index-status?project_path=${encodeURIComponent(info.projectDir)}`)
+            ).text()
+          } catch {}
+          return `pending; index-status=${lastStatus}`
+        }, {
           timeout: 60_000,
           intervals: [1_000, 2_000],
         })

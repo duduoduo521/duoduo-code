@@ -40,6 +40,13 @@ test.describe("Bash hard-block self-heal (full UI stack)", () => {
   })
 
   test("heredoc is hard-blocked, the printf rewrite lands like a write tool", async ({ page }) => {
+    // The bash tool intentionally runs PowerShell on Windows
+    // (agent-executor agentic_loop.rs shell_note), where the POSIX fixture
+    // commands do not exist: `printf` is not a PowerShell builtin, and
+    // PowerShell 5.1 `>` writes UTF-16 — the round-2 disk assertion can
+    // never hold. The classifier/L2 semantics themselves are covered by the
+    // bash_safety Rust unit tests, so skip the full-UI round-trip here.
+    test.skip(process.platform === "win32", "bash tool runs PowerShell on Windows; fixtures are POSIX")
     test.skip(!getRuntimeInfo().smartLayerAvailable, "Requires the Rust smart-layer sidecar")
 
     rmSync(target, { force: true })

@@ -113,9 +113,19 @@ test.describe("Tool delegation round-trip (Rust → TS)", () => {
 
     const sessionId = await runToolPrompt(page, "success-tool-edit-replaceall", "delegation edit-replaceall")
 
-    // The TS edit tool wrote the replacement to disk.
-    const after = readFileSync(readmePath, "utf8")
-    expect(after).toContain("# E2E Test Project (edited)")
+    // The TS edit tool wrote the replacement to disk. Polled: on saturated
+    // CI runners the round's assistant frame can render before the delegated
+    // edit flushes to disk (both macos/windows CI retries lost this race
+    // while linux passed).
+    await expect
+      .poll(() => {
+        try {
+          return readFileSync(readmePath, "utf8")
+        } catch {
+          return ""
+        }
+      }, { timeout: 30_000 })
+      .toContain("# E2E Test Project (edited)")
 
     // Write-chain bookkeeping: the round-end snapshot track persists a Patch
     // part (agent.rs "Snapshot patch after tool execution") whose files list

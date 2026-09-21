@@ -66,7 +66,7 @@ impl MemorySystem {
             user_id,
             &project_id,
             category,
-            &strip_date_prefix(&content),
+            strip_date_prefix(&content),
         ) {
             conn.execute(
                 "UPDATE core_memories SET updated_at = ?1 WHERE id = ?2",
@@ -112,7 +112,7 @@ impl MemorySystem {
             user_id,
             project_id,
             category,
-            &strip_date_prefix(&content),
+            strip_date_prefix(&content),
         ) {
             conn.execute(
                 "UPDATE core_memories SET updated_at = ?1 WHERE id = ?2",

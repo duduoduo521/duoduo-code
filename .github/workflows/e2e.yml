@@ -8,10 +8,28 @@
 #   - Bun stays for dependency install and the webServer wrapper (mock LLM +
 #     isolated backend + Vite), which are plain TS and Bun-safe.
 #
-# Trigger: manual (workflow_dispatch) first; flip to push/PR paths once green.
+# Trigger: flipped to push/PR (0.4) once the suite went green — every push to
+# agent-develop runs ubuntu (fast feedback); PRs and manual runs cover all
+# three platforms. Code/doc-only changes skip the suite via paths-filter.
 name: E2E
 
 on:
+  push:
+    branches: [agent-develop]
+    paths:
+      - "crates/**"
+      - "packages/**"
+      - ".github/workflows/e2e.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  pull_request:
+    branches: [agent-develop]
+    paths:
+      - "crates/**"
+      - "packages/**"
+      - ".github/workflows/e2e.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
   workflow_dispatch:
 
 concurrency:
@@ -22,6 +40,8 @@ jobs:
   e2e-browser:
     name: E2E browser (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # push → ubuntu only (fast feedback); PR / manual → all three platforms.
+    if: github.event_name != 'push' || matrix.os == 'ubuntu-latest'
     # 251 用例 × 重试 + 首次 Rust 侧车编译（冷缓存 10~20min，rust-cache 二次起效），
     # 2 vCPU runner 上全跑约 2 小时量级，60min 必爆。
     timeout-minutes: 180

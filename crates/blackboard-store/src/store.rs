@@ -1980,13 +1980,6 @@ impl BlackboardStore {
             .map_err(Into::into)
     }
 
-    /// Delete a shared context key.
-    pub fn delete_shared_context(&self, key: &str) -> Result<bool> {
-        let conn = self.get_write_conn()?;
-        let rows = conn.execute("DELETE FROM shared_context WHERE key = ?1", params![key])?;
-        Ok(rows > 0)
-    }
-
     /// A4: list shared context entries whose key starts with `prefix`
     /// (e.g. `cascade_block/` — one block entry per failed file). Returns
     /// (key, value, updated_by, updated_at) ordered by key.

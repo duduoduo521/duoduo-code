@@ -342,7 +342,10 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
 
     const remove = (input: string) => {
       const filePath = path.normalize(input)
-      if (!filePath) return Promise.resolve({ success: false, error: "Invalid file path" } as const)
+      if (!filePath) {
+        showToast({ variant: "error", title: language.t("contextMenu.fileTree.deleteFailed"), description: "Invalid file path" })
+        return Promise.resolve({ success: false, error: "Invalid file path" } as const)
+      }
 
       return (sdk.client as any).client
         .delete({
@@ -358,6 +361,10 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
             tabs.close(path.tab(filePath))
             return { success: true as const, path: result.path }
           }
+          // Rejected without an exception (HTTP 200 + success:false) — the
+          // catch below never runs, so surface it here. All callers (single
+          // and multi-select delete) get exactly one toast per failure.
+          showToast({ variant: "error", title: language.t("contextMenu.fileTree.deleteFailed"), description: "Delete failed" })
           return { success: false as const, error: "Delete failed" }
         })
         .catch((e: any) => {
@@ -371,8 +378,10 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
     const rename = (oldPath: string, newPath: string) => {
       const resolvedOldPath = path.normalize(oldPath)
       const resolvedNewPath = path.normalize(newPath)
-      if (!resolvedOldPath || !resolvedNewPath)
+      if (!resolvedOldPath || !resolvedNewPath) {
+        showToast({ variant: "error", title: language.t("common.renameFailed"), description: "Invalid file path" })
         return Promise.resolve({ success: false, error: "Invalid file path" } as const)
+      }
 
       return (sdk.client as any).client
         .patch({
@@ -388,6 +397,10 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
             void activeTree().listDir(parentDir, { force: true })
             return { success: true as const, oldPath: result.oldPath, newPath: result.newPath }
           }
+          // Rejected without an exception (HTTP 200 + success:false) — the
+          // catch below never runs, so surface it here. All callers get
+          // exactly one toast per failure.
+          showToast({ variant: "error", title: language.t("common.renameFailed"), description: "Rename failed" })
           return { success: false as const, error: "Rename failed" }
         })
         .catch((e: any) => {

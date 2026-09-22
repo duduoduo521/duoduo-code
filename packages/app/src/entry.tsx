@@ -150,6 +150,8 @@ if (typeof window !== "undefined") {
       const invoke = w.__TAURI__?.core?.invoke
       if (typeof invoke === "function") {
         e.preventDefault()
+        // Silent by design: devtools is a dev-facing toggle; a failure has no
+        // user-visible effect worth reporting.
         invoke("toggle_devtools").catch(() => {})
       }
     }

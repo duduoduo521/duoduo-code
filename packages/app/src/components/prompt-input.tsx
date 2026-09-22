@@ -1708,7 +1708,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                                         : {}),
                                       thinkingEffort: value,
                                     })
-                                  }).catch(() => {})
+                                  }).catch(() =>
+                                    showToast({
+                                      title: language.t("toast.loopConfig.failed.title"),
+                                      description: language.t("toast.loopConfig.failed.description"),
+                                      variant: "error",
+                                    }),
+                                  )
                                 }
                                 restoreFocus()
                               }}

@@ -605,6 +605,21 @@ export default function Layout(props: ParentProps) {
     return projects.find((p) => p.worktree === root)
   })
 
+  // Startup auto-select must not swallow an open failure into the resource's
+  // error slot (nobody consumes it). Same catch shape as the deep-link path:
+  // surface a toast, keep the home screen usable.
+  const openProjectGuarded = async (directory: string) => {
+    try {
+      await openProject(directory, true)
+    } catch (e) {
+      console.error("[layout] openProject failed", e)
+      showToast({
+        variant: "error",
+        title: language.t("project.openFailed"),
+      })
+    }
+  }
+
   const [autoselecting] = createResource(async () => {
     trace("autoselecting: fetcher start")
     await ready.promise
@@ -627,12 +642,12 @@ export default function Layout(props: ParentProps) {
     if (list.length === 0) {
       if (!last) return
       trace("autoselecting: calling openProject(last)")
-      await openProject(last, true)
+      await openProjectGuarded(last)
     } else {
       const next = list.find((project) => project.worktree === last) ?? list[0]
       if (!next) return
       trace(`autoselecting: calling openProject(${next.worktree})`)
-      await openProject(next.worktree, true)
+      await openProjectGuarded(next.worktree)
     }
   })
 
@@ -1463,7 +1478,13 @@ export default function Layout(props: ParentProps) {
         .get({ sessionID: target.id })
         .then((x) => x.data)
         .catch(() => undefined)
-      if (!resolved?.directory) return false
+      if (!resolved?.directory) {
+        showToast({
+          variant: "error",
+          title: language.t("workspace.sessionMissing"),
+        })
+        return false
+      }
       if (!canOpen(resolved.directory)) return false
       setStore("lastProjectSession", root, { directory: resolved.directory, id: resolved.id, at: Date.now() })
       navigateWithSidebarReset(`/${base64Encode(resolved.directory)}/session/${resolved.id}`)
@@ -1665,7 +1686,13 @@ export default function Layout(props: ParentProps) {
       setBusy(true)
       try {
         // 1. 删 KG 索引；smart-layer 同时释放其持有的项目 DB 连接池。
-        await smartLayer.api?.closeProjectIndex(props.directory, true).catch(() => undefined)
+        // 失败不中断删除流程（孤儿索引可后台再清），但必须让用户看见。
+        await smartLayer.api?.closeProjectIndex(props.directory, true).catch(() => {
+          showToast({
+            variant: "error",
+            title: language.t("workspace.deleteProject.indexCleanFailed"),
+          })
+        })
         // 2. 删项目数据：cleanup 路由（定向模式）先 dispose 实例、关闭全部
         //    DB 客户端，再删 <data>/database/<id>/、<data>/snapshot/<id>/ 与项目行。
         await globalSDK.client.project.cleanup({
@@ -2096,6 +2123,9 @@ export default function Layout(props: ParentProps) {
               directory: session.directory,
               time: { archived: archivedAt },
             })
+            // Silent by design: a failed archived-timestamp write only skews
+            // the displayed archive time; the session list itself refreshes
+            // from the server either way. Intentionally no toast.
             .catch(() => undefined),
         ),
     )

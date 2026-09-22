@@ -81,6 +81,7 @@ export function soundSrc(id: string | undefined) {
   const key = id as SoundID
   const hit = cache.get(key)
   if (hit) return hit
+  // Silent by design: a sound that fails to load just plays nothing.
   const next = loads[key]().catch(() => undefined)
   cache.set(key, next)
   return next
@@ -90,6 +91,8 @@ export function playSound(src: string | undefined) {
   if (typeof Audio === "undefined") return
   if (!src) return
   const audio = new Audio(src)
+  // Silent by design: autoplay policies and missing devices reject play();
+  // a notification sound failing must not surface as an error toast.
   audio.play().catch(() => undefined)
   return () => {
     audio.pause()

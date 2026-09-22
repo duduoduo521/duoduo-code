@@ -50,7 +50,11 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
             if (authHeader) {
               return { info, authHeader }
             }
-          } catch {}
+          } catch {
+            // Silent by design: fall through and use the sidecar without an
+            // auth header (password-protected sidecars return one; unprotected
+            // ones do not need it).
+          }
           // Still return info even if auth header fetch failed
           return { info, authHeader: "" }
         }

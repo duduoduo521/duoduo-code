@@ -80,14 +80,20 @@ function write(key: string, value: string) {
   if (typeof localStorage !== "object") return
   try {
     localStorage.setItem(key, value)
-  } catch {}
+  } catch {
+    // Silent by design: quota/availability failures only lose the persisted
+    // theme; the next start falls back to the default theme.
+  }
 }
 
 function drop(key: string) {
   if (typeof localStorage !== "object") return
   try {
     localStorage.removeItem(key)
-  } catch {}
+  } catch {
+    // Silent by design: a failed removal just leaves the old persisted theme
+    // in place; nothing is lost or corrupted.
+  }
 }
 
 function clear() {

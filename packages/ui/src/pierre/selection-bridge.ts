@@ -68,7 +68,11 @@ export function restoreShadowTextSelection(root: ShadowRoot | undefined, range: 
     try {
       selection.removeAllRanges()
       selection.addRange(range)
-    } catch {}
+    } catch {
+      // Silent by design: the browser may refuse to apply a selection that no
+      // longer matches the live DOM (element re-rendered between click and
+      // rAF); the highlight simply does not appear.
+    }
   })
 }
 

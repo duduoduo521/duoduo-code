@@ -578,6 +578,7 @@ function ProfileContent() {
       setProfiles(result)
     } catch {
       setProfiles([])
+      showToast({ variant: "error", title: language.t("memory.profile.loadFailed") })
     } finally {
       setLoading(false)
     }
@@ -653,6 +654,7 @@ function ProgressiveContent() {
       setPatterns(result.patterns || [])
     } catch {
       setPatterns([])
+      showToast({ variant: "error", title: language.t("memory.patterns.loadFailed") })
     } finally {
       setLoading(false)
     }

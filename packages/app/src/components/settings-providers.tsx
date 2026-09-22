@@ -396,7 +396,10 @@ export const SettingsProviders: Component = () => {
   const performDisconnect = async (providerID: string, name: string) => {
     try {
       if (isConfigCustom(providerID)) {
-        await globalSDK.client.auth.remove({ providerID }).catch(() => undefined)
+        // A failed credential delete must NOT be reported as a successful
+        // disconnect — the stored key would silently survive. Let the error
+        // propagate to the catch below (error toast, no success toast).
+        await globalSDK.client.auth.remove({ providerID })
         await disableProvider(providerID)
       } else {
         await globalSDK.client.auth.remove({ providerID })

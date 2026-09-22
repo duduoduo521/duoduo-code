@@ -417,6 +417,9 @@ export function persisted<T>(
         if (raw !== null) {
           const next = normalize(defaults, raw, config.migrate)
           if (next === undefined) {
+            // Silent by design: dropping an unparseable entry is best-effort;
+            // if removal fails the value simply stays and gets re-normalized
+            // (and re-attempted) on the next read.
             await current.removeItem(key).catch(() => undefined)
             return null
           }
@@ -432,6 +435,8 @@ export function persisted<T>(
 
           const next = normalize(defaults, legacyRaw, config.migrate)
           if (next === undefined) {
+            // Silent by design: legacy migration cleanup is best-effort (same
+            // rationale as the current-store removal above).
             await legacyStore.removeItem(legacyKey).catch(() => undefined)
             continue
           }

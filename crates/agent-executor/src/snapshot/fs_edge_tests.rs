@@ -124,6 +124,32 @@ fn emulate_ts_restore(gitdir: &Path, worktree: &Path, hash: &str) -> Result<(), 
     Ok(())
 }
 
+// ─── Windows CI regression: a shell gitdir must self-heal on track ─────────
+//
+// On windows-latest CI every snapshot track failed with "not a git
+// repository" (77x in one e2e run) while mac/linux never failed: something
+// created the gitdir DIRECTORY before the first track, the old
+// `gitdir.exists()` sample skipped `git init` forever, and every git call
+// saw a structureless directory. Regression: a pre-created shell must be
+// initialized (healed) by the first track, not poison it.
+
+#[test]
+fn track_self_heals_a_shell_gitdir_created_by_a_third_party() {
+    let fx = fixture();
+    // Simulate the CI failure: the gitdir exists but has no git structure.
+    std::fs::create_dir_all(&fx.gitdir).expect("create shell gitdir");
+
+    let hash = fx
+        .service
+        .track()
+        .expect("first track must initialize the shell gitdir, not fail");
+    assert!(!hash.is_empty(), "track must return a tree hash");
+
+    // The healed repo stays usable for subsequent tracks.
+    let hash2 = fx.service.track().expect("second track must succeed");
+    assert!(!hash2.is_empty());
+}
+
 // ─── P4-01: non-ASCII filenames through the full track/rename/restore chain ─
 
 #[test]

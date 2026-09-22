@@ -719,7 +719,14 @@ export const layer: Layer.Layer<
           // Sample existence BEFORE locking: acquiring the cross-process lock
           // creates the gitdir, which would otherwise make `existed` true and
           // skip `git init` on the first track of a project.
-          const existed = yield* exists(state.gitdir)
+          //
+          // "Exists" must mean "an initialized repo lives here" — probe for
+          // HEAD (the structure `git init` always writes), not the directory:
+          // a shell gitdir created by anything else made this sample true,
+          // skipped `git init` forever, and broke every snapshot operation.
+          // `git init` is idempotent, so re-initializing a shell is safe.
+          // MUST stay in sync with crates/agent-executor/src/snapshot/track.rs.
+          const existed = yield* exists(path.join(state.gitdir, "HEAD"))
           return yield* locked(
             Effect.gen(function* () {
               if (!(yield* enabled())) return

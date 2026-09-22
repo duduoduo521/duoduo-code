@@ -11,7 +11,15 @@ pub fn track(svc: &SnapshotService) -> Result<String, String> {
     // Sample repo existence BEFORE locking: acquiring the cross-process lock
     // creates the gitdir, which would otherwise make the check below skip
     // `init_repo` on the very first track of a project.
-    let repo_existed = svc.gitdir.exists();
+    //
+    // "Exists" must mean "an initialized repo lives here", not "the directory
+    // exists": on windows CI a shell gitdir (created by something else before
+    // the first track) made this sample true, skipped `git init` forever, and
+    // every snapshot operation failed with "not a git repository" (77x/run).
+    // Probe for HEAD — the structure `git init` always writes. `git init` on
+    // an already-initialized repo is idempotent, so re-initializing a shell is
+    // safe and heals it in place.
+    let repo_existed = svc.gitdir.join("HEAD").exists();
     // DIAG (windows-ci snapshot): on windows-latest every track failed with
     // "not a git repository" (77x in one run) while mac/linux never failed —
     // meaning `repo_existed` sampled true but the dir had no git structure.

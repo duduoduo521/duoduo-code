@@ -800,7 +800,7 @@ pub fn explore_bash_write_reason(command: &str) -> Option<String> {
     }
     // Explore runs non-interactive: bare DESTRUCTIVE / ALWAYS_BLOCK usage that
     // would normally land on the permission gate has no user to ask — deny.
-    for seg in command.split(|c: char| c == ';' || c == '|' || c == '&' || c == '\n') {
+    for seg in command.split([';', '|', '&', '\n']) {
         if let Some(tok) = seg.split_whitespace().next() {
             let name = base_name(tok);
             if ALWAYS_BLOCK.contains(&name.as_str()) || DESTRUCTIVE.contains(&name.as_str()) {

@@ -31,6 +31,78 @@ import { createSmartLayerClients } from "@/smart-layer"
 
 const log = Log.create({ service: "server" })
 
+// Stop a session's whole generation subtree: TS poll loops, Rust run_loops and
+// project task locks. Shared by /abort (user clicks stop) and DELETE
+// /:sessionID (删除一个正在生成的会话 = 停止生成并删除) — without this a
+// deleted-but-still-running run_loop holds the project's single task slot and
+// every new prompt in that project fails-fast 409s until the loop finishes
+// naturally.
+//
+// Subtree semantics (down-only, do NOT walk up to ancestors): stopping a
+// session stops it and everything it spawned (sub-sessions created via the
+// `task` tool, which records `parentID`). Stopping a child leaves the parent
+// in charge of handling the child's interrupted tool result.
+const cancelSessionTree = Effect.fnUntraced(function* (
+  rootID: SessionID,
+  prompt: SessionPrompt.Interface,
+  sessions: Session.Interface,
+) {
+  const visited = new Set<SessionID>([rootID])
+  const subtree: SessionID[] = [rootID]
+  const stack: SessionID[] = [rootID]
+  while (stack.length > 0) {
+    const id = stack.pop()!
+    const kids = yield* sessions.children(id)
+    for (const k of kids) {
+      if (!visited.has(k.id)) {
+        visited.add(k.id)
+        subtree.push(k.id)
+        stack.push(k.id)
+      }
+    }
+  }
+
+  // Stop the TS poll loops for the whole subtree.
+  for (const id of subtree) {
+    yield* prompt.cancel(id)
+  }
+
+  const smartLayer = createSmartLayerClients()
+  if (smartLayer) {
+    for (const id of subtree) {
+      // Release the project task lock so new prompts can run
+      yield* Effect.promise(() =>
+        smartLayer.client
+          .post("/task/release", {
+            projectPath: Instance.directory,
+            taskId: id,
+            state: "cancelled",
+          })
+          .catch((e) => log.error("cancelSessionTree: /task/release failed", { sessionID: id, error: String(e) })),
+      )
+      // Cancel the Rust runLoop's CancellationToken so the
+      // background tokio::spawn task stops promptly instead of
+      // continuing to completion after the TS poll loop exits.
+      // Failures must be visible (never silently swallowed) so an
+      // unstoppable background task is diagnosable via the logs.
+      yield* Effect.promise(() =>
+        smartLayer.agent
+          .cancelRunLoop(id)
+          .catch((e) => log.error("cancelSessionTree: cancelRunLoop failed", { sessionID: id, error: String(e) })),
+      )
+    }
+  } else {
+    // The background runLoop is always started through the smart layer, so its
+    // URL must have been discoverable. If it isn't here, the background tokio
+    // task cannot be cancelled and will keep running — record this instead of
+    // silently ignoring it.
+    log.error(
+      "cancelSessionTree: smartLayer unavailable — cannot cancel Rust runLoop; background tasks may keep running",
+      { sessionID: rootID },
+    )
+  }
+})
+
 export const SessionRoutes = lazy(() =>
   new Hono()
     .patch(
@@ -281,8 +353,14 @@ export const SessionRoutes = lazy(() =>
       async (c) =>
         jsonRequest("SessionRoutes.delete", c, function* () {
           const sessionID = c.req.valid("param").sessionID
-          const svc = yield* Session.Service
-          yield* svc.remove(sessionID)
+          const prompt = yield* SessionPrompt.Service
+          const sessions = yield* Session.Service
+          // 删除仍在生成的会话时先停止其整棵生成子树（TS poll + Rust run_loop）
+          // 并释放项目任务槽，否则 run_loop 变成僵尸继续占用唯一槽位，该项目
+          // 所有后续任务在循环自然结束前都会被 fail-fast 409 拒绝。
+          // 业务语义：删除一个正在生成的会话 = 停止生成并删除。
+          yield* cancelSessionTree(sessionID, prompt, sessions)
+          yield* sessions.remove(sessionID)
           return true
         }),
     )
@@ -456,76 +534,7 @@ export const SessionRoutes = lazy(() =>
           const rootID = c.req.valid("param").sessionID
           const svc = yield* SessionPrompt.Service
           const sessions = yield* Session.Service
-
-          // Collect the full set of sessions to cancel: the target plus ALL its
-          // descendants (sub-sessions spawned via the `task` tool, which records
-          // `parentID`). This ensures aborting the PARENT also stops every
-          // delegated explore/codegen child — the original "stop works first
-          // time, but not during explore" bug: the parent was cancelled while its
-          // child run_loop kept running because it owns an independent Rust
-          // run_loop token that the parent's cancel never touched.
-          //
-          // Revised: we NO LONGER walk UP to ancestors. The previous up-walk made
-          // stopping a sub-agent card (onHaltSubSession) silently kill the parent
-          // build session's run_loop too — a mid-reply "LLM streaming request
-          // cancelled" from the user's point of view. Down-only is the correct
-          // semantics: stopping a session stops it and everything it spawned;
-          // stopping a child leaves the parent in charge of handling the child's
-          // interrupted tool result.
-          const visited = new Set<SessionID>([rootID])
-          const subtree: SessionID[] = [rootID]
-          const stack: SessionID[] = [rootID]
-          while (stack.length > 0) {
-            const id = stack.pop()!
-            const kids = yield* sessions.children(id)
-            for (const k of kids) {
-              if (!visited.has(k.id)) {
-                visited.add(k.id)
-                subtree.push(k.id)
-                stack.push(k.id)
-              }
-            }
-          }
-
-          // Stop the TS poll loops for the whole subtree.
-          for (const id of subtree) {
-            yield* svc.cancel(id)
-          }
-
-          const smartLayer = createSmartLayerClients()
-          if (smartLayer) {
-            for (const id of subtree) {
-              // Release the project task lock so new prompts can run
-              yield* Effect.promise(() =>
-                smartLayer.client
-                  .post("/task/release", {
-                    projectPath: Instance.directory,
-                    taskId: id,
-                    state: "cancelled",
-                  })
-                  .catch((e) => log.error("abort: /task/release failed", { sessionID: id, error: String(e) })),
-              )
-              // Cancel the Rust runLoop's CancellationToken so the
-              // background tokio::spawn task stops promptly instead of
-              // continuing to completion after the TS poll loop exits.
-              // Failures must be visible (never silently swallowed) so an
-              // unstoppable background task is diagnosable via the logs.
-              yield* Effect.promise(() =>
-                smartLayer.agent
-                  .cancelRunLoop(id)
-                  .catch((e) => log.error("abort: cancelRunLoop failed", { sessionID: id, error: String(e) })),
-              )
-            }
-          } else {
-            // The background runLoop is always started through the smart layer, so its
-            // URL must have been discoverable. If it isn't here, the background tokio
-            // task cannot be cancelled and will keep running — record this instead of
-            // silently ignoring it.
-            log.error(
-              "abort: smartLayer unavailable — cannot cancel Rust runLoop; background tasks may keep running",
-              { sessionID: rootID },
-            )
-          }
+          yield* cancelSessionTree(rootID, svc, sessions)
           return true
         }),
     )

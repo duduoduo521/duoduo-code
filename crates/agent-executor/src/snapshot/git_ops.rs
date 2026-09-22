@@ -211,6 +211,10 @@ pub fn init_repo(gitdir: &Path, worktree: &Path) -> Result<(), String> {
 
     ensure_exclude_rules(gitdir);
 
+    // DIAG (windows-ci snapshot): see track.rs — confirm whether init ever
+    // runs on windows CI (it is expected to be skipped there because the
+    // gitdir shell already exists; this line proves it either way).
+    tracing::info!(gitdir = %gitdir.display(), "snapshot repo initialized");
     Ok(())
 }
 

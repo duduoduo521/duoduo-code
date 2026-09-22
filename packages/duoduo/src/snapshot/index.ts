@@ -38,6 +38,17 @@ const LOCK_POLL_MS = 25
  * over — which preserves the serialization guarantee.
  */
 async function acquireGitdirFileLock(gitdir: string): Promise<() => Promise<void>> {
+  // DIAG (windows-ci snapshot): the Rust run_loop's track() failed 77x in one
+  // windows CI run with "not a git repository" — its `gitdir.exists()` sampled
+  // TRUE but the dir had no git structure. Log when TS creates the shell dir
+  // so the next CI run shows which side materialized it first.
+  let diagPreExisted = true
+  try {
+    nodefs.statSync(gitdir)
+  } catch {
+    diagPreExisted = false
+  }
+  if (!diagPreExisted) console.warn(`[snapshot-diag] TS lock created gitdir: ${gitdir}`)
   await nodefs.mkdir(gitdir, { recursive: true })
   const lockPath = path.join(gitdir, LOCK_FILE)
   for (;;) {

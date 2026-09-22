@@ -12,6 +12,26 @@ pub fn track(svc: &SnapshotService) -> Result<String, String> {
     // creates the gitdir, which would otherwise make the check below skip
     // `init_repo` on the very first track of a project.
     let repo_existed = svc.gitdir.exists();
+    // DIAG (windows-ci snapshot): on windows-latest every track failed with
+    // "not a git repository" (77x in one run) while mac/linux never failed —
+    // meaning `repo_existed` sampled true but the dir had no git structure.
+    // Log the sampled state and the dir contents so the next CI run shows
+    // WHO creates the shell directory before the first track.
+    {
+        let contents = std::fs::read_dir(&svc.gitdir).map(|rd| {
+            let names: Vec<String> = rd
+                .filter_map(|e| e.ok())
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect();
+            names.join(",")
+        });
+        tracing::info!(
+            repo_existed,
+            gitdir = %svc.gitdir.display(),
+            contents = contents.unwrap_or_else(|e| format!("<unreadable: {e}>")),
+            "snapshot track entry"
+        );
+    }
 
     // Serialize against other services sharing this gitdir (P1-30): in-process
     // mutex first, then the cross-process file lock.

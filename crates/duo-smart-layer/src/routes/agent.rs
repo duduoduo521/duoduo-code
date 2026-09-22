@@ -2121,29 +2121,26 @@ fn extract_text_from_parts(parts: &[session_manager::message_store::PartRow]) ->
         let Some(pd) = part_data_from_row(part) else {
             continue;
         };
-        match pd {
-            duo_types::PartData::Text(t) => {
-                // TS parity (message-v2.ts toModelMessage): only `ignored`
-                // parts are excluded from the model input. `synthetic` parts
-                // (attachment expansions like "Called the Read tool ..." +
-                // file contents, comment notes, recovery gists) are hidden
-                // from the UI but MUST be sent to the LLM — filtering them
-                // here silently dropped every prompt attachment in the
-                // rust-run-loop path.
-                if t.ignored == Some(true) {
-                    continue;
-                }
-                if !t.text.is_empty() {
-                    texts.push(t.text);
-                }
+        // P1-3: ReasoningPart is deliberately NOT re-fed into the model
+        // context. Reasoning models re-derive thinking each turn; replaying
+        // old reasoning content re-bills it as input tokens every request
+        // (and it is not a structured `reasoning_content` field, so
+        // providers ignore its semantics). The reasoning UI keeps reading
+        // persisted parts — only this request-construction path changes.
+        if let duo_types::PartData::Text(t) = pd {
+            // TS parity (message-v2.ts toModelMessage): only `ignored`
+            // parts are excluded from the model input. `synthetic` parts
+            // (attachment expansions like "Called the Read tool ..." +
+            // file contents, comment notes, recovery gists) are hidden
+            // from the UI but MUST be sent to the LLM — filtering them
+            // here silently dropped every prompt attachment in the
+            // rust-run-loop path.
+            if t.ignored == Some(true) {
+                continue;
             }
-            // P1-3: ReasoningPart is deliberately NOT re-fed into the model
-            // context. Reasoning models re-derive thinking each turn; replaying
-            // old reasoning content re-bills it as input tokens every request
-            // (and it is not a structured `reasoning_content` field, so
-            // providers ignore its semantics). The reasoning UI keeps reading
-            // persisted parts — only this request-construction path changes.
-            _ => {}
+            if !t.text.is_empty() {
+                texts.push(t.text);
+            }
         }
     }
     if texts.is_empty() {
@@ -5092,19 +5089,19 @@ async fn run_loop_handler(
                             "name": "MessageAbortedError",
                             "data": { "message": "Interrupted by user" },
                         }))
-                    } else if let Some(err_msg) = last_error.as_ref() {
+                    } else {
                         // P1-2: the partial output below is persisted with the
                         // failure reason attached (finish="error").
                         // M1: NamedError shape — the frontend reads `error.name`
                         // (session-turn filters MessageAbortedError) and
                         // `error.data.message` for the card body; the previous
                         // bare {message} produced an empty error card.
-                        Some(serde_json::json!({
-                            "name": "UnknownError",
-                            "data": { "message": err_msg },
-                        }))
-                    } else {
-                        None
+                        last_error.as_ref().map(|err_msg| {
+                            serde_json::json!({
+                                "name": "UnknownError",
+                                "data": { "message": err_msg },
+                            })
+                        })
                     },
                     parent_id,
                     model_id: model_spawn.clone(),

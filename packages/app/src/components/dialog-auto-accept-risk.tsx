@@ -36,6 +36,7 @@ export const DialogAutoAcceptRisk: Component<DialogAutoAcceptRiskProps> = (props
 
   return (
     <DialogConfirm
+      danger
       title={language.t("dialog.autoAcceptRisk.title")}
       message={language.t("dialog.autoAcceptRisk.description")}
       detail={

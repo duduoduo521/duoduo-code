@@ -482,17 +482,15 @@ export const SettingsGeneral: Component = () => {
                 // Keep the TS-side cascade (LSP verification) aligned with the
                 // same "审校" intent. cascadeQA is retained only as the TS
                 // transport; it is no longer a standalone UI switch.
-                fetch(`${globalSDK.url}/session/cascade-qa`, {
-                  method: "PATCH",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ cascadeQA: checked }),
-                }).catch(() =>
-                  showToast({
-                    title: language.t("toast.loopConfig.failed.title"),
-                    description: language.t("toast.loopConfig.failed.description"),
-                    variant: "error",
-                  }),
-                )
+                globalSDK.client.session
+                  .updateCascadeQaGlobal({ cascadeQA: checked })
+                  .catch(() =>
+                    showToast({
+                      title: language.t("toast.loopConfig.failed.title"),
+                      description: language.t("toast.loopConfig.failed.description"),
+                      variant: "error",
+                    }),
+                  )
               }}
             />
           </div>

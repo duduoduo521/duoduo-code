@@ -1885,7 +1885,7 @@ export default function Layout(props: ParentProps) {
               <Button variant="secondary" size="large" onClick={handleKeep}>
                 {language.t("workspace.closeIndex.keep")}
               </Button>
-              <Button variant="primary" size="large" onClick={handleClear}>
+              <Button variant="critical" size="large" onClick={handleClear}>
                 {language.t("workspace.closeIndex.clear")}
               </Button>
             </div>

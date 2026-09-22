@@ -1138,6 +1138,8 @@ export const dict = {
   "gearStore.filter.mcp": "MCP",
   "gearStore.filter.skill": "Skill",
   "gearStore.filter.plugin": "Plugin",
+  "gearStore.filter.native": "Native",
+  "gearStore.filter.builtin": "Built-in",
   "gearStore.sources": "Sources: ModelScope Community",
   "settings.graph.desc": "Manage per-project knowledge graph indexes: retention, listing and cleanup.",
   "settings.graph.retentionDays": "Index retention (days)",

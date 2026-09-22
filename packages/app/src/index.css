@@ -6,20 +6,6 @@
 @import "./styles/mono-cjk.css";
 @import "@duoduo-ai/ui/styles/tailwind";
 
-:root {
-  /* DuoDuo 智能层颜色 */
-  --duoduo-smart-layer-connected: oklch(0.7 0.15 150);
-  --duoduo-smart-layer-disconnected: oklch(0.6 0.15 25);
-  --duoduo-smart-layer-connecting: oklch(0.75 0.15 85);
-
-  /* Pipeline 阶段颜色 */
-  --duoduo-pipeline-pending: oklch(0.6 0 0);
-  --duoduo-pipeline-running: oklch(0.65 0.15 250);
-  --duoduo-pipeline-completed: oklch(0.7 0.15 150);
-  --duoduo-pipeline-failed: oklch(0.6 0.15 25);
-  --duoduo-pipeline-awaiting: oklch(0.75 0.15 85);
-}
-
 @font-face {
   font-family: "JetBrainsMono Nerd Font Mono";
   src: url("/assets/JetBrainsMonoNerdFontMono-Regular.woff2") format("woff2");

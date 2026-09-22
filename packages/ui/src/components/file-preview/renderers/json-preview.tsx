@@ -78,7 +78,7 @@ function JsonNode(props: { value: unknown; name: string | undefined; depth: numb
 function JsonScalar(props: { value: unknown }) {
   const v = props.value
   if (typeof v === "string") return <span class="text-[var(--color-syntax-string,#ce9178)]">"{v}"</span>
-  if (typeof v === "number") return <span class="text-[var(--color-syntax-number,#b5cea8)]">{v}</span>
+  if (typeof v === "number") return <span class="text-[var(--color-syntax-primitive)]">{v}</span>
   if (typeof v === "boolean") return <span class="text-[var(--color-syntax-keyword,#569cd6)]">{String(v)}</span>
   if (v === null) return <span class="text-text-weak">null</span>
   // Fallback for any non-primitive (should not occur for JSON scalars); JSON.stringify

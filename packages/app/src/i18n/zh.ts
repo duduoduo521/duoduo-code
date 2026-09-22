@@ -1046,6 +1046,8 @@ export const dict = {
   "gearStore.filter.mcp": "MCP",
   "gearStore.filter.skill": "Skill",
   "gearStore.filter.plugin": "插件",
+  "gearStore.filter.native": "原生",
+  "gearStore.filter.builtin": "内置",
   "gearStore.sources": "数据来源：ModelScope 魔搭社区",
   "settings.graph.desc": "管理各项目的知识图谱索引：保留天数、已有索引与清理。",
   "settings.graph.retentionDays": "索引保留天数",

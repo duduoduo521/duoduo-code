@@ -192,7 +192,7 @@ function MemorySearchContent() {
 
       {/* Error */}
       <Show when={mem.searchError}>
-        <div class="text-xs text-red-400 px-1">{mem.searchError}</div>
+        <div class="text-xs text-text-on-critical-base px-1">{mem.searchError}</div>
       </Show>
 
       {/* Results */}
@@ -498,7 +498,7 @@ function MemoryStatsContent() {
                       <span class="text-text-strong">{item.count}</span>
                       <Show when={item.count > 0}>
                         <button
-                          class="text-[10px] text-red-400 hover:text-red-300 hover:underline"
+                          class="text-[10px] text-text-on-critical-weak hover:text-text-on-critical-base hover:underline"
                           onClick={() => handleClearLayer(item.id, item.label)}
                           disabled={clearing()}
                           type="button"

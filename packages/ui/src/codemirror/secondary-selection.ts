@@ -102,7 +102,9 @@ const secondaryCursorLayer = layer({
  */
 const secondarySelectionTheme = EditorView.theme({
   [`.${SELECTION_CLASS}`]: {
-    backgroundColor: "rgba(56, 139, 253, 0.4)",
+    // Same source as the primary ::selection (see --cm-selection-bg, which
+    // carries a static fallback for engines without color-mix()).
+    backgroundColor: "var(--cm-selection-bg)",
   },
   [`.${CURSOR_CLASS}`]: {
     width: "1.5px !important",

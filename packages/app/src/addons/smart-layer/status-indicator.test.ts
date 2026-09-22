@@ -18,11 +18,11 @@ function statusLabel(status: SmartLayerStatus, t: (key: string) => string): stri
 function dotColor(status: SmartLayerStatus): string {
   switch (status) {
     case "connected":
-      return "bg-green-500"
+      return "bg-icon-success-base"
     case "disconnected":
-      return "bg-red-400"
+      return "bg-icon-critical-base"
     case "checking":
-      return "bg-yellow-400 animate-pulse"
+      return "bg-icon-warning-base animate-pulse"
   }
 }
 
@@ -63,15 +63,15 @@ describe("smart layer status - label mapping", () => {
 
 describe("smart layer status - dot color mapping", () => {
   test("connected → green", () => {
-    expect(dotColor("connected")).toBe("bg-green-500")
+    expect(dotColor("connected")).toBe("bg-icon-success-base")
   })
 
   test("disconnected → red", () => {
-    expect(dotColor("disconnected")).toBe("bg-red-400")
+    expect(dotColor("disconnected")).toBe("bg-icon-critical-base")
   })
 
   test("checking → yellow with pulse animation", () => {
-    expect(dotColor("checking")).toBe("bg-yellow-400 animate-pulse")
+    expect(dotColor("checking")).toBe("bg-icon-warning-base animate-pulse")
   })
 })
 

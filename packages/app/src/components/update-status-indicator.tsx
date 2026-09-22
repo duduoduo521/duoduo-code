@@ -50,10 +50,10 @@ export function UpdateStatusIndicator() {
         >
           <Show
             when={status() === "downloading" || status() === "checking"}
-            fallback={<span class="inline-block h-1.5 w-1.5 rounded-full bg-blue-400" data-update-status={status()} />}
+            fallback={<span class="inline-block h-1.5 w-1.5 rounded-full bg-icon-info-base" data-update-status={status()} />}
           >
             <span
-              class="inline-block h-1.5 w-1.5 rounded-full bg-yellow-400 animate-pulse"
+              class="inline-block h-1.5 w-1.5 rounded-full bg-icon-warning-base animate-pulse"
               data-update-status={status()}
             />
           </Show>

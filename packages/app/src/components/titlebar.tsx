@@ -605,7 +605,7 @@ export function Titlebar() {
               </Show>
               <div id="duoduo-titlebar-left" class="flex items-center gap-3 min-w-0 px-2" />
               {import.meta.env.VITE_DUODUO_CHANNEL && ["beta", "dev"].includes(import.meta.env.VITE_DUODUO_CHANNEL) && (
-                <div class="bg-icon-interactive-base text-[#FFF] font-medium px-2 rounded-sm uppercase font-mono">
+                <div class="bg-icon-interactive-base text-text-on-brand-base font-medium px-2 rounded-sm uppercase font-mono">
                   {import.meta.env.VITE_DUODUO_CHANNEL.toUpperCase()}
                 </div>
               )}

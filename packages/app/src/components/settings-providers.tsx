@@ -695,7 +695,7 @@ export const SettingsProviders: Component = () => {
             </Button>
           </div>
           <Show when={portError()}>
-            <div class="text-13-regular text-red-500">{portError()}</div>
+            <div class="text-13-regular text-text-on-critical-base">{portError()}</div>
           </Show>
         </div>
 

@@ -29,16 +29,16 @@ export function IntentClarifyDialog(props: IntentClarifyDialogProps) {
 
   const confidenceColor = () => {
     const c = props.result.confidence
-    if (c >= 0.8) return "text-green-400"
-    if (c >= 0.5) return "text-yellow-400"
-    return "text-red-400"
+    if (c >= 0.8) return "text-syntax-success"
+    if (c >= 0.5) return "text-syntax-warning"
+    return "text-syntax-critical"
   }
 
   const confidenceBarColor = () => {
     const c = props.result.confidence
-    if (c >= 0.8) return "bg-green-500"
-    if (c >= 0.5) return "bg-yellow-500"
-    return "bg-red-500"
+    if (c >= 0.8) return "bg-syntax-success"
+    if (c >= 0.5) return "bg-syntax-warning"
+    return "bg-syntax-critical"
   }
 
   const modeLabel = (mode: SuggestedMode): string => {
@@ -146,8 +146,8 @@ function AmbiguityRow(props: { ambiguity: Ambiguity }) {
   const language = useLanguage()
 
   return (
-    <div class="flex flex-col gap-1.5 p-2 rounded bg-background-stronger ring-1 ring-yellow-500/20">
-      <span class="text-xs text-yellow-400">{props.ambiguity.question}</span>
+    <div class="flex flex-col gap-1.5 p-2 rounded bg-background-stronger ring-1 ring-border-warning-base">
+      <span class="text-xs text-syntax-warning">{props.ambiguity.question}</span>
       <div class="flex flex-wrap gap-1">
         <For each={props.ambiguity.options}>
           {(option) => (

@@ -28,7 +28,7 @@ export function QualityReportDialog(props: QualityReportDialogProps) {
   }
 
   const overallColor = () => {
-    return props.report.passed ? "text-green-400" : "text-red-400"
+    return props.report.passed ? "text-syntax-success" : "text-syntax-critical"
   }
 
   const scorePercent = () => {
@@ -37,9 +37,9 @@ export function QualityReportDialog(props: QualityReportDialogProps) {
 
   const scoreColor = () => {
     const s = props.report.score
-    if (s >= 0.8) return "text-green-400"
-    if (s >= 0.6) return "text-yellow-400"
-    return "text-red-400"
+    if (s >= 0.8) return "text-syntax-success"
+    if (s >= 0.6) return "text-syntax-warning"
+    return "text-syntax-critical"
   }
 
   return (
@@ -70,7 +70,7 @@ export function QualityReportDialog(props: QualityReportDialogProps) {
           <div class="h-2 rounded-full bg-background-base overflow-hidden">
             <div
               class={`h-full rounded-full transition-all duration-500 ${
-                props.report.score >= 0.8 ? "bg-green-500" : props.report.score >= 0.6 ? "bg-yellow-500" : "bg-red-500"
+                props.report.score >= 0.8 ? "bg-syntax-success" : props.report.score >= 0.6 ? "bg-syntax-warning" : "bg-syntax-critical"
               }`}
               style={{ width: `${scorePercent()}%` }}
             />
@@ -113,7 +113,7 @@ function QualityCheckRow(props: { check: QualityCheck }) {
   }
 
   const statusColor = () => {
-    return props.check.passed ? "text-green-400" : "text-red-400"
+    return props.check.passed ? "text-syntax-success" : "text-syntax-critical"
   }
 
   const scorePercent = () => {

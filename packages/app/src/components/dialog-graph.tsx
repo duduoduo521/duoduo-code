@@ -186,24 +186,24 @@ export const DialogGraph: Component<{ directory?: string }> = (props) => {
                     <Show
                       when={isFailed()}
                       fallback={
-                        <span class="text-12-regular px-2 py-0.5 rounded bg-accent/10 text-accent">
+                        <span class="text-12-regular px-2 py-0.5 rounded bg-surface-info-weak text-text-on-info-base">
                           {language.t("graphKanban.indexStatus.idle")}
                         </span>
                       }
                     >
-                      <span class="text-12-regular px-2 py-0.5 rounded bg-red-500/10 text-red-600">
+                      <span class="text-12-regular px-2 py-0.5 rounded bg-surface-critical-weak text-text-on-critical-base">
                         {language.t("graphKanban.indexStatus.failedStatus")}
                       </span>
                     </Show>
                   }
                 >
-                  <span class="text-12-regular px-2 py-0.5 rounded bg-green-500/10 text-green-600">
+                  <span class="text-12-regular px-2 py-0.5 rounded bg-surface-success-weak text-text-on-success-base">
                     {language.t("graphKanban.indexStatus.ready")}
                   </span>
                 </Show>
               }
             >
-              <span class="text-12-regular px-2 py-0.5 rounded bg-yellow-500/10 text-yellow-600">
+              <span class="text-12-regular px-2 py-0.5 rounded bg-surface-warning-weak text-text-on-warning-base">
                 {language.t("graphKanban.indexStatus.indexing")}
               </span>
             </Show>
@@ -253,7 +253,7 @@ export const DialogGraph: Component<{ directory?: string }> = (props) => {
                 {(f) => (
                   <div class="flex items-center gap-2 text-12-regular">
                     <span class="text-text-weak truncate flex-1" title={f.error}>{f.path}</span>
-                    <span class="text-red-500 shrink-0">{f.error}</span>
+                    <span class="text-text-on-critical-base shrink-0">{f.error}</span>
                     <Button variant="ghost" size="small" onClick={() => retryFile(f.path)}>
                       {language.t("graphKanban.indexStatus.retryFile")}
                     </Button>

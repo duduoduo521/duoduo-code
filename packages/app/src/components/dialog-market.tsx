@@ -419,26 +419,17 @@ export function DialogMarket(props: {}) {
   }
 
   /** Activation-tier badge: progressive (auto/on-demand) vs command (manual), etc. */
-  function tierInfo(gear: GearEntry): { label: string; cls: string } | null {
+  function tierInfo(gear: GearEntry): { label: string; cls: string | undefined } | null {
     const a = (gear.activation || "").toLowerCase()
     switch (a) {
       case "progressive":
-        return {
-          label: t("dialog.gear.tier.progressive"),
-          cls: "bg-sky-50 text-sky-600 dark:bg-sky-950/30 dark:text-sky-400",
-        }
+        return { label: t("dialog.gear.tier.progressive"), cls: KIND_BADGE.mcp }
       case "command":
-        return { label: t("dialog.gear.tier.command"), cls: "bg-surface-weak text-text-weaker" }
+        return { label: t("dialog.gear.tier.command"), cls: KIND_BADGE.builtin }
       case "auto":
-        return {
-          label: t("dialog.gear.tier.auto"),
-          cls: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/30 dark:text-emerald-400",
-        }
+        return { label: t("dialog.gear.tier.auto"), cls: KIND_BADGE.native }
       case "global":
-        return {
-          label: t("dialog.gear.tier.global"),
-          cls: "bg-violet-50 text-violet-600 dark:bg-violet-950/30 dark:text-violet-400",
-        }
+        return { label: t("dialog.gear.tier.global"), cls: KIND_BADGE.skill }
       default:
         return null
     }

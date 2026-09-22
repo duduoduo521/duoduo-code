@@ -124,6 +124,15 @@
     0 16px 40px -12px light-dark(hsl(0 0% 0% / 0.18), hsl(0 0% 0% / 0.55)),
     0 4px 12px -4px light-dark(hsl(0 0% 0% / 0.1), hsl(0 0% 0% / 0.4));
 
+  /* Secondary (multi-cursor / rectangular) selection shares the primary
+     ::selection source exactly (26% of the interactive text colour). Two
+     declarations: engines without color-mix() (WebKitGTK) keep the static
+     approximation instead of losing the background entirely — the same
+     fallback pattern as --light-* below. Static approximation uses the
+     light --text-interactive-base at 26% over transparent. */
+  --cm-selection-bg: rgba(16, 86, 226, 0.26);
+  --cm-selection-bg: color-mix(in oklab, var(--text-interactive-base) 26%, transparent);
+
   /* ─── Light: one overhead source for the whole UI ───
      Elevation used to be expressed only as "how dark is the drop shadow",
      which leaves surfaces reading as flat areas with a decorative blur

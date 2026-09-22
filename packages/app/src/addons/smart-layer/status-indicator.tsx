@@ -30,11 +30,11 @@ export function SmartLayerStatusIndicator() {
   const dotColor = () => {
     switch (sl.status) {
       case "connected":
-        return "bg-green-500"
+        return "bg-icon-success-base"
       case "disconnected":
-        return "bg-red-400"
+        return "bg-icon-critical-base"
       case "checking":
-        return "bg-yellow-400 animate-pulse"
+        return "bg-icon-warning-base animate-pulse"
     }
   }
 

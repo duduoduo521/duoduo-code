@@ -176,7 +176,7 @@ export const SettingsWebfetch: Component = () => {
                       <span class="flex-1 break-all text-text-strong font-mono">{rule.pattern}</span>
                       <button
                         type="button"
-                        class={`rounded px-2 py-0.5 text-11-medium ${rule.action === "allow" ? "bg-text-success/15 text-text-success" : "bg-text-danger/15 text-text-danger"}`}
+                        class={`rounded px-2 py-0.5 text-11-medium ${rule.action === "allow" ? "bg-surface-success-weak text-text-on-success-base" : "bg-surface-critical-weak text-text-on-critical-base"}`}
                         onClick={() => {
                           const next = [...rules()]
                           next[index()] = { ...rule, action: rule.action === "allow" ? "block" : "allow" }

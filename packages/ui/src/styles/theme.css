@@ -116,6 +116,17 @@
   /* Shadows: two short-range layers. The previous 3–5 layer stacks carried
      long diffusion tails (up to 36px/80px) that read as muddy grey haze on a
      desktop canvas and cost far more to repaint on every hover. */
+  /* Static fallbacks first — same pattern as --light-* below. WebKitGTK
+     (Linux) has no light-dark(); a var() resolving to nothing would kill the
+     whole box-shadow declaration, so engines without light-dark() keep these
+     light-scheme statics instead of losing the shadow entirely. */
+  --shadow-xs: 0 1px 2px hsl(0 0% 0% / 0.04);
+  --shadow-md:
+    0 4px 12px -2px hsl(0 0% 0% / 0.08),
+    0 1px 3px hsl(0 0% 0% / 0.04);
+  --shadow-lg:
+    0 16px 40px -12px hsl(0 0% 0% / 0.18),
+    0 4px 12px -4px hsl(0 0% 0% / 0.1);
   --shadow-xs: 0 1px 2px light-dark(hsl(0 0% 0% / 0.04), hsl(0 0% 0% / 0.4));
   --shadow-md:
     0 4px 12px -2px light-dark(hsl(0 0% 0% / 0.08), hsl(0 0% 0% / 0.45)),

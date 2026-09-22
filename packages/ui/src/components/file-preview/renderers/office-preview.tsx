@@ -42,7 +42,7 @@ function DocxView(props: { bytes: Uint8Array; errorLabel: string }) {
       when={!error()}
       fallback={<div class="flex items-center justify-center h-full text-text-weak text-13-regular">{props.errorLabel}</div>}
     >
-      <div ref={container} class="h-full w-full overflow-auto bg-white p-2" />
+      <div ref={container} class="h-full w-full overflow-auto bg-surface-base p-2" />
     </Show>
   )
 }

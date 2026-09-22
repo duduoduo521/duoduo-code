@@ -112,10 +112,8 @@
 
   /* border/shadow-xs/base */
   box-shadow:
-    0 0 0 1px var(--border-weak-base, rgba(17, 0, 0, 0.12)),
-    0 1px 2px -1px rgba(19, 16, 16, 0.04),
-    0 1px 2px 0 rgba(19, 16, 16, 0.06),
-    0 1px 3px 0 rgba(19, 16, 16, 0.08);
+    var(--shadow-xxs-border),
+    var(--shadow-xs);
 
   * {
     margin: 0 !important;

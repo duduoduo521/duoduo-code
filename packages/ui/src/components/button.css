@@ -76,6 +76,7 @@
       background-color: color-mix(in oklab, var(--border-critical-selected) 86%, black);
     }
     &:active:not(:disabled) {
+      background-color: #c5422d;
       background-color: color-mix(in oklab, var(--border-critical-selected) 78%, black);
     }
     &:disabled {

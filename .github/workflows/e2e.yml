@@ -41,14 +41,16 @@ jobs:
     name: E2E browser (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     # push → ubuntu only (fast feedback); PR / manual → all three platforms.
-    if: github.event_name != 'push' || matrix.os == 'ubuntu-latest'
+    # NOTE: this cannot be a job-level `if:` — `matrix` context is unavailable
+    # there ("Unrecognized named-value"), so the platform filter lives in the
+    # matrix expression below.
     # 251 用例 × 重试 + 首次 Rust 侧车编译（冷缓存 10~20min，rust-cache 二次起效），
     # 2 vCPU runner 上全跑约 2 小时量级，60min 必爆。
     timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        os: ${{ github.event_name == 'push' && fromJSON('["ubuntu-latest"]') || fromJSON('["windows-latest", "macos-latest", "ubuntu-latest"]') }}
     defaults:
       run:
         shell: bash

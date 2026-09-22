@@ -275,13 +275,19 @@ export async function openSettings(page: Page) {
 
 /**
  * Close any open dialog with Escape.
+ *
+ * A single Escape can be consumed by the surface that opened the dialog
+ * (e.g. the command palette closing asynchronously raced the dialog's own
+ * Escape handler — 3 consecutive retries lost this race on windows CI), so
+ * retry until the dialog is actually gone instead of one fire-and-forget key.
  */
 export async function closeDialog(page: Page) {
-  await page.keyboard.press("Escape")
   const dialog = page.locator('[data-component="dialog"], [data-component="dialog-overlay"], [role="dialog"]')
-  await expect(dialog.first())
-    .not.toBeVisible({ timeout: 2_000 })
-    .catch(() => {})
+  await expect(async () => {
+    if (!(await dialog.first().isVisible())) return
+    await page.keyboard.press("Escape")
+    await expect(dialog.first()).not.toBeVisible({ timeout: 1_000 })
+  }).toPass({ timeout: 10_000 })
 }
 
 /**

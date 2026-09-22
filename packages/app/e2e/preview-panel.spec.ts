@@ -57,10 +57,13 @@ test.describe("Preview Panel", () => {
   test("toolbar buttons are present", { tag: ["@core"] }, async ({ page }) => {
     const panel = await openPreviewPanel(page)
 
-    // Toolbar has Refresh, viewport toggle, and Close buttons
-    const toolbarButtons = panel.locator("button")
-    const buttonCount = await toolbarButtons.count()
-    expect(buttonCount).toBeGreaterThan(0)
+    // Toolbar has Refresh, viewport toggle, and Close buttons. On a slow
+    // runner the panel can be reported visible while its toolbar subtree is
+    // still mounting — poll instead of a one-shot count (windows CI 3x).
+    await expect(async () => {
+      const buttonCount = await panel.locator("button").count()
+      expect(buttonCount).toBeGreaterThan(0)
+    }).toPass({ timeout: 10_000 })
   })
 
   test("typing URL and pressing Enter loads", { tag: ["@core"] }, async ({ page }) => {

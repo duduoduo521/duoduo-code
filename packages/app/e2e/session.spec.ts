@@ -25,12 +25,15 @@ test.describe("Session Management", () => {
     await expect(page.locator('[data-slot="session-turn-list"]')).toBeAttached()
   })
 
-  test("project root loads app shell without forced redirect", { tag: ["@core"] }, async ({ page }) => {
+  test("session route redirects to default session", { tag: ["@core"] }, async ({ page }) => {
     await gotoProject(page)
 
-    // 产品行为：项目根路径停留在项目页，不再强制重定向到 /session
-    expect(page.url()).not.toContain("/session")
-    await expect(page.locator('[data-component="sidebar-rail"]').first()).toBeVisible()
+    // 产品行为：项目根路径自动进入该项目的会话页（SessionIndexRoute → Navigate）。
+    // 259cd736 曾把断言反转为"不重定向"，但重定向路由自 fork 起从未变更（run #5 通过
+    // 纯属断言跑在 Navigate 生效前的时序侥幸）。poll 化对两个方向的竞态都稳健。
+    await expect
+      .poll(() => page.url(), { timeout: 10_000, intervals: [500, 1_000] })
+      .toContain("/session")
   })
 
   test("session page renders prompt input", { tag: ["@core"] }, async ({ page }) => {

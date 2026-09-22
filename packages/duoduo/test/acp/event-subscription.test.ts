@@ -8,6 +8,17 @@ import { disposeAllWithTimeout } from "../lib/dispose"
 
 afterEach(() => disposeAllWithTimeout())
 
+// Poll until `cond` holds (bounded). Replaces fixed sleeps: under load a
+// fixed 10-20ms pause is a gamble, a bounded poll is deterministic — tests
+// proceed as soon as the pushed event has actually been processed, and fail
+// with a normal assertion if it never settles.
+async function waitFor(cond: () => boolean, timeoutMs = 3000, stepMs = 10) {
+  const deadline = Date.now() + timeoutMs
+  while (!cond() && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, stepMs))
+  }
+}
+
 type SessionUpdateParams = Parameters<AgentSideConnection["sessionUpdate"]>[0]
 type RequestPermissionParams = Parameters<AgentSideConnection["requestPermission"]>[0]
 type RequestPermissionResult = Awaited<ReturnType<AgentSideConnection["requestPermission"]>>
@@ -288,7 +299,7 @@ describe("acp.agent event subscription", () => {
           },
         } as any)
 
-        await new Promise((r) => setTimeout(r, 10))
+        await waitFor(() => (updates.get(sessionB) ?? []).includes("agent_message_chunk"))
 
         expect((updates.get(sessionA) ?? []).includes("agent_message_chunk")).toBe(false)
         expect((updates.get(sessionB) ?? []).includes("agent_message_chunk")).toBe(true)
@@ -325,7 +336,10 @@ describe("acp.agent event subscription", () => {
           },
         } as any)
 
-        await new Promise((r) => setTimeout(r, 20))
+        // Any update for this session proves the pushed event was delivered
+        // and handled; then assert the user text part never surfaced as
+        // user_message_chunk.
+        await waitFor(() => sessionUpdates.some((u) => u.sessionId === sessionId))
 
         expect(
           sessionUpdates
@@ -375,7 +389,11 @@ describe("acp.agent event subscription", () => {
         push(sessionA, "msg_a", tokenA[2])
         push(sessionB, "msg_b", tokenB[2])
 
-        await new Promise((r) => setTimeout(r, 20))
+        await waitFor(
+          () =>
+            (chunks.get(sessionA) ?? "").includes(tokenA.join("")) &&
+            (chunks.get(sessionB) ?? "").includes(tokenB.join("")),
+        )
 
         const a = chunks.get(sessionA) ?? ""
         const b = chunks.get(sessionB) ?? ""
@@ -442,7 +460,7 @@ describe("acp.agent event subscription", () => {
           },
         } as any)
 
-        await new Promise((r) => setTimeout(r, 20))
+        await waitFor(() => permissionReplies.includes("perm_1"))
 
         expect(permissionReplies).toContain("perm_1")
 
@@ -501,8 +519,9 @@ describe("acp.agent event subscription", () => {
           },
         } as any)
 
-        // Give time for permission handling to start
-        await new Promise((r) => setTimeout(r, 10))
+        // Wait until session A's permission handler has actually been entered
+        // (it blocks there) before pushing session B's message.
+        await waitFor(() => _permissionCalls === 1)
 
         // Push message for session B while A's permission is pending
         controller.push({
@@ -520,7 +539,7 @@ describe("acp.agent event subscription", () => {
         } as any)
 
         // Wait for session B's message to be processed
-        await new Promise((r) => setTimeout(r, 20))
+        await waitFor(() => (chunks.get(sessionB) ?? "").includes("session_b_message"))
 
         // Session B should have received message even though A's permission is still pending
         expect(chunks.get(sessionB) ?? "").toContain("session_b_message")
@@ -528,7 +547,7 @@ describe("acp.agent event subscription", () => {
 
         // Release session A's permission
         resolvePermissionA!()
-        await new Promise((r) => setTimeout(r, 20))
+        await waitFor(() => permissionReplies.includes("perm_a"))
 
         // Now session A's permission should be replied
         expect(permissionReplies).toContain("perm_a")
@@ -559,7 +578,11 @@ describe("acp.agent event subscription", () => {
             }),
           )
         }
-        await new Promise((r) => setTimeout(r, 20))
+        await waitFor(
+          () =>
+            sessionUpdates.filter((u) => u.sessionId === sessionId && isToolCallUpdate(u.update))
+              .length >= 3,
+        )
 
         const snapshots = sessionUpdates
           .filter((u) => u.sessionId === sessionId)
@@ -598,7 +621,14 @@ describe("acp.agent event subscription", () => {
             input: { filePath: "/tmp/example.txt" },
           }),
         )
-        await new Promise((r) => setTimeout(r, 20))
+        await waitFor(
+          () =>
+            sessionUpdates.filter(
+              (u) =>
+                u.sessionId === sessionId &&
+                (u.update.sessionUpdate === "tool_call" || u.update.sessionUpdate === "tool_call_update"),
+            ).length >= 4,
+        )
 
         const types = sessionUpdates
           .filter((u) => u.sessionId === sessionId)
@@ -661,7 +691,16 @@ describe("acp.agent event subscription", () => {
             metadata: { output: "hi\nthere\n" },
           }),
         )
-        await new Promise((r) => setTimeout(r, 20))
+        await waitFor(
+          () =>
+            sessionUpdates.filter(
+              (u) =>
+                u.sessionId === sessionId &&
+                "toolCallId" in u.update &&
+                u.update.toolCallId === "call_1" &&
+                (u.update.sessionUpdate === "tool_call" || u.update.sessionUpdate === "tool_call_update"),
+            ).length >= 3,
+        )
 
         const types = sessionUpdates
           .filter((u) => u.sessionId === sessionId)
@@ -713,7 +752,11 @@ describe("acp.agent event subscription", () => {
             metadata: { output: "a" },
           }),
         )
-        await new Promise((r) => setTimeout(r, 20))
+        await waitFor(
+          () =>
+            sessionUpdates.filter((u) => u.sessionId === sessionId && isToolCallUpdate(u.update))
+              .length >= 2,
+        )
 
         const snapshots = sessionUpdates
           .filter((u) => u.sessionId === sessionId)

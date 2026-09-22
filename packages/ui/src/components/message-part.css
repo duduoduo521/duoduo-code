@@ -1133,7 +1133,9 @@
     overflow-wrap: anywhere;
 
     &::placeholder {
-      /* 与 text-field.css 对齐：placeholder 在 --text-weaker 基础上再淡一档。 */
+      /* 与 text-field.css 对齐：placeholder 在 --text-weaker 基础上再淡一档。
+         Fallback: var(--text-weaker) without the extra fade (no color-mix). */
+      color: var(--text-weaker);
       color: color-mix(in oklab, var(--text-weaker) 70%, transparent);
     }
 

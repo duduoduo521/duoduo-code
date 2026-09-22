@@ -21,6 +21,8 @@
   border-radius: var(--radius-lg);
   background-color: var(--surface-raised-stronger-non-alpha);
   color: var(--text-strong);
+  /* Fallback first: WebKitGTK has no color-mix() — opaque weak border. */
+  border: 1px solid var(--border-weak-base);
   border: 1px solid color-mix(in oklch, var(--border-base) 45%, transparent);
   background-clip: padding-box;
   box-shadow: var(--shadow-md);

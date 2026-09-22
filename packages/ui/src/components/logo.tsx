@@ -64,7 +64,9 @@ export const SplashRing = (props: LogoProps) => {
         "border-radius": "50%",
         border: "2.5px solid",
         "border-color":
-          "color-mix(in srgb, var(--icon-interactive-base) 40%, transparent) transparent color-mix(in srgb, var(--icon-interactive-base) 40%, transparent) transparent",
+          /* Static rgba (light --icon-interactive-base 40%): a color-mix() here
+             would drop the whole border-color on WebKitGTK, killing the ring. */
+          "rgba(17, 94, 248, 0.4) transparent rgba(17, 94, 248, 0.4) transparent",
         animation: "duoduo-splash-spin 0.8s linear infinite",
         ...props.style,
       }}

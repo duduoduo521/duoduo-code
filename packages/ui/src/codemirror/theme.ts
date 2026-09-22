@@ -34,11 +34,13 @@ export const codeMirrorTheme = EditorView.theme(
 
     // ── Native text selection (used because drawSelection is disabled) ──
     // Behaves exactly like a <textarea>: browser/system default highlight.
+    // --cm-selection-bg carries a static fallback for engines without
+    // color-mix() (WebKitGTK) — see theme.css.
     ".cm-content ::selection": {
-      backgroundColor: "color-mix(in oklab, var(--text-interactive-base) 26%, transparent)",
+      backgroundColor: "var(--cm-selection-bg)",
     },
     ".cm-content::selection": {
-      backgroundColor: "color-mix(in oklab, var(--text-interactive-base) 26%, transparent)",
+      backgroundColor: "var(--cm-selection-bg)",
     },
 
     // ── Cursor ─────────────────────────────────────────────────────

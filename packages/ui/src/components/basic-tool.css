@@ -189,6 +189,8 @@
   padding: 8px 12px;
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-weak-base, rgba(255, 255, 255, 0.08));
+  /* Fallback: WebKitGTK has no color-mix() — opaque surface instead of 92%. */
+  background: var(--background-base);
   background: color-mix(in srgb, var(--background-base) 92%, transparent);
   transition:
     border-color var(--duration-fast, 120ms) ease,
@@ -249,6 +251,8 @@
   &:hover,
   &:focus-visible {
     border-color: var(--border-weak-base, rgba(255, 255, 255, 0.08));
+    /* Fallback: opaque surface (no color-mix on WebKitGTK). */
+    background: var(--background-stronger);
     background: color-mix(in srgb, var(--background-stronger) 88%, transparent);
 
     [data-component="task-tool-action"] {

@@ -1008,7 +1008,7 @@ export function DialogMarket(props: {}) {
       <Show when={pendingGear()}>
         <div
           class="absolute inset-0 z-30 flex items-stretch justify-center"
-          style={{ "background-color": "hsl(from var(--background-base) h s l / 0.35)", "backdrop-filter": "blur(8px)", "-webkit-backdrop-filter": "blur(8px)" }}
+          style={{ "background-color": "var(--overlay-veil)", "backdrop-filter": "blur(8px)", "-webkit-backdrop-filter": "blur(8px)" }}
           onClick={() => {
             setPendingGear(null)
             setAgreed(false)
@@ -1183,7 +1183,7 @@ export function DialogMarket(props: {}) {
       <Show when={pendingCmdGear()}>
         <div
           class="absolute inset-0 z-30 flex items-stretch justify-center"
-          style={{ "background-color": "hsl(from var(--background-base) h s l / 0.35)", "backdrop-filter": "blur(8px)", "-webkit-backdrop-filter": "blur(8px)" }}
+          style={{ "background-color": "var(--overlay-veil)", "backdrop-filter": "blur(8px)", "-webkit-backdrop-filter": "blur(8px)" }}
           onClick={() => {
             setPendingCmdGear(null)
             setSelectedGear(null)

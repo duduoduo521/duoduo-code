@@ -862,7 +862,7 @@ export function MessageTimeline(props: {
             onClick={props.onResumeScroll}
           >
             <div
-              class="flex items-center justify-center w-8 h-6 rounded-[6px] border border-border-weaker-base bg-[color-mix(in_srgb,var(--surface-raised-stronger-non-alpha)_80%,transparent)] backdrop-blur-[0.75px] transition-colors group-hover:border-[var(--border-weak-base)] group-hover:[--icon-base:var(--icon-hover)]"
+              class="flex items-center justify-center w-8 h-6 rounded-[6px] border border-border-weaker-base bg-surface-raised-stronger-non-alpha backdrop-blur-[0.75px] transition-colors group-hover:border-[var(--border-weak-base)] group-hover:[--icon-base:var(--icon-hover)]"
               style={{
                 "box-shadow": "var(--shadow-lg)",
               }}

@@ -23,6 +23,8 @@
        with transparent so it fades one more step — and adapts to both light
        and dark palettes automatically. */
     &::placeholder {
+      /* Fallback: plain --text-weaker (no color-mix on WebKitGTK). */
+      color: var(--text-weaker);
       color: color-mix(in oklab, var(--text-weaker) 70%, transparent);
     }
   }
@@ -117,6 +119,8 @@
       }
 
       &::placeholder {
+        /* Fallback: plain --text-weaker (no color-mix on WebKitGTK). */
+        color: var(--text-weaker);
         color: color-mix(in oklab, var(--text-weaker) 70%, transparent);
       }
     }

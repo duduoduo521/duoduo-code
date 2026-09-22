@@ -135,6 +135,13 @@
     0 16px 40px -12px light-dark(hsl(0 0% 0% / 0.18), hsl(0 0% 0% / 0.55)),
     0 4px 12px -4px light-dark(hsl(0 0% 0% / 0.1), hsl(0 0% 0% / 0.4));
 
+  /* Inline overlay veil (market install-confirm scrims): a translucent wash of
+     the page background. Static fallback first — WebKitGTK has no hsl(from …)
+     relative-colour syntax, and an inline style cannot carry a second
+     declaration. */
+  --overlay-veil: rgba(246, 248, 251, 0.35);
+  --overlay-veil: hsl(from var(--background-base) h s l / 0.35);
+
   /* Secondary (multi-cursor / rectangular) selection shares the primary
      ::selection source exactly (26% of the interactive text colour). Two
      declarations: engines without color-mix() (WebKitGTK) keep the static

@@ -47,7 +47,8 @@ body {
 
 /* Accent-tinted text selection */
 ::selection {
-  background-color: color-mix(in oklab, var(--text-interactive-base, #0066ff) 26%, transparent);
+  /* Var carries a static fallback for engines without color-mix() — theme.css. */
+  background-color: var(--cm-selection-bg);
 }
 
 /* ─── Native scrollbars: slim, quiet, appear on hover ───
@@ -61,6 +62,9 @@ body {
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
+  /* Static fallback first: WebKitGTK (Linux) has no color-mix(), and a dead
+     declaration leaves the scrollbar invisible. Approximates --text-base 26%. */
+  background-color: rgba(23, 26, 33, 0.26);
   background-color: color-mix(in oklab, var(--text-base, #888) 26%, transparent);
   border-radius: 999px;
   border: 3px solid transparent;
@@ -68,6 +72,7 @@ body {
   transition: background-color 150ms ease;
 }
 *::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(23, 26, 33, 0.46);
   background-color: color-mix(in oklab, var(--text-base, #888) 46%, transparent);
 }
 *::-webkit-scrollbar-corner {
@@ -75,6 +80,7 @@ body {
 }
 * {
   scrollbar-width: thin;
+  scrollbar-color: rgba(23, 26, 33, 0.26) transparent;
   scrollbar-color: color-mix(in oklab, var(--text-base, #888) 26%, transparent) transparent;
 }
 
@@ -351,6 +357,10 @@ textarea,
 @supports (not (-webkit-appearance: -apple-pay-button)) /* Not Safari */ or (contain-intrinsic-size: 1px)
   /* Safari 17+ */ {
   ::placeholder {
+    /* Fallback for engines without color-mix(): half-opacity of the inherited
+       colour reads the same as the 50% mix below. Overrides the opacity:1
+       reset above only here, so WebKitGTK still gets a dimmed placeholder. */
+    opacity: 0.5;
     color: color-mix(in oklab, currentcolor 50%, transparent);
   }
 }

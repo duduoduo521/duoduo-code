@@ -7,10 +7,13 @@
   min-width: 200px;
   max-width: 320px;
   border-radius: var(--radius-xl);
+  /* Fallbacks first: WebKitGTK has no color-mix() — opaque border/surface. */
+  background-color: var(--surface-raised-stronger-non-alpha);
   background-color: color-mix(in oklab, var(--surface-raised-stronger-non-alpha) 90%, transparent);
   backdrop-filter: blur(16px) saturate(1.5);
   -webkit-backdrop-filter: blur(16px) saturate(1.5);
 
+  border: 1px solid var(--border-weak-base);
   border: 1px solid color-mix(in oklch, var(--border-base) 45%, transparent);
   background-clip: padding-box;
   box-shadow: var(--shadow-md);

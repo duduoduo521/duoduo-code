@@ -65,10 +65,14 @@
       color: #fff;
     }
 
+    /* Static fallbacks first: WebKitGTK has no color-mix(); without them a
+       critical button would keep its resting red on hover/press. */
     &:hover:not(:disabled) {
+      background-color: #d94832;
       background-color: color-mix(in oklab, var(--border-critical-selected) 86%, black);
     }
     &:focus:not(:disabled) {
+      background-color: #d94832;
       background-color: color-mix(in oklab, var(--border-critical-selected) 86%, black);
     }
     &:active:not(:disabled) {

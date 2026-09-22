@@ -10,6 +10,10 @@
      blur on every frame, which drops frames and reads as "卡顿" on large
      dialogs (e.g. the x-large Settings panel). A deeper solid scrim fades
      cheaply on the compositor instead. */
+  /* Static fallback first: WebKitGTK has no hsl(from …) relative syntax and a
+     dead declaration leaves the scrim transparent (dialog floats over raw
+     content). Approximates --background-base 55%. */
+  background-color: rgba(246, 248, 251, 0.55);
   background-color: hsl(from var(--background-base) h s l / 0.55);
   will-change: opacity;
 }

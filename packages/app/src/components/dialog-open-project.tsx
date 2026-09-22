@@ -400,7 +400,7 @@ function RemoteForm(props: {
           <span class="text-12-medium text-text-strong">{language.t("dialog.openProject.remote.path")}</span>
           <div class="flex items-center gap-2">
             <input
-              class="flex-1 cursor-default rounded-md border border-border-base bg-surface-base px-3 py-2 text-14-regular text-text-strong placeholder:text-[color-mix(in_oklab,var(--text-weaker)_70%,transparent)] outline-none focus:border-border-strong disabled:opacity-50"
+              class="flex-1 cursor-default rounded-md border border-border-base bg-surface-base px-3 py-2 text-14-regular text-text-strong placeholder:text-text-weaker outline-none focus:border-border-strong disabled:opacity-50"
               placeholder={language.t("dialog.openProject.remote.pathPlaceholder")}
               value={remotePath()}
               readonly

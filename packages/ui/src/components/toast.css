@@ -41,6 +41,8 @@
   transition: all var(--duration-base) var(--ease-out);
 
   border-radius: var(--radius-xl);
+  /* Fallback: WebKitGTK has no color-mix() — approximate text-invert 14%. */
+  border: 1px solid rgba(240, 243, 246, 0.14);
   border: 1px solid color-mix(in oklab, var(--text-invert-base) 14%, transparent);
   background: var(--surface-float-base);
   color: var(--text-invert-base);

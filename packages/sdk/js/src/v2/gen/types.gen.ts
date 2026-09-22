@@ -151,6 +151,31 @@ export type EventPermissionReplied = {
   }
 }
 
+export type GraphIndexStatus =
+  | {
+      type: "idle"
+    }
+  | {
+      type: "indexing"
+      progress?: number
+      filesDone?: number
+      filesTotal?: number
+    }
+  | {
+      type: "ready"
+    }
+  | {
+      type: "failed"
+      error?: string
+    }
+
+export type EventGraphIndexStatus = {
+  type: "graph.index-status"
+  properties: {
+    status: GraphIndexStatus
+  }
+}
+
 export type QuestionOption = {
   /**
    * Display text (1-5 words, concise)
@@ -350,6 +375,10 @@ export type EventSessionError = {
 
 export type Todo = {
   /**
+   * Stable id of an existing task. When updating an existing task you MUST pass back its id; omit it only when creating a brand-new task.
+   */
+  id?: string
+  /**
    * Brief description of the task
    */
   content: string
@@ -361,10 +390,6 @@ export type Todo = {
    * Priority level of the task: high, medium, low
    */
   priority: string
-  /**
-   * Stable identity of the task (legacy rows fall back to content)
-   */
-  id: string
 }
 
 export type EventTodoUpdated = {
@@ -372,31 +397,6 @@ export type EventTodoUpdated = {
   properties: {
     sessionID: string
     todos: Array<Todo>
-  }
-}
-
-export type GraphIndexStatus =
-  | {
-      type: "idle"
-    }
-  | {
-      type: "indexing"
-      progress?: number
-      filesDone?: number
-      filesTotal?: number
-    }
-  | {
-      type: "ready"
-    }
-  | {
-      type: "failed"
-      error?: string
-    }
-
-export type EventGraphIndexStatus = {
-  type: "graph.index-status"
-  properties: {
-    status: GraphIndexStatus
   }
 }
 
@@ -1390,6 +1390,35 @@ export type Config = {
    * How many days of file-snapshot history to retain before automatic garbage collection. Snapshots older than this are pruned during the hourly cleanup. Defaults to 90.
    */
   snapshot_retention_days?: number
+  /**
+   * Maximum size (bytes) of an untracked file for it to participate in snapshots and rollback. Files larger than this are excluded (they are never deleted by a rollback). Defaults to 2097152 (2 MB).
+   */
+  snapshot_max_file_size?: number
+  /**
+   * Maximum on-disk size (bytes) of the snapshot repository. When exceeded, the hourly cleanup prunes the oldest snapshots first (bounded per run) until below the limit. Snapshots pruned this way lose their rollback point. Defaults to 5368709120 (5 GB).
+   */
+  snapshot_max_total_size?: number
+  /**
+   * Webfetch network access mode (H4). 'blacklist' (default) allows all destinations except those matching a block rule — standard reserved ranges ship as editable default rules. 'whitelist' blocks every destination that is not explicitly allowed by a rule (e.g. allow your intranet segments only).
+   */
+  webfetch_access_mode?: "blacklist" | "whitelist"
+  /**
+   * User-managed webfetch access rules (H4), re-evaluated before EVERY redirect hop. In blacklist mode the protocol-standard reserved-range default rules apply in addition to these; in whitelist mode only 'allow' rules grant access.
+   */
+  webfetch_rules?: Array<{
+    /**
+     * IP, CIDR (v4/v6), domain, or '*.domain' pattern.
+     */
+    pattern: string
+    /**
+     * 'allow' exempts the target; 'block' denies it. The most specific match wins; allow beats block on equal specificity.
+     */
+    action: "allow" | "block"
+    /**
+     * Disabled rules are kept but not evaluated.
+     */
+    enabled: boolean
+  }>
   plugin?: Array<
     | string
     | [
@@ -1537,6 +1566,10 @@ export type Config = {
      */
     reserved?: number
   }
+  /**
+   * Multi-agent orchestration mode: adaptive (default — decompose when warranted), fixed4 (always four parallel sub-agents for code-write prompts), off (single agent, no orchestration gate).
+   */
+  multi_agent_mode?: "adaptive" | "fixed4" | "off"
   experimental?: {
     disable_paste_summary?: boolean
     /**
@@ -1706,6 +1739,7 @@ export type GlobalEvent = {
     | EventFileEdited
     | EventPermissionAsked
     | EventPermissionReplied
+    | EventGraphIndexStatus
     | EventQuestionAsked
     | EventQuestionReplied
     | EventQuestionRejected
@@ -1715,7 +1749,6 @@ export type GlobalEvent = {
     | EventSessionDiff
     | EventSessionError
     | EventTodoUpdated
-    | EventGraphIndexStatus
     | EventFileWatcherUpdated
     | EventFileWatcherUnavailable
     | EventSessionStatus
@@ -2117,6 +2150,7 @@ export type Event =
   | EventFileEdited
   | EventPermissionAsked
   | EventPermissionReplied
+  | EventGraphIndexStatus
   | EventQuestionAsked
   | EventQuestionReplied
   | EventQuestionRejected
@@ -2126,7 +2160,6 @@ export type Event =
   | EventSessionDiff
   | EventSessionError
   | EventTodoUpdated
-  | EventGraphIndexStatus
   | EventFileWatcherUpdated
   | EventFileWatcherUnavailable
   | EventSessionStatus
@@ -6048,6 +6081,8 @@ export type SnapshotStatsResponses = {
     exists: boolean
     sizeBytes: number
     defaultPruneDays: number
+    maxFileSizeBytes: number
+    maxTotalSizeBytes: number
   }
 }
 

@@ -94,6 +94,24 @@ body {
   scrollbar-color: color-mix(in oklab, var(--text-base, #888) 26%, transparent) transparent;
 }
 
+/* Dark-scheme static fallbacks (no color-mix() on WebKitGTK): the light
+   statics above are near-invisible on dark surfaces. Approximates dark
+   --text-base #e8eaed. */
+@media (prefers-color-scheme: dark) {
+  *::-webkit-scrollbar-thumb {
+    background-color: rgba(232, 234, 237, 0.26);
+    background-color: color-mix(in oklab, var(--text-base, #888) 26%, transparent);
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(232, 234, 237, 0.46);
+    background-color: color-mix(in oklab, var(--text-base, #888) 46%, transparent);
+  }
+  * {
+    scrollbar-color: rgba(232, 234, 237, 0.26) transparent;
+    scrollbar-color: color-mix(in oklab, var(--text-base, #888) 26%, transparent) transparent;
+  }
+}
+
 /*
   Loading spinner: guaranteed-rotating override for Tailwind's `animate-spin`.
 

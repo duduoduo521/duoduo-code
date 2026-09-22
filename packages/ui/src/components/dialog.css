@@ -18,6 +18,15 @@
   will-change: opacity;
 }
 
+/* Dark-scheme static fallback (no relative-colour syntax on WebKitGTK):
+   approximate dark --background-base 55%. */
+@media (prefers-color-scheme: dark) {
+  [data-component="dialog-overlay"] {
+    background-color: rgba(10, 13, 18, 0.55);
+    background-color: hsl(from var(--background-base) h s l / 0.55);
+  }
+}
+
 [data-component="dialog"] {
   /* The horizontal safe gutter shared by the header and by every body pane.
      Dialog body content previously hard-coded its own left/right padding

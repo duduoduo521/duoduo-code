@@ -656,6 +656,15 @@
     --border-weak-disabled: #2e3136;
     --border-weak-focus: #45474c;
     --border-weaker-base: #2a2d32;
+
+    /* Dark-scheme static fallbacks for the relative-colour composites above:
+       engines without hsl(from …)/color-mix() (WebKitGTK) fall through to
+       these instead of keeping the light-scheme statics in dark mode. The
+       light-dark()-capable engines re-override with the precise values. */
+    --overlay-veil: rgba(10, 13, 18, 0.35);
+    --overlay-veil: hsl(from var(--background-base) h s l / 0.35);
+    --cm-selection-bg: rgba(190, 213, 251, 0.26);
+    --cm-selection-bg: color-mix(in oklab, var(--text-interactive-base) 26%, transparent);
     --border-subtle: #33363a;
     --border-interactive-base: #033993;
     --border-interactive-hover: #0b50c1;

@@ -86,6 +86,20 @@
     }
   }
 
+  /* Dark-scheme static fallbacks (no color-mix() on WebKitGTK): approximate
+     dark --border-critical-selected #e60a35 mixed with black. */
+  @media (prefers-color-scheme: dark) {
+    &[data-variant="critical"]:hover:not(:disabled),
+    &[data-variant="critical"]:focus:not(:disabled) {
+      background-color: #c6092e;
+      background-color: color-mix(in oklab, var(--border-critical-selected) 86%, black);
+    }
+    &[data-variant="critical"]:active:not(:disabled) {
+      background-color: #b30829;
+      background-color: color-mix(in oklab, var(--border-critical-selected) 78%, black);
+    }
+  }
+
   &[data-variant="ghost"] {
     border-color: transparent;
     background-color: transparent;

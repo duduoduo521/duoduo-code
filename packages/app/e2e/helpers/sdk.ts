@@ -71,8 +71,40 @@ export async function createTestSession(title?: string): Promise<SessionInfo> {
   return (await res.json()) as SessionInfo
 }
 
+/**
+ * Wait until the session's Rust run loop is no longer running (the metrics
+ * entry reports running:false or is gone). Bounded poll — a session that is
+ * still streaming holds the project's single task slot, so a follow-up test's
+ * first prompt would fail-fast 409 and get stuck in the queue.
+ */
+export async function waitForSessionIdle(sessionId: string, timeoutMs = 30_000): Promise<void> {
+  const info = getRuntimeInfo()
+  if (!info.smartLayerUrl) return
+  const t0 = Date.now()
+  while (Date.now() - t0 < timeoutMs) {
+    try {
+      const res = await fetch(
+        `${info.smartLayerUrl}/agent/metrics?session_id=${encodeURIComponent(sessionId)}`,
+        { signal: AbortSignal.timeout(2_000) },
+      )
+      if (res.ok) {
+        const data = (await res.json()) as { running?: boolean }
+        if (!data.running) return
+      }
+    } catch {
+      // transient — keep waiting
+    }
+    await new Promise((r) => setTimeout(r, 500))
+  }
+}
+
 /** Delete a session by ID. */
 export async function deleteTestSession(sessionId: string): Promise<void> {
+  // Let the session's run loop wind down first: the backend now cancels the
+  // generation subtree on delete (delete = stop + remove), but the Rust loop
+  // exits asynchronously — deleting mid-stream would still race its final
+  // bookkeeping writes into the per-project DB.
+  await waitForSessionIdle(sessionId).catch(() => {})
   const info = getRuntimeInfo()
   const url = new URL(`/session/${sessionId}`, info.backendUrl)
   url.searchParams.set("directory", info.projectDir)
@@ -179,39 +211,6 @@ export async function abortSession(sessionId: string): Promise<void> {
     headers: baseHeaders(),
   })
   assertOk(res, `abortSession(${sessionId})`)
-}
-
-/** Wait for a session to become idle by polling the status endpoint. */
-export async function waitForSessionIdle(sessionId: string, timeoutMs = 30_000): Promise<void> {
-  const info = getRuntimeInfo()
-  const start = Date.now()
-  while (Date.now() - start < timeoutMs) {
-    const url = new URL("/session/status", info.backendUrl)
-    url.searchParams.set("directory", info.projectDir)
-
-    try {
-      const res = await fetch(url.toString(), {
-        method: "GET",
-        headers: baseHeaders(),
-        signal: AbortSignal.timeout(2_000),
-      })
-      if (res.ok) {
-        const data = await res.json()
-        // Status can be per-session or global; check both shapes
-        if (!data) break
-        if (data.type === "idle") break
-        if (data.status === "idle") break
-        // If it's an array, check if our session is idle
-        if (Array.isArray(data)) {
-          const ours = data.find((s: any) => s.id === sessionId || s.sessionID === sessionId)
-          if (!ours || ours.type === "idle" || ours.status === "idle") break
-        }
-      }
-    } catch {
-      // Network error — backend might be restarting; keep polling
-    }
-    await new Promise((r) => setTimeout(r, 500))
-  }
 }
 
 // ─── Config API ─────────────────────────────────────────────────

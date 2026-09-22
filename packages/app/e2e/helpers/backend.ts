@@ -212,37 +212,45 @@ export async function startIsolatedBackend(opts: BackendOptions): Promise<Isolat
 
   const port = opts.backendPort ?? pickFreePort()
 
+  // Exactly one color policy for the backend process: NO_COLOR=1 for clean
+  // CI log capture. Playwright injects FORCE_COLOR into the webServer env —
+  // with both set, node's colors module warns on every startup ("The
+  // 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set"), so
+  // the inherited FORCE_COLOR must be stripped, not overridden.
+  const backendEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    DUODUO_TEST_HOME: homeDir,
+    DUODUO_CONFIG_DIR: configDir,
+    DUODUO_DEV: "1",
+    DUODUO_DISABLE_PROJECT_CONFIG: "1",
+    DUODUO_FIXED_DIRECTORY: projectDir,
+    // XDG paths must be set so Global.Path.* resolves to our isolated dirs.
+    XDG_CONFIG_HOME: xdgConfigHome,
+    XDG_DATA_HOME: xdgDataHome,
+    XDG_CACHE_HOME: xdgCacheHome,
+    XDG_STATE_HOME: xdgStateHome,
+    HOME: homeDir,
+    // Force backend to skip auth.
+    DUODUO_SERVER_PASSWORD: "",
+    // Wire the backend to a running Rust smart-layer sidecar (if any).
+    // Per packages/duoduo/src/smart-layer/index.ts the env var wins over
+    // the well-known URL file, and setting it at process start avoids the
+    // startup race where clients are created before the sidecar is ready.
+    ...(opts.smartLayerUrl ? { DUO_SMART_LAYER_URL: opts.smartLayerUrl } : {}),
+    // 智械 gear packs (incl. MCP servers) for the gear-MCP E2E specs.
+    ...(opts.gearsDir ? { DUODUO_GEARS_DIR: opts.gearsDir } : {}),
+    // Prevent telemetry / network calls.
+    DUODUO_DISABLE_AUTOUPDATE: "1",
+    NO_COLOR: "1",
+  }
+  delete backendEnv.FORCE_COLOR
+
   const child: ChildProcess = spawn(
     "bun",
     ["run", "--conditions=browser", "./src/index.ts", "serve", "--hostname", "127.0.0.1", "--port", String(port)],
     {
       cwd: DUODUO_PKG,
-      env: {
-        ...process.env,
-        DUODUO_TEST_HOME: homeDir,
-        DUODUO_CONFIG_DIR: configDir,
-        DUODUO_DEV: "1",
-        DUODUO_DISABLE_PROJECT_CONFIG: "1",
-        DUODUO_FIXED_DIRECTORY: projectDir,
-        // XDG paths must be set so Global.Path.* resolves to our isolated dirs.
-        XDG_CONFIG_HOME: xdgConfigHome,
-        XDG_DATA_HOME: xdgDataHome,
-        XDG_CACHE_HOME: xdgCacheHome,
-        XDG_STATE_HOME: xdgStateHome,
-        HOME: homeDir,
-        // Force backend to skip auth.
-        DUODUO_SERVER_PASSWORD: "",
-        // Wire the backend to a running Rust smart-layer sidecar (if any).
-        // Per packages/duoduo/src/smart-layer/index.ts the env var wins over
-        // the well-known URL file, and setting it at process start avoids the
-        // startup race where clients are created before the sidecar is ready.
-        ...(opts.smartLayerUrl ? { DUO_SMART_LAYER_URL: opts.smartLayerUrl } : {}),
-        // 智械 gear packs (incl. MCP servers) for the gear-MCP E2E specs.
-        ...(opts.gearsDir ? { DUODUO_GEARS_DIR: opts.gearsDir } : {}),
-        // Prevent telemetry / network calls.
-        DUODUO_DISABLE_AUTOUPDATE: "1",
-        NO_COLOR: "1",
-      },
+      env: backendEnv,
       stdio: ["ignore", "pipe", "pipe"],
     },
   )

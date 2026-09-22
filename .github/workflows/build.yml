@@ -74,7 +74,35 @@ jobs:
 
       - name: Run duoduo unit tests
         working-directory: packages/duoduo
-        run: bun run test:ci
+        shell: bash
+        run: |
+          # 2026-09-22: second occurrence of the step dying mid-run from a
+          # signal (SIGKILL, exit 143) with no test failure — the signature of
+          # a runner-level OOM kill / teardown (first: 2026-09-18). Retry only
+          # signal-type deaths; a real assertion failure still fails at once.
+          for attempt in 1 2 3; do
+            echo "=== unit test attempt ${attempt} ==="
+            rm -f .artifacts/unit/junit.xml
+            set +e
+            bun run test:ci
+            code=$?
+            set -e
+            if [ "$code" -eq 0 ]; then
+              exit 0
+            fi
+            case "$code" in
+              130|137|143|144|145|146|147)
+                echo "attempt ${attempt} died from a signal (exit ${code}); retrying in 20s..."
+                sleep 20
+                ;;
+              *)
+                echo "attempt ${attempt} failed with exit ${code} (test failure — not retrying)"
+                exit "$code"
+                ;;
+            esac
+          done
+          echo "all 3 attempts were killed by signals"
+          exit 137
 
       # 2026-09-18: the unit-test step once died mid-run with "exit code 143"
       # (SIGTERM) while every visible test had passed, and the always()/post

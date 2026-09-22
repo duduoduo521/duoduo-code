@@ -72,7 +72,7 @@ export function showSyncConflictDialog(
             {language.t("remote.conflictCancel")}
           </Button>
           <Button
-            variant="secondary"
+            variant="critical"
             size="large"
             onClick={() => {
               dialog.close()
@@ -82,7 +82,7 @@ export function showSyncConflictDialog(
             {language.t("remote.conflictPull")}
           </Button>
           <Button
-            variant="primary"
+            variant="critical"
             size="large"
             onClick={() => {
               dialog.close()

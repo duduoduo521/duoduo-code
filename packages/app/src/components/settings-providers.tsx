@@ -367,7 +367,33 @@ export const SettingsProviders: Component = () => {
     }
   }
 
-  const disconnect = async (providerID: string, name: string) => {
+  const disconnect = (providerID: string, name: string) => {
+    // Disconnect deletes the stored API credentials for this provider — ask
+    // before destroying them. Confirm-first also covers the custom-provider
+    // path below (P4-7 keeps a failed credential delete from faking success).
+    dialog.show(() => (
+      <DialogConfirm
+        danger
+        busy={disconnectBusy()}
+        title={language.t("settings.providers.disconnectConfirm.title")}
+        message={language.t("settings.providers.disconnectConfirm.message", { provider: name })}
+        confirmLabel={language.t("settings.providers.disconnectConfirm.confirm")}
+        onConfirm={async () => {
+          setDisconnectBusy(true)
+          try {
+            await performDisconnect(providerID, name)
+          } finally {
+            setDisconnectBusy(false)
+          }
+        }}
+        onCancel={() => dialog.back()}
+      />
+    ))
+  }
+
+  const [disconnectBusy, setDisconnectBusy] = createSignal(false)
+
+  const performDisconnect = async (providerID: string, name: string) => {
     try {
       if (isConfigCustom(providerID)) {
         await globalSDK.client.auth.remove({ providerID }).catch(() => undefined)

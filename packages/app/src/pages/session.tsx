@@ -29,6 +29,7 @@ import { showToast } from "@duoduo-ai/ui/toast"
 import { checksum } from "@duoduo-ai/shared/util/encode"
 import { useSearchParams } from "@solidjs/router"
 import { NewSessionView, SessionHeader } from "@/components/session"
+import { DialogConfirm } from "@/components/dialog-confirm"
 import { useComments } from "@/context/comments"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL } from "@/context/global-sync/session-prefetch"
 import { useGlobalSync } from "@/context/global-sync"
@@ -1826,7 +1827,22 @@ export default function Page() {
 
   const revert = (input: { sessionID: string; messageID: string }) => {
     if (reverting()) return
-    return revertMutation.mutateAsync(input)
+    // Reverting drops the user message and everything generated after it —
+    // destructive, so confirm first. Restore/redo (recovery semantics) stay
+    // one-click.
+    dialog.show(() => (
+      <DialogConfirm
+        danger
+        title={language.t("session.revertConfirm.title")}
+        message={language.t("session.revertConfirm.message")}
+        confirmLabel={language.t("session.revertConfirm.confirm")}
+        onConfirm={() => {
+          dialog.back()
+          void revertMutation.mutateAsync(input)
+        }}
+        onCancel={() => dialog.back()}
+      />
+    ))
   }
 
   const restore = (id: string) => {

@@ -21,6 +21,7 @@ import { UserMessage } from "@duoduo-ai/sdk/v2"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { DialogSelectModel } from "@/components/dialog-select-model"
 import { DialogAutoAcceptRisk } from "@/components/dialog-auto-accept-risk"
+import { DialogConfirm } from "@/components/dialog-confirm"
 import { openSearchPanel } from "@duoduo-ai/ui/codemirror-editor"
 import { activeEditorView } from "@/pages/session/active-editor"
 
@@ -214,26 +215,46 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     )
   }
 
-  const undo = async () => {
+  // Reverting drops the user message and everything generated after it —
+  // destructive, so confirm first. The single confirm lives here in `undo`
+  // (the command-palette entry); the transient revert inside retry/edit-resend
+  // does not go through this path and stays one-click.
+  const undo = () => {
     const sessionID = params.id
     if (!sessionID) return
-
-    if (status().type !== "idle") {
-      await sdk.client.session.abort({ sessionID }).catch(() => {})
-    }
 
     const revert = info()?.revert?.messageID
     const message = findLast(userMessages(), (x) => !revert || x.id < revert)
     if (!message) return
 
-    await sdk.client.session.revert({ sessionID, messageID: message.id })
-    const parts = sync.data.part[message.id]
+    dialog.show(() => (
+      <DialogConfirm
+        danger
+        title={language.t("session.revertConfirm.title")}
+        message={language.t("session.revertConfirm.message")}
+        confirmLabel={language.t("session.revertConfirm.confirm")}
+        onConfirm={() => {
+          dialog.back()
+          void performUndo(sessionID, message.id)
+        }}
+        onCancel={() => dialog.back()}
+      />
+    ))
+  }
+
+  const performUndo = async (sessionID: string, messageID: string) => {
+    if (status().type !== "idle") {
+      await sdk.client.session.abort({ sessionID }).catch(() => {})
+    }
+
+    await sdk.client.session.revert({ sessionID, messageID })
+    const parts = sync.data.part[messageID]
     if (parts) {
       const restored = extractPromptFromParts(parts, { directory: sdk.directory })
       prompt.set(restored)
     }
 
-    const prev = findLast(userMessages(), (x) => x.id < message.id)
+    const prev = findLast(userMessages(), (x) => x.id < messageID)
     setActiveMessage(prev)
   }
 

@@ -187,8 +187,14 @@ function ensureRuntimeHealth() {
     // disposed (e.g. after a ScopedCache invalidation cascade), this
     // will throw. In that case, recreate the runtime so the next
     // run* call gets a fresh context built from scratch.
-    // oxlint-disable-next-line no-floating-promises -- intentional fire-and-forget (UI/SolidJS background work)
-    rt.context()
+    const context = rt.context()
+    // Fire-and-forget, but NOT an unhandled one: while the AppLayer is still
+    // building this promise stays pending, and disposing the runtime — which
+    // tests do in a global afterAll (test/preload.ts) — interrupts the build
+    // fiber. Every pending `context()` then rejected with nobody listening,
+    // one unhandled rejection per run* call (~900 per test run, each becoming
+    // a ##[error] annotation on CI).
+    context?.catch(() => undefined)
   } catch {
     Log.Default.info("AppRuntime context was stale, recreating ManagedRuntime")
     appMemoMap = Layer.makeMemoMapUnsafe()

@@ -147,9 +147,14 @@ function process<Def extends Definition>(def: Def, event: Event<Def>, options: {
       if (options?.publish) {
         const result = convertEvent(def.type, event.data)
         if (result instanceof Promise) {
-          void result.then((data) => {
-            void ProjectBus.publish({ type: def.type, properties: def.schema }, data)
-          })
+          // Fire-and-forget by design, but the discarded promise still needs a
+          // handler: a rejected conversion or a discarded publish surfaces as
+          // an unhandled rejection otherwise.
+          void result
+            .then((data) => {
+              void ProjectBus.publish({ type: def.type, properties: def.schema }, data)
+            })
+            .catch(() => undefined)
         } else {
           void ProjectBus.publish({ type: def.type, properties: def.schema }, result)
         }

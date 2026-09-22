@@ -190,10 +190,26 @@ async function getAppRuntime() {
   return _appRuntime
 }
 
-export async function publish<D extends BusEvent.Definition>(def: D, properties: z.output<D["properties"]>) {
-  const rt = await getAppRuntime()
-  if (!rt) return
-  return rt.runPromise(Service.use((svc) => svc.publish(def, properties)))
+export function publish<D extends BusEvent.Definition>(def: D, properties: z.output<D["properties"]>): Promise<void> {
+  // Deliberately NOT an `async` function: `return promise` inside an async
+  // function hands the caller a *different* promise (the async wrapper's), so
+  // a no-op handler attached to the inner one would not mark the caller's
+  // promise handled. Building and returning the same promise we guard is what
+  // makes the fire-and-forget fix below actually work.
+  const promise = getAppRuntime().then((rt) => {
+    if (!rt) return
+    return rt.runPromise(Service.use((svc) => svc.publish(def, properties)))
+  })
+  // Callers in the sync-event path publish fire-and-forget (`void Bus.publish(...)`).
+  // Those fibers can still be in flight when the runtime is disposed (tests do
+  // this in a global afterAll, see test/preload.ts), and the interruption
+  // rejects the discarded promise — every one surfaced as an unhandled
+  // rejection ("All fibers interrupted without error"), ~900 per test run and
+  // a ##[error] annotation each on CI. Attaching the handler to THIS promise
+  // marks it handled for fire-and-forget callers, while awaited callers keep
+  // seeing real errors (they await the same promise).
+  promise.catch(() => undefined)
+  return promise
 }
 
 export async function subscribe<D extends BusEvent.Definition>(

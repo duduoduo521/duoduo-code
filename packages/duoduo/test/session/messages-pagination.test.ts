@@ -1,19 +1,47 @@
-import { describe, expect, test } from "bun:test"
-import { Effect } from "effect"
-import path from "path"
+import { afterAll, describe, expect, test } from "bun:test"
+import { Effect, ManagedRuntime } from "effect"
 import { Instance } from "../../src/project/instance"
 import { Session as SessionNs } from "../../src/session"
 import { MessageV2 } from "../../src/session/message-v2"
 import { MessageID, PartID, type SessionID } from "../../src/session/schema"
 import { ModelID, ProviderID } from "../../src/provider/schema"
 import { Log } from "../../src/util"
+import { disposeAllWithTimeout } from "../lib/dispose"
+import { tmpdir } from "../fixture/fixture"
 
-const root = path.join(__dirname, "../..")
 void Log.init({ print: false })
 
+// A throwaway project directory, NOT the repo root. The previous
+// `path.join(__dirname, "../..")` pointed the instance at the live monorepo:
+// a real git repo where every session write fired the full background chain
+// (file watcher → vcs HEAD polling / snapshot tracking / KG indexing), and
+// those fibers accumulated across all 46 tests until cleanup interrupted
+// them — ~900 "All fibers interrupted without error" unhandled rejections,
+// each of which bun converts into a ##[error] annotation on CI (the flood
+// took down a runner worker). Every other instance-backed test file uses
+// tmpdir + disposeAllWithTimeout; this file now does the same.
+const tmp = await tmpdir()
+const root = tmp.path
+
+// ONE shared runtime for the whole file (mirrors src/effect/runtime.ts
+// makeRuntime): rebuilding the session layer for every run() call is
+// redundant and multiplies layer-scoped fibers.
+const runtime = ManagedRuntime.make(SessionNs.defaultLayer)
+
 function run<A, E>(fx: Effect.Effect<A, E, SessionNs.Service>) {
-  return Effect.runPromise(fx.pipe(Effect.provide(SessionNs.defaultLayer)))
+  return runtime.runPromise(fx)
 }
+
+afterAll(async () => {
+  // Dispose in order: instances first (cancels bootstrap-detached indexing
+  // fibers and closes watcher/vcs/snapshot scopes), then the tmpdir, then
+  // the session layer runtime. Anything still alive after this gets
+  // interrupted by bun's file teardown, and every such interruption
+  // surfaces as an unhandled rejection.
+  await disposeAllWithTimeout()
+  await tmp[Symbol.asyncDispose]()
+  await runtime.dispose()
+})
 
 const svc = {
   ...SessionNs,

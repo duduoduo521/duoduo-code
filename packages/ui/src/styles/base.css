@@ -51,6 +51,16 @@ body {
   background-color: var(--cm-selection-bg);
 }
 
+/* Keyboard focus ring for interactive elements that do not define their own
+   focus styling — the custom pill tabs, inline link buttons, window controls
+   and list rows across the app are hand-styled and otherwise give keyboard
+   users no visible focus. :where() keeps specificity at zero, so any
+   component-level :focus/:focus-visible rule always wins. */
+:where(button, a, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 1px;
+}
+
 /* ─── Native scrollbars: slim, quiet, appear on hover ───
    Components that intentionally hide scrollbars (scrollbar-width: none)
    keep their own rules — those selectors outrank this global one. */

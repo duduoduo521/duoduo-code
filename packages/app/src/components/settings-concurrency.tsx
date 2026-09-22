@@ -7,7 +7,6 @@ import { showToast } from "@duoduo-ai/ui/toast"
 import { useLanguage } from "@/context/language"
 import { useSmartLayer } from "@/addons/smart-layer/context"
 import { useGlobalSDK } from "@/context/global-sdk"
-import { useServer } from "@/context/server"
 import { decode64 } from "@/utils/base64"
 import { SettingsList } from "./settings-list"
 import { SettingsPage } from "./settings-page"
@@ -19,26 +18,11 @@ export const SettingsConcurrency: Component = () => {
   const language = useLanguage()
   const sl = useSmartLayer()
   const globalSDK = useGlobalSDK()
-  const server = useServer()
   const params = useParams()
 
   // multi_agent_mode lives in the per-project config.json — every request
   // must carry the directory the instance middleware resolves config with.
   const directory = () => (params.dir ? decode64(params.dir) : undefined)
-
-  const configEndpoint = (path: string) => {
-    const dir = directory()
-    if (!dir) return
-    return `${globalSDK.url}${path}?directory=${encodeURIComponent(dir)}`
-  }
-
-  const authHeaders = (): Record<string, string> => {
-    const http = server.current?.http
-    if (!http?.password) return {}
-    return {
-      Authorization: `Basic ${btoa(`${http.username ?? "duoduocode"}:${http.password}`)}`,
-    }
-  }
 
   const [multiAgentMode, setMultiAgentMode] = createSignal<MultiAgentMode | undefined>(undefined)
   const [modeLoaded, setModeLoaded] = createSignal(false)
@@ -50,17 +34,14 @@ export const SettingsConcurrency: Component = () => {
     // the experimental HTTP API is enabled (not the default) — on failure we
     // leave the value unset so the Select shows a placeholder instead of a
     // wrong default that a later save would persist.
-    const url = configEndpoint("/config")
-    if (!url) {
+    const dir = directory()
+    if (!dir) {
       setModeLoaded(true)
       return
     }
     try {
-      const response = await fetch(url, { headers: authHeaders() })
-      if (response.ok) {
-        const data = (await response.json()) as { multi_agent_mode?: MultiAgentMode }
-        if (data.multi_agent_mode) setMultiAgentMode(data.multi_agent_mode)
-      }
+      const { data } = await globalSDK.client.config.get({ directory: dir }, { throwOnError: true })
+      if (data.multi_agent_mode) setMultiAgentMode(data.multi_agent_mode)
     } catch {
       // keep unset — placeholder shows
     }
@@ -68,17 +49,18 @@ export const SettingsConcurrency: Component = () => {
   })
 
   const saveMultiAgentMode = async (mode: MultiAgentMode) => {
-    const url = configEndpoint("/config")
-    if (!url) return
+    const dir = directory()
+    if (!dir) return
     const previous = multiAgentMode()
     setMultiAgentMode(mode)
     try {
-      const response = await fetch(url, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ multi_agent_mode: mode }),
-      })
-      if (!response.ok) throw new Error(await response.text())
+      await globalSDK.client.config.update(
+        {
+          directory: dir,
+          config: { multi_agent_mode: mode },
+        },
+        { throwOnError: true },
+      )
       showToast({ variant: "success", title: language.t("settings.concurrency.multiAgent.saved") })
     } catch (e: any) {
       setMultiAgentMode(previous)

@@ -5,7 +5,6 @@ import { TextField } from "@duoduo-ai/ui/text-field"
 import { showToast } from "@duoduo-ai/ui/toast"
 import { useLanguage } from "@/context/language"
 import { useGlobalSDK } from "@/context/global-sdk"
-import { useServer } from "@/context/server"
 import { decode64 } from "@/utils/base64"
 import { SettingsList } from "./settings-list"
 import { SettingsPage } from "./settings-page"
@@ -42,7 +41,6 @@ type AccessMode = "blacklist" | "whitelist"
 export const SettingsWebfetch: Component = () => {
   const language = useLanguage()
   const globalSDK = useGlobalSDK()
-  const server = useServer()
   const params = useParams()
 
   // Config is global in meaning but edited through the instance-scoped
@@ -56,34 +54,15 @@ export const SettingsWebfetch: Component = () => {
   const [loading, setLoading] = createSignal(true)
   const [saving, setSaving] = createSignal(false)
 
-  const endpoint = (path: string) => {
-    const dir = directory()
-    if (!dir) return
-    return `${globalSDK.url}${path}?directory=${encodeURIComponent(dir)}`
-  }
-
-  const authHeaders = (): Record<string, string> => {
-    const http = server.current?.http
-    if (!http?.password) return {}
-    return {
-      Authorization: `Basic ${btoa(`${http.username ?? "duoduocode"}:${http.password}`)}`,
-    }
-  }
-
   const load = async () => {
-    const url = endpoint("/config")
-    if (!url) {
+    const dir = directory()
+    if (!dir) {
       setLoading(false)
       return
     }
     setLoading(true)
     try {
-      const response = await fetch(url, { headers: authHeaders() })
-      if (!response.ok) throw new Error(await response.text())
-      const data = (await response.json()) as {
-        webfetch_access_mode?: AccessMode
-        webfetch_rules?: WebfetchRule[]
-      }
+      const { data } = await globalSDK.client.config.get({ directory: dir }, { throwOnError: true })
       if (data.webfetch_access_mode === "whitelist") setMode("whitelist")
       // No stored rules yet → show the default reserved-range set as an
       // editable starting point; saving persists exactly what is shown.
@@ -99,19 +78,20 @@ export const SettingsWebfetch: Component = () => {
   }
 
   const save = async () => {
-    const url = endpoint("/config")
-    if (!url) return
+    const dir = directory()
+    if (!dir) return
     setSaving(true)
     try {
-      const response = await fetch(url, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
-          webfetch_access_mode: mode(),
-          webfetch_rules: rules(),
-        }),
-      })
-      if (!response.ok) throw new Error(await response.text())
+      await globalSDK.client.config.update(
+        {
+          directory: dir,
+          config: {
+            webfetch_access_mode: mode(),
+            webfetch_rules: rules(),
+          },
+        },
+        { throwOnError: true },
+      )
       showToast({ variant: "success", title: language.t("settings.webfetch.saved") })
     } catch (e: any) {
       showToast({ variant: "error", title: language.t("common.requestFailed"), description: e?.message })

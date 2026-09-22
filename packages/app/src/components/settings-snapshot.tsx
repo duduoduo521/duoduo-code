@@ -6,7 +6,6 @@ import { TextField } from "@duoduo-ai/ui/text-field"
 import { showToast } from "@duoduo-ai/ui/toast"
 import { useLanguage } from "@/context/language"
 import { useGlobalSDK } from "@/context/global-sdk"
-import { useServer } from "@/context/server"
 import { decode64 } from "@/utils/base64"
 import { SettingsList } from "./settings-list"
 import { SettingsPage } from "./settings-page"
@@ -30,7 +29,6 @@ function formatBytes(bytes: number): string {
 export const SettingsSnapshot: Component = () => {
   const language = useLanguage()
   const globalSDK = useGlobalSDK()
-  const server = useServer()
   const params = useParams()
 
   // Snapshots are per-project, so every request must carry the directory the
@@ -67,33 +65,15 @@ export const SettingsSnapshot: Component = () => {
     return days
   }
 
-  const endpoint = (path: string) => {
-    const dir = directory()
-    if (!dir) return
-    return `${globalSDK.url}${path}?directory=${encodeURIComponent(dir)}`
-  }
-
-  // Build the Authorization header from the active server connection so that
-  // raw fetch() calls pass the AuthMiddleware when a password is configured.
-  const authHeaders = (): Record<string, string> => {
-    const http = server.current?.http
-    if (!http?.password) return {}
-    return {
-      Authorization: `Basic ${btoa(`${http.username ?? "duoduocode"}:${http.password}`)}`,
-    }
-  }
-
   const fetchStats = async (opts?: { silent?: boolean }) => {
-    const url = endpoint("/snapshot/stats")
-    if (!url) {
+    const dir = directory()
+    if (!dir) {
       setLoading(false)
       return
     }
     setLoading(true)
     try {
-      const response = await fetch(url, { headers: authHeaders() })
-      if (!response.ok) throw new Error(await response.text())
-      const data = (await response.json()) as SnapshotStats
+      const { data } = await globalSDK.client.snapshot.stats({ directory: dir }, { throwOnError: true })
       setStats(data)
       // The configured retention is reflected in `defaultPruneDays`, so prefill
       // the input from there. (The `GET /config` endpoint is occupied by the
@@ -122,8 +102,8 @@ export const SettingsSnapshot: Component = () => {
   const handleSaveRetention = async () => {
     // `PATCH /config` is the canonical config-write endpoint (its POST/PATCH
     // path is not shadowed by the experimental HTTP API's `GET /config`).
-    const url = endpoint("/config")
-    if (!url) return
+    const dir = directory()
+    if (!dir) return
     const days = validDays(retention())
     if (days === null) return
     // 10-3/10-5: file cap is entered in MB, total cap in GB (stored as bytes).
@@ -135,16 +115,17 @@ export const SettingsSnapshot: Component = () => {
     }
     setRetentionSaving(true)
     try {
-      const response = await fetch(url, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
-          snapshot_retention_days: days,
-          snapshot_max_file_size: fileMb * 1024 * 1024,
-          snapshot_max_total_size: totalGb * 1024 * 1024 * 1024,
-        }),
-      })
-      if (!response.ok) throw new Error(await response.text())
+      await globalSDK.client.config.update(
+        {
+          directory: dir,
+          config: {
+            snapshot_retention_days: days,
+            snapshot_max_file_size: fileMb * 1024 * 1024,
+            snapshot_max_total_size: totalGb * 1024 * 1024 * 1024,
+          },
+        },
+        { throwOnError: true },
+      )
       showToast({ variant: "success", title: language.t("settings.snapshot.retentionSaved") })
       // Config write disposes & reloads the instance. The stats echo can race
       // that reload: a request served by the OLD instance reports the previous
@@ -173,14 +154,10 @@ export const SettingsSnapshot: Component = () => {
   }
 
   const fetchCompaction = async () => {
-    const url = endpoint("/config")
-    if (!url) return
+    const dir = directory()
+    if (!dir) return
     try {
-      const response = await fetch(url, { headers: authHeaders() })
-      if (!response.ok) return
-      const data = (await response.json()) as {
-        compaction?: { auto?: boolean; prune?: boolean }
-      }
+      const { data } = await globalSDK.client.config.get({ directory: dir }, { throwOnError: true })
       // Field defaults live backend-side (auto/prune default true) — only
       // prefill what the config actually carries.
       if (typeof data.compaction?.auto === "boolean") setCompactionAuto(data.compaction.auto)
@@ -191,18 +168,19 @@ export const SettingsSnapshot: Component = () => {
   }
 
   const saveCompaction = async (next: { auto?: boolean; prune?: boolean }) => {
-    const url = endpoint("/config")
-    if (!url) return
+    const dir = directory()
+    if (!dir) return
     setCompactionSaving(true)
     try {
-      const response = await fetch(url, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        // Deep-merged server-side (Config.update mergeDeep) — tail_turns and
-        // other compaction fields survive.
-        body: JSON.stringify({ compaction: next }),
-      })
-      if (!response.ok) throw new Error(await response.text())
+      await globalSDK.client.config.update(
+        {
+          directory: dir,
+          // Deep-merged server-side (Config.update mergeDeep) — tail_turns and
+          // other compaction fields survive.
+          config: { compaction: next },
+        },
+        { throwOnError: true },
+      )
       showToast({ variant: "success", title: language.t("settings.snapshot.compactionSaved") })
     } catch (e: any) {
       showToast({ variant: "error", title: language.t("common.requestFailed"), description: e?.message })
@@ -218,19 +196,13 @@ export const SettingsSnapshot: Component = () => {
   })
 
   const handleCleanup = async () => {
-    const url = endpoint("/snapshot/cleanup")
-    if (!url) return
+    const dir = directory()
+    if (!dir) return
     const days = validDays(pruneDays())
     if (days === null) return
     setCleanupLoading(true)
     try {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ days }),
-      })
-      if (!response.ok) throw new Error(await response.text())
-      const data = (await response.json()) as { freedBytes: number }
+      const { data } = await globalSDK.client.snapshot.cleanup({ directory: dir, days }, { throwOnError: true })
       showToast({
         variant: "success",
         title: language.t("settings.snapshot.cleaned", { size: formatBytes(data.freedBytes ?? 0) }),

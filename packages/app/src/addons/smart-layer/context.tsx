@@ -18,7 +18,8 @@ import { useParams } from "@solidjs/router"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "../../context/platform"
 import { useGlobalSync } from "../../context/global-sync"
-import { useServer } from "../../context/server"
+import { useGlobalSDK } from "../../context/global-sdk"
+import { errorMessage } from "@/context/file/error-message"
 import { decode64 } from "@/utils/base64"
 import { getFilename } from "@duoduo-ai/shared/util/path"
 import { setGearApi } from "../../context/gear-store"
@@ -45,7 +46,7 @@ export const { use: useSmartLayer, provider: SmartLayerProvider } = createSimple
   gate: false,
   init: () => {
     const platform = usePlatform()
-    const server = useServer()
+    const globalSDK = useGlobalSDK()
     const params = useParams()
 
     // Used only for error toasts; guarded so a missing LanguageProvider can
@@ -185,25 +186,6 @@ export const { use: useSmartLayer, provider: SmartLayerProvider } = createSimple
       globalSync = undefined
     }
 
-    // Resolve the Authorization header for the per-project duoduocode-cli
-    // sidecar. Desktop sidecar connections carry a pre-computed header on
-    // `_authHeader` (populated by desktop/src/index.tsx getProjectSidecar from
-    // the `get_sidecar_auth_header` Tauri command) because the Rust side never
-    // sends the raw password to the frontend — `server.current.http` only has
-    // the URL there. Remote HTTP connections still expose username/password
-    // through `http` and fall back to basic auth. The smart-layer auth header
-    // belongs to a *different* service (port 61193) and must not be reused
-    // here.
-    const sidecarAuthHeaders = (conn: {
-      http: { username?: string; password?: string }
-      _authHeader?: string
-    }): Record<string, string> => {
-      if (conn._authHeader) return { Authorization: conn._authHeader }
-      const { username, password } = conn.http
-      if (!password) return {}
-      return { Authorization: `Basic ${btoa(`${username ?? "duoduocode"}:${password}`)}` }
-    }
-
     /** Directory of the active project route, or undefined outside a project. */
     const activeDirectory = (): string | undefined => decode64(params.dir) || undefined
 
@@ -308,42 +290,23 @@ export const { use: useSmartLayer, provider: SmartLayerProvider } = createSimple
     const reindexProject = async (projectPath: string) => {
       // Mark as indexing so the UI shows progress (input is NOT disabled - users can chat during indexing)
       setKgStatus({ status: "indexing", progress: 0 })
-      const conn = server.current
-      if (!conn) return
-      const { url } = conn.http
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        ...sidecarAuthHeaders(conn),
-      }
       try {
-        // Route through the Node middleware's `/graph/reindex` (NOT the Rust
+        // Route through the middleware's `/graph/reindex` (NOT the Rust
         // `/graph/force-reindex-async` directly). The middleware triggers
         // bootstrap's `startForceReindex`, which polls the Rust backend and
         // broadcasts progress via SSE — that is what drives the `sl` KG
         // status (kgIndexing/kgReady). Hitting Rust directly left the UI
         // frozen on "indexing" forever, so the reindex button appeared dead.
-        const res = await fetch(`${url}/graph/reindex`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ projectPath }),
-        })
-        if (!res.ok) {
-          // A transport-level rejection (auth 401, instance route 404/500…)
-          // previously vanished into a console.warn and the button appeared
-          // dead. Surface it.
-          console.warn("[smart-layer] Force reindex request rejected:", res.status, res.statusText)
-          showToast({
-            variant: "error",
-            title: language?.t("graphKanban.indexStatus.reindexFailed") ?? "Reindex failed",
-            description: `${res.status} ${res.statusText}`,
-          })
-        }
+        await globalSDK.client.graph.reindex({ projectPath }, { throwOnError: true })
       } catch (e) {
+        // A transport-level rejection (auth 401, instance route 404/500…)
+        // previously vanished into a console.warn and the button appeared
+        // dead. Surface it.
         console.warn("[smart-layer] Force reindex failed:", e)
         showToast({
           variant: "error",
           title: language?.t("graphKanban.indexStatus.reindexFailed") ?? "Reindex failed",
-          description: String(e),
+          description: errorMessage(e, language?.t("common.requestFailed") ?? "Request failed"),
         })
       }
     }

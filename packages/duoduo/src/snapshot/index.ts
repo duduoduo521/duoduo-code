@@ -44,7 +44,7 @@ async function acquireGitdirFileLock(gitdir: string): Promise<() => Promise<void
   // so the next CI run shows which side materialized it first.
   let diagPreExisted = true
   try {
-    nodefs.statSync(gitdir)
+    await nodefs.stat(gitdir)
   } catch {
     diagPreExisted = false
   }

@@ -56,7 +56,11 @@ jobs:
   test:
     name: TS Unit Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 2026-09-22: 60min cancelled the step mid-run ("The operation was
+    # canceled.") — the serial suite takes ~40min/pass on a 2-vCPU runner and
+    # the signal-retry loop below needs headroom for 3 attempts. 150min covers
+    # 3 full passes + sleeps with margin.
+    timeout-minutes: 150
     needs: [lint]
     steps:
       - uses: actions/checkout@v4

@@ -83,7 +83,7 @@ export const SettingsSnapshot: Component = () => {
     }
   }
 
-  const fetchStats = async () => {
+  const fetchStats = async (opts?: { silent?: boolean }) => {
     const url = endpoint("/snapshot/stats")
     if (!url) {
       setLoading(false)
@@ -108,7 +108,12 @@ export const SettingsSnapshot: Component = () => {
         setMaxTotalSizeGb(String(Math.round(data.maxTotalSizeBytes / (1024 * 1024 * 1024))))
       }
     } catch {
-      showToast({ variant: "error", title: language.t("common.requestFailed") })
+      // During the post-save instance reload window the request can fail or
+      // be served by the old instance — retry handles that; only surface an
+      // error toast for the initial (non-silent) load.
+      if (!opts?.silent) {
+        showToast({ variant: "error", title: language.t("common.requestFailed") })
+      }
     } finally {
       setLoading(false)
     }
@@ -141,9 +146,25 @@ export const SettingsSnapshot: Component = () => {
       })
       if (!response.ok) throw new Error(await response.text())
       showToast({ variant: "success", title: language.t("settings.snapshot.retentionSaved") })
-      // Config write disposes & reloads the instance; re-read the effective
-      // retention once the new instance is back up.
-      await fetchStats()
+      // Config write disposes & reloads the instance. The stats echo can race
+      // that reload: a request served by the OLD instance reports the previous
+      // defaults (one-shot fetch froze the input at 90 while the config said
+      // 30). Re-read with bounded retries until the new values echo back.
+      const expectDays = days
+      const expectFile = fileMb * 1024 * 1024
+      const expectTotal = totalGb * 1024 * 1024 * 1024
+      for (let attempt = 0; attempt < 20; attempt++) {
+        await new Promise((r) => setTimeout(r, attempt === 0 ? 0 : 500))
+        await fetchStats({ silent: true })
+        const s = stats()
+        if (
+          s?.defaultPruneDays === expectDays &&
+          s?.maxFileSizeBytes === expectFile &&
+          s?.maxTotalSizeBytes === expectTotal
+        ) {
+          break
+        }
+      }
     } catch (e: any) {
       showToast({ variant: "error", title: language.t("common.requestFailed"), description: e?.message })
     } finally {

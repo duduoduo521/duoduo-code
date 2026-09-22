@@ -38,8 +38,16 @@ test.describe("Prompt queue (busy-time enqueue)", () => {
     await switchModel(page, "streaming-long")
     await typeInPrompt(page, "First question")
     await submitPrompt(page)
-    // Busy confirmed: the queue dock appears once the second prompt is
-    // enqueued below; here we just wait for the first send to register.
+    // Busy confirmed via the submit button's stop icon — the UI's own busy
+    // signal (stopping() = input.working() && blank(), where working() is the
+    // SERVER session status). submit.ts enqueues iff working() at submit
+    // time, so waiting for this marker guarantees the second submit below
+    // takes the enqueue path instead of racing the ~17s streaming window
+    // (observed: linux CI 3× on both queue tests — the second prompt landed
+    // after the reply finished and the queue dock never appeared).
+    await expect(
+      page.locator('[data-action="prompt-submit"][data-icon="stop"]').first(),
+    ).toBeVisible({ timeout: 30_000 })
     await expect(getMessages(page).first()).toBeVisible({ timeout: 30_000 })
   }
 
@@ -77,11 +85,20 @@ test.describe("Prompt queue (busy-time enqueue)", () => {
     await expect(queueDock(page)).toBeVisible({ timeout: 15_000 })
 
     // Remove the queued item via its dock control (aria-label is i18n'd).
-    const removeButton = queueDock(page).getByRole("button", {
-      name: /remove from queue|从队列移除/i,
-    })
-    await expect(removeButton.first()).toBeVisible({ timeout: 10_000 })
-    await removeButton.first().click()
+    // The dock re-renders while the first reply streams; a single click can
+    // land on a detached element and silently no-op (observed: the dock then
+    // stayed for the full 120s window). Retry the click until the dock is
+    // actually gone.
+    await expect(async () => {
+      if (!(await queueDock(page).isVisible())) return
+      const removeButton = queueDock(page).getByRole("button", {
+        name: /remove from queue|从队列移除/i,
+      })
+      if (await removeButton.first().isVisible()) {
+        await removeButton.first().click({ force: true })
+      }
+      await expect(queueDock(page)).toHaveCount(0, { timeout: 2_000 })
+    }).toPass({ timeout: 60_000 })
 
     // Dock disappears; only the FIRST reply ever lands in the timeline.
     await expect(queueDock(page)).toHaveCount(0, { timeout: 120_000 })

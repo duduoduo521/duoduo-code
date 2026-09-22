@@ -193,22 +193,34 @@ export async function waitForResponse(page: Page, timeoutMs = 15_000) {
 export async function switchModel(page: Page, modelId: string) {
   // Click the model selector trigger button
   const modelTrigger = page.locator('[data-action="prompt-model"]').first()
-  await expect(modelTrigger).toBeVisible({ timeout: 3_000 })
-  await modelTrigger.click({ force: true })
+  await expect(modelTrigger).toBeVisible({ timeout: 10_000 })
 
   // Wait for model popover to appear
   const popover = page.locator('[data-slot="list-item"][data-key]').first()
-  await expect(popover).toBeVisible({ timeout: 3_000 })
 
-  // Find and click the model option
-  const modelOption = page.locator(`[data-slot="list-item"]:has-text("${modelId}")`).first()
-  await expect(modelOption).toBeVisible({ timeout: 3_000 })
-  await modelOption.click()
+  // The whole switch is retried until the trigger actually displays the
+  // target model (the trigger label = local.model.current().name, and the
+  // mock provider registers name === id). A silent miss — click before the
+  // trigger is wired, or the option list re-rendering mid-click — used to
+  // leave the session on the DEFAULT mock model, whose instant text-only
+  // reply destroyed every downstream timing assumption (prompt-queue linux
+  // CI 3×; delegation replaceAll "model never called the tool" retries).
+  await expect(async () => {
+    if (!(await popover.isVisible())) {
+      await modelTrigger.click({ force: true })
+    }
+    await expect(popover).toBeVisible({ timeout: 2_000 })
 
-  // Wait for popover to close
-  await expect(page.locator('[data-slot="list-item"][data-key]').first())
-    .not.toBeVisible({ timeout: 2_000 })
-    .catch(() => {})
+    // Find and click the model option
+    const modelOption = page.locator(`[data-slot="list-item"]:has-text("${modelId}")`).first()
+    await expect(modelOption).toBeVisible({ timeout: 5_000 })
+    await modelOption.click()
+
+    // Wait for popover to close (selection applied), then verify the switch
+    // actually landed on the trigger label.
+    await expect(popover).not.toBeVisible({ timeout: 5_000 })
+    await expect(modelTrigger).toContainText(modelId, { timeout: 5_000 })
+  }).toPass({ timeout: 30_000 })
 
   await page.waitForTimeout(200)
 }

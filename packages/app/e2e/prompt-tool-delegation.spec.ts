@@ -130,11 +130,17 @@ test.describe("Tool delegation round-trip (Rust → TS)", () => {
     // Write-chain bookkeeping: the round-end snapshot track persists a Patch
     // part (agent.rs "Snapshot patch after tool execution") whose files list
     // carries the disk truth — this is the same list the summary cascade
-    // review (批7 方案甲) consumes.
-    const messages = await getMessages(sessionId)
-    const raw = JSON.stringify(messages)
-    expect(raw).toContain('"patch"')
-    expect(raw).toContain("README.md")
+    // review (批7 方案甲) consumes. The track runs after the run loop's last
+    // round and can lag the disk edit by >100ms on saturated runners (the
+    // windows retry fetched messages ~70ms before the track flushed), so
+    // poll instead of a one-shot fetch.
+    await expect
+      .poll(async () => {
+        const messages = await getMessages(sessionId)
+        return JSON.stringify(messages)
+      }, { timeout: 30_000, intervals: [1_000, 2_000] })
+      .toContain('"patch"')
+    expect(JSON.stringify(await getMessages(sessionId))).toContain("README.md")
   })
 
   test("reading outside the project triggers the permission dock; Allow once proceeds", { tag: ["@core", "@delegation", "@permission"] }, async ({ page }) => {

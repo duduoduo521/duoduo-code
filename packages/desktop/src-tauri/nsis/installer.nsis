@@ -526,7 +526,12 @@ Function .onInit
         StrCpy $INSTDIR "$PROGRAMFILES\${PRODUCTNAME}"
       ${EndIf}
     !else if "${INSTALLMODE}" == "currentUser"
-      StrCpy $INSTDIR "$LOCALAPPDATA\${PRODUCTNAME}"
+      ; Default to the conventional per-user location (VS Code/Discord style).
+      ; %LOCALAPPDATA%\Programs keeps the user profile root clean and matches
+      ; Windows conventions for per-user apps. Existing users are unaffected:
+      ; RestorePreviousInstallLocation below overrides this when a previous
+      ; install directory was recorded in the registry.
+      StrCpy $INSTDIR "$LOCALAPPDATA\Programs\${PRODUCTNAME}"
     !endif
 
     Call RestorePreviousInstallLocation

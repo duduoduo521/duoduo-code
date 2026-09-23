@@ -73,7 +73,15 @@ try {
     console.error("[inline-css] Could not find </head> in dist/index.html")
     process.exit(1)
   }
-  modified = modified.replace("</head>", `${block}</head>`)
+  // Static parser-blocking <link> for the same stylesheet(s), in addition to
+  // the inline copy. Field-tested (2026-09-23): the WebView2 runtime
+  // occasionally pins a rogue `default-src 'self'` CSP onto the document,
+  // which drops EVERY parser-inserted inline <style> from the CSSOM while
+  // external same-origin stylesheets keep working. With this link the editor
+  // is styled even in that state; the inline copy covers the (unrelated)
+  // case of a link fetch stall. Duplicate rules are harmless.
+  const links = cssRefs.map((ref) => `<link rel="stylesheet" href="/${ref}" />`).join("\n    ")
+  modified = modified.replace("</head>", `${links}\n${block}</head>`)
 
   writeFileSync(indexPath, modified, "utf8")
   console.log(

@@ -1263,6 +1263,7 @@ export const dict = {
   "update.status.checking": "Checking for updates...",
   "update.status.downloading": "Downloading update...",
   "update.status.downloaded": "Update v{{version}} downloaded, click to restart",
+  "update.status.checkingShort": "Checking",
   "update.status.downloadingShort": "Updating",
   "update.status.label": "Update",
   "update.status.error": "Update failed",

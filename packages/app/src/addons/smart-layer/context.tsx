@@ -87,13 +87,17 @@ export const { use: useSmartLayer, provider: SmartLayerProvider } = createSimple
       setGearApi(api())
     })
 
-    // Adaptive health check interval: 30s when connected, 10s when disconnected
+    // Adaptive health check interval: 30s when connected, 2s when not.
+    // The previous 10s disconnected interval left the titlebar indicator red
+    // ("智能层未连接") for 10+ seconds on EVERY launch, because the config
+    // only resolves 2-4s after boot and the first successful check had to
+    // wait for the next tick.
     let healthTimer: ReturnType<typeof setTimeout> | undefined
     let checkInProgress = false
 
     const scheduleNextCheck = () => {
       if (healthTimer) clearTimeout(healthTimer)
-      const interval = status() === "connected" ? 30000 : 10000
+      const interval = status() === "connected" ? 30000 : 2000
       healthTimer = setTimeout(() => {
         void checkHealth()
           .then(scheduleNextCheck)
@@ -107,8 +111,11 @@ export const { use: useSmartLayer, provider: SmartLayerProvider } = createSimple
       try {
         const client = api()
         if (!client) {
+          // Config not resolved yet (sidecar still booting) — this is NOT a
+          // connection failure. Keep the neutral "checking" state instead of
+          // flashing a red "disconnected" that the user reads as an error.
           console.debug("[smart-layer] checkHealth: no API client available (config not received yet)")
-          setStatus("disconnected")
+          setStatus("checking")
           return
         }
         const result = await client.health()

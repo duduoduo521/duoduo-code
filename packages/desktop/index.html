@@ -14,6 +14,15 @@
     <meta property="og:image" content="/social-share.png" />
     <meta property="twitter:image" content="/social-share.png" />
     <script id="theme-preload-script" src="/theme-preload.js"></script>
+    <!-- External splash stylesheet (parser-blocking link). Field-tested
+         (2026-09-23): the WebView2 runtime occasionally pins a rogue
+         `default-src 'self'` CSP onto the document, which drops EVERY
+         parser-inserted inline <style> from the CSSOM while external
+         same-origin stylesheets keep working. This link guarantees the
+         splash is styled under any policy that lets the document load.
+         Rules duplicated below inline and in this file — keep in sync with
+         packages/app/public/splash.css. -->
+    <link rel="stylesheet" href="/splash.css" />
     <!-- Redundant copy of the splash styles (the authoritative copy lives
          inside #__duoduo_splash__ in the body). A field report captured the
          body copy not applying on some launches (splash collapsed into an

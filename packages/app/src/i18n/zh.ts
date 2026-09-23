@@ -1246,6 +1246,7 @@ export const dict = {
   "update.status.checking": "正在检查更新...",
   "update.status.downloading": "正在下载更新...",
   "update.status.downloaded": "更新 v{{version}} 已下载，点击重启安装",
+  "update.status.checkingShort": "检查更新",
   "update.status.downloadingShort": "更新中",
   "update.status.label": "更新",
   "update.status.error": "更新失败",

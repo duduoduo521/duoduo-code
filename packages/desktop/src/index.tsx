@@ -46,6 +46,44 @@ if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
   throw new Error(t("error.dev.rootNotFound"))
 }
 
+// ─── CSP canary ────────────────────────────────────────────────────────────
+// Field-tested (2026-09-23, WebView2 153.0.4234.48): on some launches the
+// WebView2 runtime enforces a rogue `default-src 'self'` Content-Security-
+// Policy on the document even though the response header and the injected
+// <meta> CSP both carry the full policy (with style-src 'unsafe-inline' and
+// the ipc: / 127.0.0.1:* connect origins). Under that rogue policy every
+// inline <style> is dropped from the CSSOM and ALL Tauri IPC + sidecar
+// fetches are refused. Verified: `location.reload()` does NOT clear it (the
+// state is sticky for the webview session — reloading just flashes), and the
+// page cannot even call `relaunch()` because IPC itself is dead.
+//
+// Therefore: detect here, DON'T render a non-functional app, keep the styled
+// splash (external splash.css works under any such policy) visible, and let
+// the Rust-side watchdog (lib.rs, FRONTEND_ALIVE) relaunch the app. A fresh
+// process is the only proven cure.
+const CSP_BLOCKED = (() => {
+  if (import.meta.env.DEV) return false
+  try {
+    const probe = document.createElement("style")
+    probe.textContent = "#__duoduo_csp_canary__{position:fixed}"
+    document.head.appendChild(probe)
+    const el = document.createElement("div")
+    el.id = "__duoduo_csp_canary__"
+    ;(document.body ?? document.documentElement).appendChild(el)
+    const applied = getComputedStyle(el).position === "fixed"
+    probe.remove()
+    el.remove()
+    return !applied
+  } catch {
+    return false
+  }
+})()
+if (CSP_BLOCKED) {
+  console.error(
+    "[csp-heal] inline styles blocked by runtime CSP — holding splash; desktop watchdog will relaunch the app",
+  )
+}
+
 void initI18n()
 
 // Update state shared between checkUpdate / updateAndRestart / UpdateStatusIndicator
@@ -577,9 +615,18 @@ const createPlatform = (): Platform => {
           }
           // Fetch auth header from Rust BEFORE publishing the config signal
           // (password never crosses IPC — only the pre-computed Basic header).
-          try {
-            cachedAuthHeader = (await commands.getSmartLayerAuthHeader()) ?? undefined
-          } catch {}
+          // finalize_smart_layer sets url and password under two separate
+          // lock acquisitions; a poll that lands in between would get a
+          // config without a password and — because the auth header is then
+          // frozen into the api client — 401 forever. Bounded retry closes
+          // that window.
+          for (let attempt = 0; attempt < 10; attempt++) {
+            try {
+              cachedAuthHeader = (await commands.getSmartLayerAuthHeader()) ?? undefined
+            } catch {}
+            if (cachedAuthHeader || !result.has_password) break
+            await new Promise((resolve) => setTimeout(resolve, 200))
+          }
           console.info("[smart-layer] Config resolved:", result.url)
           setConfig({
             url: result.url,
@@ -695,7 +742,12 @@ void listenForDeepLinks()
 // delegated onContextMenu handler fires during the bubbling phase on document.
 document.addEventListener("contextmenu", (e) => e.preventDefault(), true)
 
-render(() => {
+if (CSP_BLOCKED) {
+  // Rogue-CSP launch: every Tauri IPC call is refused, so the app would mount
+  // non-functional. Hold the styled splash (splash.css works under any policy
+  // that lets the document load) and let the Rust watchdog relaunch the app.
+} else {
+  render(() => {
   const platform = createPlatform()
   const loadLocale = () => initI18n()
 
@@ -918,4 +970,5 @@ render(() => {
       </AppBaseProviders>
     </PlatformProvider>
   )
-}, root!)
+  }, root!)
+}

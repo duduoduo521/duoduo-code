@@ -118,6 +118,17 @@ struct SidecarReady(futures::future::Shared<oneshot::Receiver<ServerReadyData>>)
 /// while Ctrl+C handler also fires).
 pub(crate) static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
 
+/// Set to `true` once the frontend proves it can use Tauri IPC
+/// (`await_initialization` is the first command every healthy boot invokes).
+///
+/// Drives the WebView2 rogue-CSP watchdog: field-tested (2026-09-23) shows the
+/// WebView2 runtime occasionally pins a bare `default-src 'self'` CSP onto the
+/// document for the whole webview session — every Tauri IPC call and inline
+/// style is then blocked, and `location.reload()` does NOT clear it (the page
+/// cannot even call `relaunch()` because IPC itself is dead). The only reliable
+/// cure is an app-level relaunch, which must be driven from the Rust side.
+pub static FRONTEND_ALIVE: AtomicBool = AtomicBool::new(false);
+
 #[tauri::command]
 #[specta::specta]
 async fn kill_sidecar(app: AppHandle) {
@@ -840,6 +851,11 @@ async fn await_initialization(
     init_state: State<'_, InitState>,
     events: Channel<InitStep>,
 ) -> Result<ServerReadyData, String> {
+    // First IPC command of every healthy boot — proof that the webview is not
+    // trapped under the rogue CSP (see FRONTEND_ALIVE doc). Clears the heal
+    // marker via the watchdog's alive check.
+    FRONTEND_ALIVE.store(true, std::sync::atomic::Ordering::SeqCst);
+
     let mut rx = init_state.current.clone();
 
     let stream = async {
@@ -1218,6 +1234,42 @@ fn clean_logs(retention_days: u32) -> Result<u32, String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // CSP-heal relaunch handshake: the watchdog spawns a fresh process with
+    // this flag BEFORE exiting the trapped one. The single-instance mutex is
+    // held until the old process fully terminates, so the new process must
+    // wait it out before the single-instance plugin initializes — otherwise
+    // the new instance sees the lock, focuses the dying old window, and exits,
+    // leaving the user with nothing.
+    if std::env::args().any(|a| a == "--duoduo-csp-heal-relaunch") {
+        // Field-tested: 1.5s was NOT enough — the trapped instance's WebView2
+        // browser process (msedgewebview2) is still alive that long after the
+        // host exits, and the fresh instance joins the SAME browser process,
+        // inheriting the rogue state (observed: 3 heal relaunches in a row all
+        // trapped). 6s lets the old host AND its browser process fully die so
+        // the fresh instance gets a clean one.
+        let breadcrumb = std::env::temp_dir().join("duoduo-csp-heal-breadcrumb.log");
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let _ = std::fs::write(
+            &breadcrumb,
+            format!("child-start pid={} t={stamp}\n", std::process::id()),
+        );
+        std::thread::sleep(std::time::Duration::from_millis(6000));
+        let stamp2 = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let _ = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&breadcrumb)
+            .and_then(|mut f| {
+                use std::io::Write;
+                writeln!(f, "child-sleep-done pid={} t={stamp2}", std::process::id())
+            });
+    }
+
     let builder = make_specta_builder();
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds
@@ -1427,8 +1479,218 @@ async fn initialize(app: AppHandle) {
     // the loading animation while smart-layer/sidecar initialize in the
     // background. This eliminates the multi-second white screen.
     tracing::info!("Creating main window early...");
-    let _main_window = MainWindow::create(&app).expect("Failed to create main window");
+    // Retry: on the csp-heal relaunch path the previous instance's WebView2
+    // browser process may still be tearing down (user-data-folder lock /
+    // debug-port handoff), making the first environment creation fail. A
+    // transient failure must not kill the process silently (expect would).
+    let _main_window = {
+        let mut created = None;
+        for attempt in 1..=3 {
+            match MainWindow::create(&app) {
+                Ok(window) => {
+                    created = Some(window);
+                    break;
+                }
+                Err(e) => {
+                    tracing::error!("MainWindow::create attempt {attempt}/3 failed: {e}");
+                    if attempt < 3 {
+                        std::thread::sleep(std::time::Duration::from_millis(1500));
+                    }
+                }
+            }
+        }
+        created.expect("Failed to create main window after 3 attempts")
+    };
     tracing::info!("Main window created");
+    if std::env::args().any(|a| a == "--duoduo-csp-heal-relaunch") {
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let _ = std::fs::OpenOptions::new()
+            .append(true)
+            .open(std::env::temp_dir().join("duoduo-csp-heal-breadcrumb.log"))
+            .and_then(|mut f| {
+                use std::io::Write;
+                writeln!(f, "child-window-created t={stamp}")
+            });
+    }
+
+    // ─── WebView2 rogue-CSP watchdog ──────────────────────────────────────
+    // Field-tested (2026-09-23, WebView2 153.0.4234.48): on some launches the
+    // runtime pins a bare `default-src 'self'` CSP onto the document for the
+    // whole webview session — all Tauri IPC and inline styles are blocked,
+    // and an in-page `location.reload()` does NOT clear it (verified: the
+    // frontend reload looped 5x and stayed broken). The page can't even call
+    // `relaunch()` because IPC itself is dead, so the heal must happen here.
+    //
+    // Protocol: a healthy boot invokes `await_initialization` within ~1-2s of
+    // webview creation, which sets FRONTEND_ALIVE. If the flag is still unset
+    // after the timeout, the webview is trapped — relaunch the whole app
+    // (fresh webview + browser process). Bounded by a marker file so a
+    // persistent environment can never cause a restart loop; a healthy boot
+    // clears the marker.
+    {
+        const FRONTEND_ALIVE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(12);
+        const HEAL_MARKER_WINDOW_SECS: u64 = 180;
+        const HEAL_MARKER_MAX: usize = 3;
+        let watchdog_app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(FRONTEND_ALIVE_TIMEOUT).await;
+            if FRONTEND_ALIVE.load(std::sync::atomic::Ordering::SeqCst) {
+                // Healthy boot — clear any previous heal marker.
+                if let Ok(dir) = watchdog_app.path().app_data_dir() {
+                    let _ = std::fs::remove_file(dir.join("csp-heal.log"));
+                }
+                return;
+            }
+            if SHUTTING_DOWN.load(std::sync::atomic::Ordering::SeqCst) {
+                return;
+            }
+            tracing::warn!(
+                "frontend alive signal missing after {:?} — webview appears trapped under a broken CSP; relaunching app",
+                FRONTEND_ALIVE_TIMEOUT
+            );
+            // Bound the heal: no more than HEAL_MARKER_MAX relaunches within
+            // the window, else give up (a persistent environment must never
+            // produce an infinite restart loop).
+            let marker_path = watchdog_app
+                .path()
+                .app_data_dir()
+                .ok()
+                .map(|d| d.join("csp-heal.log"));
+            let Some(marker_path) = marker_path else {
+                tracing::error!("csp-heal: app_data_dir unavailable — cannot bound relaunches, giving up");
+                return;
+            };
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            let mut stamps: Vec<u64> = std::fs::read_to_string(&marker_path)
+                .map(|content| {
+                    content
+                        .lines()
+                        .filter_map(|l| l.trim().parse::<u64>().ok())
+                        .collect()
+                })
+                .unwrap_or_default();
+            stamps.retain(|t| now_ms.saturating_sub(*t) <= HEAL_MARKER_WINDOW_SECS * 1000);
+            if stamps.len() >= HEAL_MARKER_MAX {
+                tracing::error!(
+                    "csp-heal: {} relaunches within {}s without recovery — giving up to avoid a restart loop",
+                    stamps.len(),
+                    HEAL_MARKER_WINDOW_SECS
+                );
+                return;
+            }
+            stamps.push(now_ms);
+            if let Some(dir) = marker_path.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let body = stamps
+                .iter()
+                .map(|t| t.to_string())
+                .collect::<Vec<_>>()
+                .join("\n");
+            let _ = std::fs::write(&marker_path, body);
+            // Graceful sidecar shutdown, then relaunch a fresh process
+            // (fresh webview + fresh browser process — the only proven cure).
+            // NOT app.restart(): it spawns the new process before the old one
+            // exits, and the single-instance plugin in the new process would
+            // see the still-held mutex and kill itself. Instead spawn the
+            // current exe with the heal flag (run() delays its init so the
+            // old process, its mutex, AND its WebView2 browser process are
+            // gone first), then exit. Closing the webviews here accelerates
+            // the browser process teardown.
+            for window in watchdog_app.webview_windows().values() {
+                let _ = window.close();
+            }
+            shutdown_sidecar_and_smart_layer(&watchdog_app).await;
+            // The trapped state survives a process relaunch (verified 2/2),
+            // because the fresh host JOINS the still-lingering WebView2
+            // browser process (msedgewebview2 shares one browser process per
+            // user-data-folder) and inherits the poisoned state. Kill the
+            // browser processes of OUR user-data-folder (matched precisely by
+            // --user-data-dir in their command line; other apps' WebView2
+            // processes are untouched), then wipe the HTTP/GPU caches.
+            // localStorage/IndexedDB (user data) are NOT touched.
+            // Windows-only: the rogue CSP is a WebView2 anomaly; other
+            // platforms just get the relaunch.
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+            if let (Ok(config_dir), Some(product)) = (
+                watchdog_app.path().config_dir(),
+                watchdog_app.config().product_name.clone(),
+            ) {
+                let profile = config_dir.join(&product).join("EBWebView");
+                let filter = format!("*{}*", profile.display());
+                let _ = std::process::Command::new("powershell")
+                    .args([
+                        "-NoProfile",
+                        "-Command",
+                        &format!(
+                            "Get-CimInstance Win32_Process -Filter \"Name='msedgewebview2.exe'\" | Where-Object {{ $_.CommandLine -like '{}' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}",
+                            filter.replace('\'', "''")
+                        ),
+                    ])
+                    .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+                    .spawn();
+                for sub in ["Default\\Cache", "Default\\Code Cache", "Default\\GPUCache", "GPUCache", "GrShaderCache", "ShaderCache"] {
+                    let _ = std::fs::remove_dir_all(profile.join(sub));
+                }
+                tracing::info!("csp-heal: webview browser processes killed + caches wiped");
+            }
+            }
+            match std::env::current_exe() {
+                Ok(exe) => {
+                    let mut cmd = std::process::Command::new(&exe);
+                    cmd.arg("--duoduo-csp-heal-relaunch");
+                    // Break away from any job object (the trapped host may run
+                    // inside one — e.g. when launched from an IDE/terminal) and
+                    // a new process group, so killing/exiting the trapped host
+                    // can NEVER take the fresh instance down with it.
+                    #[cfg(windows)]
+                    {
+                        use std::os::windows::process::CommandExt;
+                        cmd.creation_flags(0x0800_0000 | 0x0100_0000 | 0x0000_0200);
+                    }
+                    match cmd.spawn() {
+                    Ok(mut child) => {
+                        tracing::info!("csp-heal: fresh process spawned (pid={}) — observing startup", child.id());
+                        // Observe the child briefly: if it dies during loader /
+                        // early startup we must know WHY (the trapped instance
+                        // is about to exit and can't report it anymore).
+                        let mut elapsed: u64 = 0;
+                        for step in [1u64, 2, 3] {
+                            tokio::time::sleep(std::time::Duration::from_secs(step)).await;
+                            elapsed += step;
+                            match child.try_wait() {
+                                Ok(None) => tracing::info!("csp-heal: child alive after {elapsed}s"),
+                                Ok(Some(status)) => {
+                                    tracing::error!("csp-heal: child EXITED early after {elapsed}s: {status}");
+                                    if let Ok(dir) = watchdog_app.path().app_data_dir() {
+                                        let _ = std::fs::write(
+                                            dir.join("csp-heal-child-exit.txt"),
+                                            format!("{status}"),
+                                        );
+                                    }
+                                    return;
+                                }
+                                Err(e) => tracing::error!("csp-heal: try_wait failed: {e}"),
+                            }
+                        }
+                        tracing::info!("csp-heal: child survived startup window — exiting trapped instance");
+                        watchdog_app.exit(0);
+                    }
+                    Err(e) => tracing::error!("csp-heal: failed to spawn fresh process: {e} — staying on the trapped webview"),
+                    }
+                },
+                Err(e) => tracing::error!("csp-heal: current_exe unavailable: {e} — staying on the trapped webview"),
+            }
+        });
+    }
 
     // Spawn smart-layer and probe shell env.
     // - Smart-layer now runs FIRE-AND-FORGET (问题1): it no longer blocks

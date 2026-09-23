@@ -21,7 +21,6 @@
     "security": {
       "dangerousDisableAssetCspModification": ["style-src"],
       "csp": {
-        "//": "MUST stay in sync with CSP_POLICY in ../../scripts/inject-csp.ts. Multiple CSPs (this one plus the <meta> tag) are enforced together and the strictest wins, so a divergence silently blocks resources. wasm-unsafe-eval is required: the frontend loads WebAssembly (Shiki onig.wasm, ghostty-vt.wasm, pdfjs wasm). Also: dangerousDisableAssetCspModification above is scoped to style-src so Tauri does not add a nonce there - a nonce would make browsers ignore 'unsafe-inline' and silently break all inline styles in prod (splash layout, runtime theme/diff <style> injection, string style props).",
         "default-src": "'self'",
         "script-src": "'self' 'wasm-unsafe-eval'",
         "worker-src": "'self' blob:",

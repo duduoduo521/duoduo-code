@@ -58,7 +58,11 @@ export function UpdateStatusIndicator() {
             />
           </Show>
           <Show when={status() === "downloading" || status() === "checking"}>
-            <span>{language.t("update.status.downloadingShort")}</span>
+            <span>
+              {status() === "checking"
+                ? language.t("update.status.checkingShort")
+                : language.t("update.status.downloadingShort")}
+            </span>
           </Show>
           <Show when={status() === "downloaded"}>
             <span>{language.t("update.status.label")}</span>

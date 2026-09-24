@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test"
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "fs"
+import { existsSync, mkdtempSync, writeFileSync, mkdirSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 
@@ -26,6 +26,21 @@ const SSE_BODY = [
 // Prompts containing this marker make the mock LLM reject the request with a
 // 401 (non-retryable auth error) so the run loop fails fast.
 const FAIL_MARKER = "fail please"
+
+// The two `run --format json` tests delegate the prompt to the Rust run loop
+// inside the duo-smart-layer sidecar; without the debug binary (the plain CI
+// unit job never builds Rust) the CLI cannot complete a delegated run. Gated,
+// not deleted — same convention as test/session/prompt.test.ts (runRunLoop):
+// Rust has no equivalent NDJSON pipe coverage, so these run wherever the
+// sidecar exists (local dev) and are skipped in the plain unit suite.
+const sidecarBin = join(
+  join(import.meta.dir, "../../../.."),
+  "..",
+  "target",
+  "debug",
+  process.platform === "win32" ? "duo-smart-layer.exe" : "duo-smart-layer",
+)
+const hasSidecar = existsSync(sidecarBin)
 
 let server: ReturnType<typeof Bun.serve>
 let llmUrl: string
@@ -126,18 +141,8 @@ beforeAll(async () => {
 
   // Start the Rust sidecar (same XDG dirs, so it reads the same config) —
   // `run` delegates the prompt to the run loop inside this process.
-  // test/cli/cmd → duoduo → packages → repo root (4 levels up)
-  const repoRoot = join(import.meta.dir, "../../../..")
-  const sidecarBin = join(
-    repoRoot,
-    "..",
-    "target",
-    "debug",
-    process.platform === "win32" ? "duo-smart-layer.exe" : "duo-smart-layer",
-  )
-  const binExists = await Bun.file(sidecarBin).exists()
-  if (!binExists) {
-    console.warn(`[cli-pipeline] sidecar binary not found at ${sidecarBin} — run tests will fail`)
+  if (!hasSidecar) {
+    console.warn(`[cli-pipeline] sidecar binary not found at ${sidecarBin} — run tests will be skipped`)
   } else {
     sidecar = Bun.spawn([sidecarBin], {
       env: {
@@ -204,7 +209,7 @@ afterAll(async () => {
 })
 
 describe("CLI pipeline (--format json / acp)", () => {
-  test(
+  test.skipIf(!hasSidecar)(
     "run --format json emits a clean NDJSON pipe on stdout",
     async () => {
       // Run the CLI from a scratch directory: the instance directory drives
@@ -273,7 +278,7 @@ describe("CLI pipeline (--format json / acp)", () => {
     120_000,
   )
 
-  test(
+  test.skipIf(!hasSidecar)(
     "run --format json surfaces LLM failures as error events with exit code 1",
     async () => {
       const workDir = join(homeDir, "work-fail")

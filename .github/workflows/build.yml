@@ -419,8 +419,11 @@ jobs:
           - target: aarch64-apple-darwin
             runner: macos-latest
             args: "--target aarch64-apple-darwin"
+          # 2026-09-24: macos-13 runners are retired by GitHub — the job queued
+          # forever on "Waiting for a runner". Cross-compile on macos-latest
+          # (arm64) instead, same as build-duoduocode-cli / build-smart-layer.
           - target: x86_64-apple-darwin
-            runner: macos-13
+            runner: macos-latest
             args: "--target x86_64-apple-darwin"
           - target: x86_64-pc-windows-msvc
             runner: windows-latest
@@ -442,6 +445,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.RUST_VERSION }}
+          targets: ${{ matrix.target }}
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -492,7 +496,7 @@ jobs:
           name: tauri-app-${{ matrix.target }}
           path: |
             packages/desktop/src-tauri/target/release/bundle/*
-            packages/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/*
+            packages/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/*
           retention-days: 5
 
   # ─── Release ───

@@ -495,8 +495,8 @@ jobs:
         with:
           name: tauri-app-${{ matrix.target }}
           path: |
-            packages/desktop/src-tauri/target/release/bundle/*
-            packages/desktop/src-tauri/target/${{ matrix.target }}/release/bundle/*
+            target/release/bundle/*
+            target/${{ matrix.target }}/release/bundle/*
           retention-days: 5
 
   # ─── Release ───
